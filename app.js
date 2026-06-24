@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
+  const APP_VERSION = "1.2.0";
 
   const CATEGORIES = {
     top: "Top",
@@ -81,6 +82,83 @@
   };
 
   const OCCASION_ORDER = ["work", "friday", "casual", "date", "gym"];
+  const THEME_VALUES = ["system", "light", "dark"];
+  const COLOR_OPTIONS = ["black", "white", "off-white", "navy", "light blue", "gray", "dark gray", "khaki", "tan", "brown", "olive"];
+
+  const ITEM_TEMPLATES = {
+    polo: { label: "Polo", category: "top", tags: ["polo", "smart casual"], occasions: ["work", "friday", "casual", "date"], formality: 6, worksWithTags: ["navy", "gray", "black", "khaki", "jeans", "olive", "brown"] },
+    tshirt: { label: "T-Shirt", category: "top", tags: ["t-shirt", "casual"], occasions: ["casual", "gym"], formality: 3, worksWithTags: ["jeans", "black", "gray", "navy", "olive"] },
+    dress_pants: { label: "Dress Pants", category: "pants", tags: ["dress pants", "office", "pressed"], occasions: ["work", "friday", "date"], formality: 7, worksWithTags: ["polo", "dress shoes", "belt", "black", "navy", "gray", "tan"], avoidWithTags: ["athletic", "running"] },
+    jeans: { label: "Jeans", category: "pants", tags: ["jeans", "denim", "casual"], occasions: ["friday", "casual", "date", "gym"], formality: 4, worksWithTags: ["polo", "t-shirt", "sneakers", "boots"] },
+    cargos: { label: "Cargos", category: "pants", tags: ["cargo", "cargos", "casual", "errands"], occasions: ["casual", "gym"], formality: 3, worksWithTags: ["sneakers", "boots", "black", "gray", "olive"], avoidWithTags: ["dress shoes", "pressed"] },
+    dress_shoes: { label: "Dress Shoes", category: "shoes", tags: ["dress shoes", "office", "date"], occasions: ["work", "friday", "date"], formality: 8, worksWithTags: ["dress pants", "belt", "black", "navy", "gray", "khaki"], avoidWithTags: ["cargo", "athletic", "running"] },
+    sneakers: { label: "Sneakers", category: "shoes", tags: ["sneakers", "casual"], occasions: ["friday", "casual", "gym"], formality: 3, worksWithTags: ["jeans", "cargo", "black", "gray", "navy"] },
+    boots: { label: "Boots", category: "shoes", tags: ["boots", "casual", "date"], occasions: ["friday", "casual", "date"], formality: 5, worksWithTags: ["jeans", "khaki", "brown", "olive", "navy"] },
+    belt: { label: "Belt", category: "belt", tags: ["belt"], occasions: ["work", "friday", "casual", "date"], formality: 6, worksWithTags: ["dress shoes", "jeans", "dress pants"] },
+    socks: { label: "Socks", category: "socks", tags: ["socks"], occasions: ["work", "friday", "date"], formality: 5, worksWithTags: ["dress shoes", "black", "brown", "navy", "gray"] }
+  };
+
+  const MATCH_CHIPS = {
+    top: {
+      works: [
+        ["works with navy pants", ["navy", "pants"]],
+        ["works with gray pants", ["gray", "pants"]],
+        ["works with black pants", ["black", "pants"]],
+        ["works with khaki pants", ["khaki", "pants"]],
+        ["works with jeans", ["jeans"]],
+        ["works with olive", ["olive"]],
+        ["works with brown", ["brown"]]
+      ],
+      avoid: [["avoid cargos", ["cargo", "cargos"]], ["avoid athletic", ["athletic", "running"]]]
+    },
+    pants: {
+      works: [
+        ["works with white tops", ["white", "top"]],
+        ["works with black tops", ["black", "top"]],
+        ["works with gray tops", ["gray", "top"]],
+        ["works with navy tops", ["navy", "top"]],
+        ["works with light blue tops", ["light blue", "top"]],
+        ["works with tan tops", ["tan", "top"]],
+        ["works with off-white tops", ["off-white", "top"]]
+      ],
+      avoid: [["avoid running shoes", ["running"]], ["avoid dress shoes", ["dress shoes"]]]
+    },
+    shoes: {
+      works: [
+        ["works with black belt", ["black", "belt"]],
+        ["works with brown belt", ["brown", "belt"]],
+        ["works with jeans", ["jeans"]],
+        ["works with navy pants", ["navy", "pants"]],
+        ["works with gray pants", ["gray", "pants"]],
+        ["works with khaki pants", ["khaki", "pants"]],
+        ["office-safe", ["office", "dress pants"]],
+        ["casual-only", ["casual", "jeans", "cargo"]]
+      ],
+      avoid: [["avoid cargos", ["cargo", "cargos"]], ["avoid dress outfits", ["dress pants", "office"]]]
+    },
+    belt: {
+      works: [
+        ["works with black shoes", ["black", "shoes"]],
+        ["works with brown shoes", ["brown", "shoes"]],
+        ["works with dress outfits", ["dress pants", "dress shoes", "office"]],
+        ["works with casual outfits", ["jeans", "casual"]]
+      ],
+      avoid: []
+    },
+    socks: {
+      works: [
+        ["office-safe", ["office", "dress shoes"]],
+        ["casual", ["casual", "sneakers"]],
+        ["black shoes", ["black", "shoes"]],
+        ["brown shoes", ["brown", "shoes"]],
+        ["navy pants", ["navy", "pants"]],
+        ["gray pants", ["gray", "pants"]]
+      ],
+      avoid: []
+    },
+    outerwear: { works: [["works with casual", ["casual"]], ["works with office", ["office"]]], avoid: [] },
+    accessory: { works: [["works with casual", ["casual"]], ["works with date", ["date"]]], avoid: [] }
+  };
 
   let appState = loadState();
   let currentOutfit = null;
@@ -97,6 +175,7 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
+    applyTheme(appState.settings.theme);
     renderStaticOptions();
     bindEvents();
     renderAll();
@@ -142,9 +221,13 @@
     $("#importFile").addEventListener("change", importBackup);
     $("#resetDemoBtn").addEventListener("click", resetDemoData);
     $("#clearBansBtn").addEventListener("click", clearBannedCombos);
+    $("#themeSelect").addEventListener("change", (event) => updateTheme(event.target.value));
 
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
+    $("#itemCategory").addEventListener("change", () => renderGuidedMatchChips());
+    $("#copyMatchingBtn").addEventListener("click", copyMatchingFromSelectedItem);
+    $("#saveGenerateBtn").addEventListener("click", () => saveItemFromEditor({ generateAfter: true }));
     $("#closeItemDialogBtn").addEventListener("click", closeItemDialog);
     $("#duplicateItemBtn").addEventListener("click", duplicateFromDialog);
     $("#archiveItemBtn").addEventListener("click", toggleArchiveFromDialog);
@@ -152,6 +235,7 @@
     $("#itemFormality").addEventListener("input", (event) => {
       $("#formalityOutput").value = event.target.value;
     });
+    $("#itemPrimaryColor").addEventListener("input", updateSelectedColorChip);
   }
 
   function renderStaticOptions() {
@@ -175,6 +259,14 @@
           <span>${escapeHtml(occasion.label)}</span>
         </label>
       `;
+    }).join("");
+
+    $("#templateChips").innerHTML = Object.entries(ITEM_TEMPLATES).map(([id, template]) => {
+      return `<button class="mini-button" type="button" data-template-id="${escapeAttribute(id)}">${escapeHtml(template.label)}</button>`;
+    }).join("");
+
+    $("#primaryColorChips").innerHTML = COLOR_OPTIONS.map((color) => {
+      return `<button class="mini-button" type="button" data-color="${escapeAttribute(color)}">${escapeHtml(color)}</button>`;
     }).join("");
   }
 
@@ -226,19 +318,24 @@
 
   function createDefaultState() {
     return normalizeState({
-      version: 1,
+      version: 2,
       wardrobe: demoWardrobe(),
       history: [],
-      bannedCombos: []
+      bannedCombos: [],
+      settings: {
+        theme: "system"
+      }
     });
   }
 
   function normalizeState(raw) {
+    const settings = normalizeSettings(raw?.settings);
     const normalized = {
-      version: 1,
+      version: Math.max(2, Number(raw?.version) || 1),
       wardrobe: Array.isArray(raw?.wardrobe) ? raw.wardrobe.map(normalizeItem).filter(Boolean) : [],
       history: Array.isArray(raw?.history) ? raw.history.map(normalizeHistoryRecord).filter(Boolean) : [],
-      bannedCombos: Array.isArray(raw?.bannedCombos) ? raw.bannedCombos.map(normalizeBannedCombo).filter(Boolean) : []
+      bannedCombos: Array.isArray(raw?.bannedCombos) ? raw.bannedCombos.map(normalizeBannedCombo).filter(Boolean) : [],
+      settings
     };
 
     if (!normalized.wardrobe.length) {
@@ -246,6 +343,11 @@
     }
 
     return normalized;
+  }
+
+  function normalizeSettings(settings) {
+    const theme = THEME_VALUES.includes(settings?.theme) ? settings.theme : "system";
+    return { theme };
   }
 
   function normalizeItem(item) {
@@ -491,12 +593,31 @@
   function renderSettings() {
     const activeCount = appState.wardrobe.filter((item) => item.active).length;
     const archivedCount = appState.wardrobe.length - activeCount;
+    $("#themeSelect").value = appState.settings.theme;
+    $("#appVersion").textContent = `App version ${APP_VERSION}`;
     $("#settingsStats").innerHTML = `
       <div class="stat-card"><strong>${activeCount}</strong><span>Active items</span></div>
       <div class="stat-card"><strong>${archivedCount}</strong><span>Archived</span></div>
       <div class="stat-card"><strong>${appState.history.length}</strong><span>Outfits logged</span></div>
       <div class="stat-card"><strong>${appState.bannedCombos.length}</strong><span>Banned combos</span></div>
     `;
+  }
+
+  function updateTheme(theme) {
+    appState.settings.theme = THEME_VALUES.includes(theme) ? theme : "system";
+    applyTheme(appState.settings.theme);
+    saveState();
+    renderSettings();
+    showToast("Theme saved.");
+  }
+
+  function applyTheme(theme) {
+    const resolvedTheme = THEME_VALUES.includes(theme) ? theme : "system";
+    if (resolvedTheme === "system") {
+      document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.dataset.theme = resolvedTheme;
+    }
   }
 
   function handleClosetAction(event) {
@@ -537,7 +658,8 @@
     $("#itemId").value = editingItemId || "";
     $("#itemName").value = item.name || "";
     $("#itemCategory").value = item.category || "top";
-    $("#itemColors").value = item.colors.join(", ");
+    $("#itemPrimaryColor").value = item.colors[0] || "";
+    $("#itemSecondaryColors").value = item.colors.slice(1).join(", ");
     $("#itemTags").value = item.tags.join(", ");
     $("#itemFormality").value = item.formality || 5;
     $("#formalityOutput").value = item.formality || 5;
@@ -560,6 +682,11 @@
     $("#archiveItemBtn").textContent = item.active ? "Archive" : "Restore";
     $("#advancedDeleteDetails").hidden = !editingItemId;
     $("#matchingDetails").open = Boolean(editingItemId);
+    $("#advancedTagsDetails").open = false;
+    renderCopyMatchingOptions(editingItemId);
+    renderAvoidItemsOptions(item.avoidWithItems, editingItemId);
+    renderGuidedMatchChips();
+    updateSelectedColorChip();
 
     const dialog = $("#itemDialog");
     if (typeof dialog.showModal === "function") {
@@ -577,6 +704,10 @@
 
   function saveItemFromForm(event) {
     event.preventDefault();
+    saveItemFromEditor({ generateAfter: false });
+  }
+
+  function saveItemFromEditor({ generateAfter }) {
     const item = collectItemFromForm();
     const error = validateItem(item);
     if (error) {
@@ -585,6 +716,7 @@
       return;
     }
 
+    let savedItemId = editingItemId;
     if (editingItemId) {
       const index = appState.wardrobe.findIndex((existing) => existing.id === editingItemId);
       if (index !== -1) {
@@ -597,33 +729,42 @@
       }
       showToast("Item saved.");
     } else {
-      appState.wardrobe.push({
+      const savedItem = {
         ...item,
         id: uid("item"),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      });
+      };
+      appState.wardrobe.push(savedItem);
+      savedItemId = savedItem.id;
       showToast("Item added.");
     }
 
     saveState();
     closeItemDialog();
     renderAll();
+    if (generateAfter && savedItemId) {
+      generateWithItem(savedItemId);
+    }
   }
 
   function collectItemFromForm() {
+    const primaryColor = $("#itemPrimaryColor").value.trim();
+    const secondaryColors = parseCsv($("#itemSecondaryColors").value);
+    const rawAvoidItems = parseCsv($("#itemAvoidWithItems").value);
+    const selectedAvoidItems = selectedOptions($("#avoidItemsSelect"));
     return normalizeItem({
       id: $("#itemId").value,
       name: $("#itemName").value.trim(),
       category: $("#itemCategory").value,
-      colors: parseCsv($("#itemColors").value),
+      colors: unique([primaryColor, ...secondaryColors].filter(Boolean)),
       tags: parseCsv($("#itemTags").value),
       occasions: $$("input[name='itemOccasion']:checked").map((input) => input.value),
       formality: Number($("#itemFormality").value),
       season: parseCsv($("#itemSeason").value),
       worksWithTags: parseCsv($("#itemWorksWithTags").value),
       avoidWithTags: parseCsv($("#itemAvoidWithTags").value),
-      avoidWithItems: resolveAvoidItemTokens(parseCsv($("#itemAvoidWithItems").value), editingItemId),
+      avoidWithItems: unique([...resolveAvoidItemTokens(rawAvoidItems, editingItemId), ...selectedAvoidItems]),
       imageUrl: $("#itemImageUrl").value.trim(),
       active: $("#itemActive").checked,
       notes: $("#itemNotes").value.trim()
@@ -633,12 +774,33 @@
   function validateItem(item) {
     if (!item.name) return "Name is required.";
     if (!item.category) return "Category is required.";
-    if (!item.colors.length && !item.tags.length) return "Add at least one color or tag.";
+    if (!item.colors.length) return "Primary color is required.";
     if (!item.occasions.length) return "Choose at least one occasion.";
     return "";
   }
 
   function handleItemFormClick(event) {
+    const templateButton = event.target.closest("[data-template-id]");
+    if (templateButton) {
+      applyTemplate(templateButton.dataset.templateId);
+      return;
+    }
+
+    const colorButton = event.target.closest("[data-color]");
+    if (colorButton) {
+      $("#itemPrimaryColor").value = colorButton.dataset.color;
+      updateSelectedColorChip();
+      return;
+    }
+
+    const matchButton = event.target.closest("[data-match-kind]");
+    if (matchButton) {
+      const target = matchButton.dataset.matchKind === "avoid" ? $("#itemAvoidWithTags") : $("#itemWorksWithTags");
+      appendCsvValues(target, parseCsv(matchButton.dataset.matchTags));
+      renderGuidedMatchChips();
+      return;
+    }
+
     const presetButton = event.target.closest("[data-occasion-preset]");
     if (presetButton) {
       applyOccasionPreset(presetButton.dataset.occasionPreset);
@@ -649,6 +811,37 @@
     if (tagButton) {
       appendCsvValue($("#itemTags"), tagButton.dataset.quickTag);
     }
+  }
+
+  function applyTemplate(templateId) {
+    const template = ITEM_TEMPLATES[templateId];
+    if (!template) return;
+    $("#itemCategory").value = template.category;
+    $("#itemFormality").value = template.formality;
+    $("#formalityOutput").value = template.formality;
+    mergeCsvValues($("#itemTags"), template.tags || []);
+    mergeCsvValues($("#itemWorksWithTags"), template.worksWithTags || []);
+    mergeCsvValues($("#itemAvoidWithTags"), template.avoidWithTags || []);
+    applyOccasions(template.occasions || []);
+    renderGuidedMatchChips();
+    showToast(`${template.label} template applied.`);
+  }
+
+  function copyMatchingFromSelectedItem() {
+    const source = findItem($("#copyMatchingSelect").value);
+    if (!source) {
+      showToast("Choose an item to copy from.");
+      return;
+    }
+    applyOccasions(source.occasions);
+    $("#itemFormality").value = source.formality;
+    $("#formalityOutput").value = source.formality;
+    $("#itemWorksWithTags").value = source.worksWithTags.join(", ");
+    $("#itemAvoidWithTags").value = source.avoidWithTags.join(", ");
+    $("#itemAvoidWithItems").value = formatAvoidItems(source.avoidWithItems).join(", ");
+    renderAvoidItemsOptions(source.avoidWithItems, editingItemId);
+    renderGuidedMatchChips();
+    showToast(`Copied matching from ${source.name}.`);
   }
 
   function applyOccasionPreset(preset) {
@@ -671,6 +864,86 @@
     }
     input.value = values.join(", ");
     input.focus();
+  }
+
+  function appendCsvValues(input, values) {
+    values.forEach((value) => appendCsvValue(input, value));
+  }
+
+  function mergeCsvValues(input, values) {
+    const existing = parseCsv(input.value);
+    values.forEach((value) => {
+      if (!existing.map(normalizeTag).includes(normalizeTag(value))) {
+        existing.push(value);
+      }
+    });
+    input.value = existing.join(", ");
+  }
+
+  function applyOccasions(occasions) {
+    const selected = new Set(occasions);
+    $$("input[name='itemOccasion']").forEach((input) => {
+      input.checked = selected.has(input.value);
+    });
+  }
+
+  function renderCopyMatchingOptions(currentId) {
+    const options = appState.wardrobe
+      .filter((item) => item.id !== currentId)
+      .sort(sortItems)
+      .map((item) => `<option value="${escapeAttribute(item.id)}">${escapeHtml(item.name)}</option>`)
+      .join("");
+    $("#copyMatchingSelect").innerHTML = `<option value="">Choose similar item</option>${options}`;
+  }
+
+  function renderAvoidItemsOptions(selectedValues = [], currentId = null) {
+    const selected = new Set(selectedValues.map(normalizeTag));
+    $("#avoidItemsSelect").innerHTML = appState.wardrobe
+      .filter((item) => item.id !== currentId)
+      .sort(sortItems)
+      .map((item) => {
+        const isSelected = selected.has(normalizeTag(item.id)) || selected.has(normalizeTag(item.name));
+        return `<option value="${escapeAttribute(item.id)}" ${isSelected ? "selected" : ""}>${escapeHtml(item.name)}</option>`;
+      })
+      .join("");
+  }
+
+  function renderGuidedMatchChips() {
+    const category = $("#itemCategory").value || "top";
+    const groups = MATCH_CHIPS[category] || MATCH_CHIPS.accessory;
+    const worksTags = new Set(parseCsv($("#itemWorksWithTags").value).map(normalizeTag));
+    const avoidTags = new Set(parseCsv($("#itemAvoidWithTags").value).map(normalizeTag));
+
+    $("#worksMatchChips").innerHTML = renderMatchButtons(groups.works, "works", worksTags);
+    $("#avoidMatchChips").innerHTML = renderMatchButtons(groups.avoid, "avoid", avoidTags) || `<span class="small-meta">No common avoid chips for this category.</span>`;
+  }
+
+  function renderMatchButtons(chips, kind, selectedTags) {
+    return chips.map(([label, tags]) => {
+      const isSelected = tags.some((tag) => selectedTags.has(normalizeTag(tag)));
+      return `<button class="mini-button ${isSelected ? "is-selected" : ""}" type="button" data-match-kind="${kind}" data-match-tags="${escapeAttribute(tags.join(", "))}">${escapeHtml(label)}</button>`;
+    }).join("");
+  }
+
+  function updateSelectedColorChip() {
+    const selected = normalizeTag($("#itemPrimaryColor").value);
+    $$("[data-color]").forEach((button) => {
+      button.classList.toggle("is-selected", normalizeTag(button.dataset.color) === selected);
+    });
+  }
+
+  function selectedOptions(select) {
+    return Array.from(select.selectedOptions || []).map((option) => option.value).filter(Boolean);
+  }
+
+  function generateWithItem(itemId) {
+    const item = findItem(itemId);
+    if (!item) return;
+    setActiveScreen("generate");
+    $("#occasionSelect").value = item.occasions[0] || "casual";
+    renderBuildAroundOptions();
+    $("#buildAroundSelect").value = item.id;
+    generateAndRender();
   }
 
   function duplicateFromDialog() {
@@ -881,9 +1154,6 @@
         return false;
       }
 
-      if (item.worksWithTags.length && !item.worksWithTags.some((tag) => otherSignals.has(normalizeTag(tag)))) {
-        return false;
-      }
     }
 
     return true;

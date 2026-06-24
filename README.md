@@ -56,9 +56,17 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 
 Installed PWA copies may need a refresh after deployment because iOS Safari can keep older service worker assets briefly.
 
+You can confirm the deployed version from the app:
+
+1. Open Fit Roulette.
+2. Go to Data.
+3. Check the visible app version under Theme.
+
 ## Export And Import Closet Data
 
 Fit Roulette stores your wardrobe, history, and banned combos in the browser's `localStorage`.
+
+The app uses the storage key `fitRoulette.v1`. Newer app versions safely add default settings inside that same record so existing wardrobes, history, and banned combos remain compatible.
 
 To back up:
 

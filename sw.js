@@ -1,4 +1,4 @@
-const CACHE_NAME = "fit-roulette-v3";
+const CACHE_NAME = "fit-roulette-v4";
 const APP_ASSETS = [
   "./",
   "./index.html",

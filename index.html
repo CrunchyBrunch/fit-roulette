@@ -94,6 +94,15 @@
           <div id="settingsStats" class="stats-grid"></div>
 
           <div class="settings-stack">
+            <label class="field">
+              <span>Theme</span>
+              <select id="themeSelect">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <p id="appVersion" class="small-meta"></p>
             <button id="exportBtn" class="secondary-button" type="button">Export JSON Backup</button>
             <button id="importBtn" class="secondary-button" type="button">Import JSON Backup</button>
             <input id="importFile" type="file" accept="application/json" hidden>
@@ -124,6 +133,19 @@
         <input id="itemId" type="hidden">
         <p id="formError" class="form-error" role="alert" hidden></p>
 
+        <section class="editor-section">
+          <div class="section-heading">
+            <h3>Start Fast</h3>
+            <p class="small-meta">Pick a template or copy matching from something similar.</p>
+          </div>
+          <div id="templateChips" class="quick-row" aria-label="Item templates"></div>
+          <label class="field">
+            <span>Copy matching from</span>
+            <select id="copyMatchingSelect"></select>
+          </label>
+          <button id="copyMatchingBtn" class="secondary-button compact" type="button">Copy Matching Rules</button>
+        </section>
+
         <label class="field">
           <span>Item name</span>
           <input id="itemName" type="text" required autocomplete="off" placeholder="Navy Dress Pants">
@@ -134,17 +156,16 @@
           <select id="itemCategory" required></select>
         </label>
 
-        <div class="two-column">
-          <label class="field">
-            <span>Colors</span>
-            <input id="itemColors" type="text" inputmode="text" autocomplete="off" placeholder="navy, gray" list="tagSuggestions">
-          </label>
-          <label class="field">
-            <span>Tags</span>
-            <input id="itemTags" type="text" inputmode="text" autocomplete="off" placeholder="polo, office, summer" list="tagSuggestions">
-          </label>
-        </div>
-        <div id="itemQuickTags" class="quick-row" aria-label="Quick tags"></div>
+        <label class="field">
+          <span>Primary color</span>
+          <input id="itemPrimaryColor" type="text" inputmode="text" autocomplete="off" placeholder="navy" list="tagSuggestions" required>
+        </label>
+        <div id="primaryColorChips" class="quick-row" aria-label="Primary color shortcuts"></div>
+
+        <label class="field">
+          <span>Secondary colors</span>
+          <input id="itemSecondaryColors" type="text" inputmode="text" autocomplete="off" placeholder="white, tan" list="tagSuggestions">
+        </label>
 
         <fieldset class="fieldset">
           <legend>Occasions</legend>
@@ -175,6 +196,32 @@
               <span>Season</span>
               <input id="itemSeason" type="text" autocomplete="off" placeholder="spring, summer">
             </label>
+
+            <div>
+              <p class="field-label">Works well with</p>
+              <div id="worksMatchChips" class="quick-row" aria-label="Works well with matching chips"></div>
+            </div>
+
+            <div>
+              <p class="field-label">Avoid with</p>
+              <div id="avoidMatchChips" class="quick-row" aria-label="Avoid matching chips"></div>
+            </div>
+
+            <label class="field">
+              <span>Never pair with item</span>
+              <select id="avoidItemsSelect" multiple></select>
+            </label>
+          </div>
+        </details>
+
+        <details id="advancedTagsDetails" class="details-block">
+          <summary>Advanced tags</summary>
+          <div class="details-content">
+            <label class="field">
+              <span>Raw tags</span>
+              <input id="itemTags" type="text" inputmode="text" autocomplete="off" placeholder="polo, office, summer" list="tagSuggestions">
+            </label>
+            <div id="itemQuickTags" class="quick-row" aria-label="Quick tags"></div>
 
             <label class="field">
               <span>Works with tags</span>
@@ -218,6 +265,7 @@
         <div class="dialog-actions">
           <button id="duplicateItemBtn" class="secondary-button" type="button">Duplicate</button>
           <button id="archiveItemBtn" class="secondary-button" type="button">Archive</button>
+          <button id="saveGenerateBtn" class="secondary-button" type="button">Save + Generate</button>
           <button class="primary-button" type="submit">Save Item</button>
         </div>
         <datalist id="tagSuggestions"></datalist>
