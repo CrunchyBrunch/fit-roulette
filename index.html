@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f8f5" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#101316" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Fit Roulette">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Fit Roulette</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
+    <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Local closet</p>
+          <h1>Fit Roulette</h1>
+        </div>
+        <button id="quickAddBtn" class="icon-button" type="button" aria-label="Add item">+</button>
+      </header>
+
+      <main class="app-main">
+        <section id="screen-generate" class="screen is-active" aria-labelledby="generateTitle">
+          <div class="screen-title-row">
+            <h2 id="generateTitle">Generate</h2>
+          </div>
+
+          <div class="control-panel">
+            <label class="field">
+              <span>Occasion</span>
+              <select id="occasionSelect"></select>
+            </label>
+
+            <label class="field">
+              <span>Build around item</span>
+              <select id="buildAroundSelect"></select>
+            </label>
+
+            <button id="generateBtn" class="primary-button" type="button">Generate Fit</button>
+          </div>
+
+          <article id="outfitResult" class="result-card empty-state"></article>
+
+          <div id="resultActions" class="action-grid" hidden>
+            <button id="logBtn" class="success-button" type="button">Looks Good, Log It</button>
+            <button id="rerollBtn" class="secondary-button" type="button">Reroll</button>
+            <button id="banBtn" class="danger-button" type="button">Never Suggest This Combo Again</button>
+          </div>
+        </section>
+
+        <section id="screen-closet" class="screen" aria-labelledby="closetTitle">
+          <div class="screen-title-row">
+            <h2 id="closetTitle">Closet</h2>
+            <button id="addItemBtn" class="secondary-button compact" type="button">Add Item</button>
+          </div>
+
+          <div class="filter-bar">
+            <label class="field search-field">
+              <span>Search</span>
+              <input id="closetSearch" type="search" autocomplete="off" placeholder="polo, navy, shoes">
+            </label>
+            <label class="field">
+              <span>Category</span>
+              <select id="closetCategory"></select>
+            </label>
+            <label class="toggle-row">
+              <input id="showInactive" type="checkbox">
+              <span>Show archived</span>
+            </label>
+          </div>
+
+          <div id="closetList" class="closet-list"></div>
+        </section>
+
+        <section id="screen-history" class="screen" aria-labelledby="historyTitle">
+          <div class="screen-title-row">
+            <h2 id="historyTitle">History</h2>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+
+        <section id="screen-settings" class="screen" aria-labelledby="settingsTitle">
+          <div class="screen-title-row">
+            <h2 id="settingsTitle">Settings</h2>
+          </div>
+
+          <div id="settingsStats" class="stats-grid"></div>
+
+          <div class="settings-stack">
+            <button id="exportBtn" class="secondary-button" type="button">Export JSON Backup</button>
+            <button id="importBtn" class="secondary-button" type="button">Import JSON Backup</button>
+            <input id="importFile" type="file" accept="application/json" hidden>
+            <button id="clearBansBtn" class="secondary-button" type="button">Clear Banned Combos</button>
+            <button id="resetDemoBtn" class="danger-button" type="button">Reset Demo Data</button>
+          </div>
+        </section>
+      </main>
+
+      <nav class="tabbar" aria-label="Main navigation">
+        <button class="tab-button is-active" type="button" data-screen="generate">Generate</button>
+        <button class="tab-button" type="button" data-screen="closet">Closet</button>
+        <button class="tab-button" type="button" data-screen="history">History</button>
+        <button class="tab-button" type="button" data-screen="settings">Data</button>
+      </nav>
+    </div>
+
+    <dialog id="itemDialog" class="item-dialog">
+      <form id="itemForm" class="item-form" method="dialog" novalidate>
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow" id="itemDialogMode">Closet item</p>
+            <h2 id="itemDialogTitle">Add Item</h2>
+          </div>
+          <button id="closeItemDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
+        </div>
+
+        <input id="itemId" type="hidden">
+        <p id="formError" class="form-error" role="alert" hidden></p>
+
+        <label class="field">
+          <span>Item name</span>
+          <input id="itemName" type="text" required autocomplete="off" placeholder="Navy Dress Pants">
+        </label>
+
+        <label class="field">
+          <span>Category</span>
+          <select id="itemCategory" required></select>
+        </label>
+
+        <div class="two-column">
+          <label class="field">
+            <span>Colors</span>
+            <input id="itemColors" type="text" inputmode="text" autocomplete="off" placeholder="navy, gray" list="tagSuggestions">
+          </label>
+          <label class="field">
+            <span>Tags</span>
+            <input id="itemTags" type="text" inputmode="text" autocomplete="off" placeholder="polo, office, summer" list="tagSuggestions">
+          </label>
+        </div>
+        <div id="itemQuickTags" class="quick-row" aria-label="Quick tags"></div>
+
+        <fieldset class="fieldset">
+          <legend>Occasions</legend>
+          <div class="quick-row" aria-label="Occasion presets">
+            <button class="mini-button" type="button" data-occasion-preset="office">Office</button>
+            <button class="mini-button" type="button" data-occasion-preset="casual">Casual</button>
+            <button class="mini-button" type="button" data-occasion-preset="all">All</button>
+            <button class="mini-button" type="button" data-occasion-preset="clear">Clear</button>
+          </div>
+          <div id="itemOccasions" class="check-grid"></div>
+        </fieldset>
+
+        <label class="toggle-row availability-toggle">
+          <input id="itemActive" type="checkbox">
+          <span>Available now</span>
+        </label>
+
+        <details id="matchingDetails" class="details-block">
+          <summary>Matching</summary>
+          <div class="details-content">
+            <label class="field range-field">
+              <span>Formality</span>
+              <input id="itemFormality" type="range" min="1" max="10" step="1" value="5">
+              <output id="formalityOutput" for="itemFormality">5</output>
+            </label>
+
+            <label class="field">
+              <span>Season</span>
+              <input id="itemSeason" type="text" autocomplete="off" placeholder="spring, summer">
+            </label>
+
+            <label class="field">
+              <span>Works with tags</span>
+              <input id="itemWorksWithTags" type="text" inputmode="text" autocomplete="off" placeholder="navy, khaki, jeans" list="tagSuggestions">
+            </label>
+
+            <label class="field">
+              <span>Avoid with tags</span>
+              <input id="itemAvoidWithTags" type="text" inputmode="text" autocomplete="off" placeholder="cargo, athletic" list="tagSuggestions">
+            </label>
+
+            <label class="field">
+              <span>Avoid with items</span>
+              <input id="itemAvoidWithItems" type="text" autocomplete="off" placeholder="Black Dress Shoes">
+            </label>
+          </div>
+        </details>
+
+        <details class="details-block">
+          <summary>Extras</summary>
+          <div class="details-content">
+            <label class="field">
+              <span>Image URL or path</span>
+              <input id="itemImageUrl" type="text" autocomplete="off" placeholder="images/navy-pants.jpg">
+            </label>
+
+            <label class="field">
+              <span>Notes</span>
+              <textarea id="itemNotes" rows="3" placeholder="Fit, fabric, alterations"></textarea>
+            </label>
+          </div>
+        </details>
+
+        <details id="advancedDeleteDetails" class="details-block danger-zone">
+          <summary>Advanced</summary>
+          <div class="details-content">
+            <button id="permanentDeleteBtn" class="danger-button" type="button">Permanently Delete Item</button>
+          </div>
+        </details>
+
+        <div class="dialog-actions">
+          <button id="duplicateItemBtn" class="secondary-button" type="button">Duplicate</button>
+          <button id="archiveItemBtn" class="secondary-button" type="button">Archive</button>
+          <button class="primary-button" type="submit">Save Item</button>
+        </div>
+        <datalist id="tagSuggestions"></datalist>
+      </form>
+    </dialog>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
