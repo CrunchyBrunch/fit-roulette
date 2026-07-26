@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.3.1";
 
   const CATEGORIES = {
     top: "Top",
@@ -83,14 +83,27 @@
 
   const OCCASION_ORDER = ["work", "friday", "casual", "date", "gym"];
   const THEME_VALUES = ["system", "light", "dark"];
+  const WEATHER_CONDITIONS = ["sunny", "cloudy", "rain", "snow", "windy"];
+  const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = ["black", "white", "off-white", "navy", "light blue", "gray", "dark gray", "khaki", "tan", "brown", "olive"];
+  const FEEDBACK_REASONS = [
+    ["colors", "These colors do not work together"],
+    ["top_pants", "Top and pants do not work together"],
+    ["shoes", "Shoes do not work with the outfit"],
+    ["belt_shoes", "Belt and shoes do not match"],
+    ["too_formal", "Too formal"],
+    ["too_casual", "Too casual"],
+    ["weather", "Wrong for the weather"],
+    ["exact", "I only dislike this exact outfit"],
+    ["other", "Other"]
+  ];
 
   const ITEM_TEMPLATES = {
     polo: { label: "Polo", category: "top", tags: ["polo", "smart casual"], occasions: ["work", "friday", "casual", "date"], formality: 6, worksWithTags: ["navy", "gray", "black", "khaki", "jeans", "olive", "brown"] },
     tshirt: { label: "T-Shirt", category: "top", tags: ["t-shirt", "casual"], occasions: ["casual", "gym"], formality: 3, worksWithTags: ["jeans", "black", "gray", "navy", "olive"] },
-    dress_pants: { label: "Dress Pants", category: "pants", tags: ["dress pants", "office", "pressed"], occasions: ["work", "friday", "date"], formality: 7, worksWithTags: ["polo", "dress shoes", "belt", "black", "navy", "gray", "tan"], avoidWithTags: ["athletic", "running"] },
-    jeans: { label: "Jeans", category: "pants", tags: ["jeans", "denim", "casual"], occasions: ["friday", "casual", "date", "gym"], formality: 4, worksWithTags: ["polo", "t-shirt", "sneakers", "boots"] },
-    cargos: { label: "Cargos", category: "pants", tags: ["cargo", "cargos", "casual", "errands"], occasions: ["casual", "gym"], formality: 3, worksWithTags: ["sneakers", "boots", "black", "gray", "olive"], avoidWithTags: ["dress shoes", "pressed"] },
+    dress_pants: { label: "Dress Pants", category: "pants", tags: ["dress pants", "office", "pressed"], occasions: ["work", "friday", "date"], formality: 7, beltMode: "optional", worksWithTags: ["polo", "dress shoes", "belt", "black", "navy", "gray", "tan"], avoidWithTags: ["athletic", "running"] },
+    jeans: { label: "Jeans", category: "pants", tags: ["jeans", "denim", "casual"], occasions: ["friday", "casual", "date", "gym"], formality: 4, beltMode: "optional", worksWithTags: ["polo", "t-shirt", "sneakers", "boots"] },
+    cargos: { label: "Cargos", category: "pants", tags: ["cargo", "cargos", "casual", "errands"], occasions: ["casual", "gym"], formality: 3, beltMode: "optional", worksWithTags: ["sneakers", "boots", "black", "gray", "olive"], avoidWithTags: ["dress shoes", "pressed"] },
     dress_shoes: { label: "Dress Shoes", category: "shoes", tags: ["dress shoes", "office", "date"], occasions: ["work", "friday", "date"], formality: 8, worksWithTags: ["dress pants", "belt", "black", "navy", "gray", "khaki"], avoidWithTags: ["cargo", "athletic", "running"] },
     sneakers: { label: "Sneakers", category: "shoes", tags: ["sneakers", "casual"], occasions: ["friday", "casual", "gym"], formality: 3, worksWithTags: ["jeans", "cargo", "black", "gray", "navy"] },
     boots: { label: "Boots", category: "shoes", tags: ["boots", "casual", "date"], occasions: ["friday", "casual", "date"], formality: 5, worksWithTags: ["jeans", "khaki", "brown", "olive", "navy"] },
@@ -162,6 +175,10 @@
 
   let appState = loadState();
   let currentOutfit = null;
+  let resultState = "empty";
+  let pendingBanFeedback = null;
+  let swapTargetItemId = null;
+  let logInProgress = false;
   let editingItemId = null;
   let closetFilters = {
     search: "",
@@ -194,9 +211,24 @@
 
     $("#addItemBtn").addEventListener("click", () => openItemDialog());
     $("#generateBtn").addEventListener("click", generateAndRender);
-    $("#rerollBtn").addEventListener("click", generateAndRender);
+    $("#rerollBtn").addEventListener("click", () => generateAndRender({ comparePrevious: true }));
     $("#logBtn").addEventListener("click", logCurrentOutfit);
     $("#banBtn").addEventListener("click", banCurrentCombo);
+    $("#outfitResult").addEventListener("click", handleResultAction);
+    $("#manualLogGenerateBtn").addEventListener("click", openManualLogDialog);
+    $("#manualLogHistoryBtn").addEventListener("click", openManualLogDialog);
+    $("#manualLogForm").addEventListener("submit", saveManualLog);
+    $("#closeManualLogBtn").addEventListener("click", () => closeDialog($("#manualLogDialog")));
+    $("#manualIncludeUnavailable").addEventListener("change", renderManualItemPicker);
+    $("#swapChoices").addEventListener("click", handleSwapChoice);
+    $("#closeSwapDialogBtn").addEventListener("click", () => closeDialog($("#swapDialog")));
+    $("#feedbackForm").addEventListener("submit", saveBanFeedback);
+    $("#feedbackForm").addEventListener("change", updateFeedbackOtherVisibility);
+    $("#dismissFeedbackBtn").addEventListener("click", finishBanFeedback);
+    $("#skipFeedbackBtn").addEventListener("click", finishBanFeedback);
+    $("#useWeather").addEventListener("change", saveWeatherSettings);
+    $("#weatherTemperature").addEventListener("change", saveWeatherSettings);
+    $("#weatherCondition").addEventListener("change", saveWeatherSettings);
 
     $("#closetSearch").addEventListener("input", (event) => {
       closetFilters.search = event.target.value;
@@ -225,7 +257,10 @@
 
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
-    $("#itemCategory").addEventListener("change", () => renderGuidedMatchChips());
+    $("#itemCategory").addEventListener("change", () => {
+      renderGuidedMatchChips();
+      renderBeltModeControl();
+    });
     $("#copyMatchingBtn").addEventListener("click", copyMatchingFromSelectedItem);
     $("#saveGenerateBtn").addEventListener("click", () => saveItemFromEditor({ generateAfter: true }));
     $("#closeItemDialogBtn").addEventListener("click", closeItemDialog);
@@ -268,6 +303,28 @@
     $("#primaryColorChips").innerHTML = COLOR_OPTIONS.map((color) => {
       return `<button class="mini-button" type="button" data-color="${escapeAttribute(color)}">${escapeHtml(color)}</button>`;
     }).join("");
+
+    $("#manualLogOccasion").innerHTML = OCCASION_ORDER.map((id) => {
+      return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
+    }).join("");
+
+    $("#itemWeatherConditions").innerHTML = WEATHER_CONDITIONS.map((condition) => {
+      return `
+        <label class="check-pill compact-check">
+          <input type="checkbox" name="itemWeatherCondition" value="${condition}">
+          <span>${escapeHtml(capitalize(condition))}</span>
+        </label>
+      `;
+    }).join("");
+
+    $("#feedbackChoices").innerHTML = FEEDBACK_REASONS.map(([value, label]) => {
+      return `
+        <label class="feedback-choice">
+          <input type="radio" name="feedbackReason" value="${value}">
+          <span>${escapeHtml(label)}</span>
+        </label>
+      `;
+    }).join("");
   }
 
   function renderAll() {
@@ -276,6 +333,7 @@
     renderCloset();
     renderHistory();
     renderSettings();
+    renderWeatherControls();
     renderResult();
   }
 
@@ -318,12 +376,18 @@
 
   function createDefaultState() {
     return normalizeState({
-      version: 2,
+      version: 3,
       wardrobe: demoWardrobe(),
       history: [],
       bannedCombos: [],
+      feedback: [],
       settings: {
-        theme: "system"
+        theme: "system",
+        weather: {
+          enabled: false,
+          temperature: null,
+          condition: "sunny"
+        }
       }
     });
   }
@@ -331,10 +395,11 @@
   function normalizeState(raw) {
     const settings = normalizeSettings(raw?.settings);
     const normalized = {
-      version: Math.max(2, Number(raw?.version) || 1),
+      version: Math.max(3, Number(raw?.version) || 1),
       wardrobe: Array.isArray(raw?.wardrobe) ? raw.wardrobe.map(normalizeItem).filter(Boolean) : [],
       history: Array.isArray(raw?.history) ? raw.history.map(normalizeHistoryRecord).filter(Boolean) : [],
       bannedCombos: Array.isArray(raw?.bannedCombos) ? raw.bannedCombos.map(normalizeBannedCombo).filter(Boolean) : [],
+      feedback: Array.isArray(raw?.feedback) ? raw.feedback.map(normalizeFeedbackRecord).filter(Boolean) : [],
       settings
     };
 
@@ -347,7 +412,15 @@
 
   function normalizeSettings(settings) {
     const theme = THEME_VALUES.includes(settings?.theme) ? settings.theme : "system";
-    return { theme };
+    const weather = settings?.weather && typeof settings.weather === "object" ? settings.weather : {};
+    return {
+      theme,
+      weather: {
+        enabled: weather.enabled === true,
+        temperature: nullableNumber(weather.temperature, -30, 130),
+        condition: WEATHER_CONDITIONS.includes(weather.condition) ? weather.condition : "sunny"
+      }
+    };
   }
 
   function normalizeItem(item) {
@@ -367,6 +440,12 @@
       worksWithTags: toArray(item.worksWithTags),
       avoidWithTags: toArray(item.avoidWithTags),
       avoidWithItems: toArray(item.avoidWithItems),
+      beltMode: category === "pants" && BELT_MODES.includes(item.beltMode) ? item.beltMode : (category === "pants" ? "optional" : ""),
+      minTemperature: nullableNumber(item.minTemperature, -30, 130),
+      maxTemperature: nullableNumber(item.maxTemperature, -30, 130),
+      suitableConditions: toArray(item.suitableConditions).map(normalizeTag).filter((condition) => WEATHER_CONDITIONS.includes(condition)),
+      rainSafe: typeof item.rainSafe === "boolean" ? item.rainSafe : null,
+      warmthLevel: nullableNumber(item.warmthLevel, 1, 5),
       imageUrl: stringOr(item.imageUrl || item.image || "", ""),
       lastWorn: validDateOnly(item.lastWorn) || null,
       active: item.active !== false && item.unavailable !== true,
@@ -385,7 +464,9 @@
       date: stringOr(record.date, new Date().toISOString()),
       occasion: normalizeOccasionToken(record.occasion) || "casual",
       itemIds,
-      itemSnapshots: Array.isArray(record.itemSnapshots) ? record.itemSnapshots : []
+      itemSnapshots: Array.isArray(record.itemSnapshots) ? record.itemSnapshots : [],
+      source: record.source === "manual" ? "manual" : "generated",
+      note: stringOr(record.note, "")
     };
   }
 
@@ -398,6 +479,20 @@
       itemIds,
       occasion: normalizeOccasionToken(combo.occasion) || "",
       createdAt: stringOr(combo.createdAt, new Date().toISOString())
+    };
+  }
+
+  function normalizeFeedbackRecord(record) {
+    if (!record || typeof record !== "object") return null;
+    const validReasons = FEEDBACK_REASONS.map(([value]) => value);
+    return {
+      id: stringOr(record.id, uid("feedback")),
+      bannedComboId: stringOr(record.bannedComboId, ""),
+      reason: validReasons.includes(record.reason) ? record.reason : "other",
+      itemIds: unique(toArray(record.itemIds).map(String)),
+      pairItemIds: unique(toArray(record.pairItemIds).map(String)).slice(0, 2),
+      note: stringOr(record.note, ""),
+      createdAt: stringOr(record.createdAt, new Date().toISOString())
     };
   }
 
@@ -461,6 +556,22 @@
     const card = $("#outfitResult");
     const actions = $("#resultActions");
 
+    if (resultState === "logged") {
+      card.classList.remove("empty-state");
+      card.innerHTML = `
+        <div class="log-success" role="status">
+          <span class="success-mark" aria-hidden="true">&#10003;</span>
+          <div>
+            <h2>Fit logged.</h2>
+            <p>Make the day great.</p>
+          </div>
+          <button class="primary-button" type="button" data-result-action="generate-another">Generate Another</button>
+        </div>
+      `;
+      actions.hidden = true;
+      return;
+    }
+
     if (!currentOutfit) {
       card.classList.add("empty-state");
       card.innerHTML = "<p>No outfit yet.</p>";
@@ -477,7 +588,7 @@
 
     const occasion = OCCASIONS[currentOutfit.occasion];
     const buildAround = currentOutfit.buildAroundId ? findItem(currentOutfit.buildAroundId) : null;
-    const buildChip = buildAround ? `<span class="chip accent">Built around ${escapeHtml(buildAround.name)}</span>` : "";
+    const buildChip = buildAround ? `<span class="chip accent">Locked: ${escapeHtml(buildAround.name)}</span>` : "";
 
     card.classList.remove("empty-state");
     card.innerHTML = `
@@ -486,31 +597,44 @@
           <p class="eyebrow">${escapeHtml(occasion.label)}</p>
           <h2>Today&apos;s fit</h2>
         </div>
+        ${weatherResultLabel()}
       </div>
       <div class="chip-row">${buildChip}</div>
       <div class="result-list">
-        ${currentOutfit.items.map(renderResultItem).join("")}
+        ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit)).join("")}
       </div>
     `;
     actions.hidden = false;
   }
 
-  function renderResultItem(item) {
-    const chips = [...item.colors, ...item.tags].slice(0, 5).map(renderChip).join("");
-    const image = item.imageUrl
-      ? `<img src="${escapeAttribute(item.imageUrl)}" alt="">`
-      : escapeHtml(itemInitials(item));
+  function renderResultItem(item, outfit) {
+    const changed = toArray(outfit.changedItemIds).includes(item.id);
+    const locked = outfit.buildAroundId === item.id;
+    const color = item.colors[0] ? `<span>${escapeHtml(item.colors[0])}</span>` : "";
 
     return `
-      <div class="result-item">
-        <div class="item-thumb">${image}</div>
-        <div>
+      <div class="result-item ${changed ? "is-changed" : ""}" data-result-item-id="${escapeAttribute(item.id)}">
+        <div class="result-item-copy">
           <p class="item-kicker">${escapeHtml(CATEGORIES[item.category] || item.category)}</p>
           <h3>${escapeHtml(item.name)}</h3>
-          <div class="chip-row">${chips}</div>
+          ${color}
         </div>
+        <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}" ${locked ? "disabled" : ""}>
+          ${locked ? "Locked" : "Swap"}
+        </button>
       </div>
     `;
+  }
+
+  function handleResultAction(event) {
+    const button = event.target.closest("[data-result-action]");
+    if (!button) return;
+    if (button.dataset.resultAction === "generate-another") {
+      resultState = "empty";
+      generateAndRender();
+    } else if (button.dataset.resultAction === "swap") {
+      openSwapDialog(button.dataset.itemId);
+    }
   }
 
   function renderCloset() {
@@ -578,13 +702,14 @@
           <div class="history-topline">
             <div>
               <h3>${escapeHtml(formatLongDate(record.date))}</h3>
-              <p class="small-meta">${escapeHtml(OCCASIONS[record.occasion]?.label || record.occasion)}</p>
+              <p class="small-meta">${escapeHtml(OCCASIONS[record.occasion]?.label || record.occasion)}${record.source === "manual" ? " - Manual log" : ""}</p>
             </div>
             <button class="secondary-button" type="button" data-action="delete-log">Delete</button>
           </div>
           <div class="chip-row">
             ${items.map((item) => renderChip(item.name)).join("")}
           </div>
+          ${record.note ? `<p class="history-note">${escapeHtml(record.note)}</p>` : ""}
         </article>
       `;
     }).join("");
@@ -618,6 +743,34 @@
     } else {
       document.documentElement.dataset.theme = resolvedTheme;
     }
+  }
+
+  function renderWeatherControls() {
+    const weather = appState.settings.weather;
+    $("#useWeather").checked = weather.enabled;
+    $("#weatherTemperature").value = weather.temperature ?? "";
+    $("#weatherCondition").value = weather.condition;
+    $("#weatherInputs").hidden = !weather.enabled;
+    $("#weatherSummary").textContent = weather.enabled
+      ? `${weather.temperature ?? "--"}°F, ${capitalize(weather.condition)}`
+      : "Off";
+  }
+
+  function saveWeatherSettings() {
+    appState.settings.weather = {
+      enabled: $("#useWeather").checked,
+      temperature: nullableNumber($("#weatherTemperature").value, -30, 130),
+      condition: WEATHER_CONDITIONS.includes($("#weatherCondition").value) ? $("#weatherCondition").value : "sunny"
+    };
+    saveState();
+    renderWeatherControls();
+  }
+
+  function weatherResultLabel() {
+    const weather = appState.settings.weather;
+    if (!weather.enabled) return "";
+    const temperature = weather.temperature === null ? "" : `${weather.temperature}° `;
+    return `<span class="weather-badge">${escapeHtml(`${temperature}${capitalize(weather.condition)}`)}</span>`;
   }
 
   function handleClosetAction(event) {
@@ -667,6 +820,16 @@
     $("#itemWorksWithTags").value = item.worksWithTags.join(", ");
     $("#itemAvoidWithTags").value = item.avoidWithTags.join(", ");
     $("#itemAvoidWithItems").value = formatAvoidItems(item.avoidWithItems).join(", ");
+    $$("input[name='itemBeltMode']").forEach((input) => {
+      input.checked = input.value === item.beltMode;
+    });
+    $("#itemMinTemperature").value = item.minTemperature ?? "";
+    $("#itemMaxTemperature").value = item.maxTemperature ?? "";
+    $("#itemRainSafe").value = item.rainSafe === true ? "yes" : item.rainSafe === false ? "no" : "";
+    $("#itemWarmthLevel").value = item.warmthLevel ?? "";
+    $$("input[name='itemWeatherCondition']").forEach((input) => {
+      input.checked = item.suitableConditions.includes(input.value);
+    });
     $("#itemImageUrl").value = item.imageUrl || "";
     $("#itemNotes").value = item.notes || "";
     $("#itemActive").checked = item.active !== false;
@@ -686,6 +849,7 @@
     renderCopyMatchingOptions(editingItemId);
     renderAvoidItemsOptions(item.avoidWithItems, editingItemId);
     renderGuidedMatchChips();
+    renderBeltModeControl();
     updateSelectedColorChip();
 
     const dialog = $("#itemDialog");
@@ -765,6 +929,12 @@
       worksWithTags: parseCsv($("#itemWorksWithTags").value),
       avoidWithTags: parseCsv($("#itemAvoidWithTags").value),
       avoidWithItems: unique([...resolveAvoidItemTokens(rawAvoidItems, editingItemId), ...selectedAvoidItems]),
+      beltMode: $("input[name='itemBeltMode']:checked")?.value || "optional",
+      minTemperature: nullableNumber($("#itemMinTemperature").value, -30, 130),
+      maxTemperature: nullableNumber($("#itemMaxTemperature").value, -30, 130),
+      suitableConditions: $$("input[name='itemWeatherCondition']:checked").map((input) => input.value),
+      rainSafe: $("#itemRainSafe").value === "yes" ? true : $("#itemRainSafe").value === "no" ? false : null,
+      warmthLevel: nullableNumber($("#itemWarmthLevel").value, 1, 5),
       imageUrl: $("#itemImageUrl").value.trim(),
       active: $("#itemActive").checked,
       notes: $("#itemNotes").value.trim()
@@ -776,6 +946,9 @@
     if (!item.category) return "Category is required.";
     if (!item.colors.length) return "Primary color is required.";
     if (!item.occasions.length) return "Choose at least one occasion.";
+    if (item.minTemperature !== null && item.maxTemperature !== null && item.minTemperature > item.maxTemperature) {
+      return "Minimum temperature must be lower than maximum temperature.";
+    }
     return "";
   }
 
@@ -822,8 +995,13 @@
     mergeCsvValues($("#itemTags"), template.tags || []);
     mergeCsvValues($("#itemWorksWithTags"), template.worksWithTags || []);
     mergeCsvValues($("#itemAvoidWithTags"), template.avoidWithTags || []);
+    if (template.category === "pants") {
+      const beltInput = $(`input[name='itemBeltMode'][value='${template.beltMode || "optional"}']`);
+      if (beltInput) beltInput.checked = true;
+    }
     applyOccasions(template.occasions || []);
     renderGuidedMatchChips();
+    renderBeltModeControl();
     showToast(`${template.label} template applied.`);
   }
 
@@ -839,9 +1017,29 @@
     $("#itemWorksWithTags").value = source.worksWithTags.join(", ");
     $("#itemAvoidWithTags").value = source.avoidWithTags.join(", ");
     $("#itemAvoidWithItems").value = formatAvoidItems(source.avoidWithItems).join(", ");
+    if (source.category === "pants" && $("#itemCategory").value === "pants") {
+      const beltInput = $(`input[name='itemBeltMode'][value='${source.beltMode}']`);
+      if (beltInput) beltInput.checked = true;
+    }
+    $("#itemMinTemperature").value = source.minTemperature ?? "";
+    $("#itemMaxTemperature").value = source.maxTemperature ?? "";
+    $("#itemRainSafe").value = source.rainSafe === true ? "yes" : source.rainSafe === false ? "no" : "";
+    $("#itemWarmthLevel").value = source.warmthLevel ?? "";
+    $$("input[name='itemWeatherCondition']").forEach((input) => {
+      input.checked = source.suitableConditions.includes(input.value);
+    });
     renderAvoidItemsOptions(source.avoidWithItems, editingItemId);
     renderGuidedMatchChips();
     showToast(`Copied matching from ${source.name}.`);
+  }
+
+  function renderBeltModeControl() {
+    const isBottom = $("#itemCategory").value === "pants";
+    $("#beltModeFieldset").hidden = !isBottom;
+    if (isBottom && !$("input[name='itemBeltMode']:checked")) {
+      const optional = $("input[name='itemBeltMode'][value='optional']");
+      if (optional) optional.checked = true;
+    }
   }
 
   function applyOccasionPreset(preset) {
@@ -946,6 +1144,90 @@
     generateAndRender();
   }
 
+  function openSwapDialog(itemId) {
+    if (!currentOutfit || currentOutfit.error || currentOutfit.buildAroundId === itemId) return;
+    const currentItem = currentOutfit.items.find((item) => item.id === itemId);
+    if (!currentItem) return;
+
+    const choices = validSwapChoices(currentItem);
+    if (!choices.length) {
+      showToast("No compatible swaps are available.");
+      return;
+    }
+    if (choices.length === 1) {
+      applySwapChoice(currentItem.id, choices[0]);
+      return;
+    }
+
+    swapTargetItemId = currentItem.id;
+    $("#swapDialogTitle").textContent = `Swap ${CATEGORIES[currentItem.category] || "Item"}`;
+    $("#swapChoices").innerHTML = choices.slice(0, 8).map((choice) => {
+      const replacement = choice.items.find((item) => item.id === choice.replacementId);
+      return `
+        <button class="swap-choice" type="button" data-replacement-id="${escapeAttribute(choice.replacementId)}">
+          <span>
+            <strong>${escapeHtml(replacement.name)}</strong>
+            <small>${escapeHtml(replacement.colors[0] || CATEGORIES[replacement.category])}</small>
+          </span>
+          <span aria-hidden="true">&rsaquo;</span>
+        </button>
+      `;
+    }).join("");
+    openDialog($("#swapDialog"));
+  }
+
+  function validSwapChoices(currentItem) {
+    const occasionId = currentOutfit.occasion;
+    return appState.wardrobe
+      .filter((item) => item.active && item.category === currentItem.category && item.id !== currentItem.id)
+      .filter((item) => matchesOccasion(item, occasionId))
+      .map((replacement) => {
+        const replaced = currentOutfit.items.map((item) => item.id === currentItem.id ? replacement : item);
+        const reconciled = reconcileBeltForOutfit(replaced, occasionId, currentOutfit.buildAroundId);
+        if (!reconciled || !isCompatibleOutfit(reconciled, occasionId)) return null;
+        return {
+          replacementId: replacement.id,
+          items: sortOutfitItems(reconciled),
+          score: scoreOutfit(reconciled, occasionId)
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score);
+  }
+
+  function handleSwapChoice(event) {
+    const button = event.target.closest("[data-replacement-id]");
+    if (!button || !swapTargetItemId) return;
+    const currentItem = currentOutfit?.items.find((item) => item.id === swapTargetItemId);
+    const choice = currentItem
+      ? validSwapChoices(currentItem).find((candidate) => candidate.replacementId === button.dataset.replacementId)
+      : null;
+    if (!choice) {
+      closeDialog($("#swapDialog"));
+      showToast("That swap is no longer available.");
+      return;
+    }
+    applySwapChoice(swapTargetItemId, choice);
+  }
+
+  function applySwapChoice(previousItemId, choice) {
+    const previousItems = currentOutfit.items;
+    currentOutfit = {
+      ...currentOutfit,
+      items: choice.items,
+      score: choice.score,
+      changedItemIds: changedItemIds(previousItems, choice.items)
+    };
+    resultState = "outfit";
+    swapTargetItemId = null;
+    closeDialog($("#swapDialog"));
+    renderResult();
+    scrollResultIntoView();
+    flashChangedRows();
+    const changedItem = currentOutfit.items.find((item) => item.id === choice.replacementId);
+    showToast(changedItem ? `Swapped to ${changedItem.name}.` : "Item swapped.");
+  }
+
   function duplicateFromDialog() {
     if (!editingItemId) return;
     closeItemDialog();
@@ -985,11 +1267,21 @@
     showToast("Item permanently deleted.");
   }
 
-  function generateAndRender() {
+  function generateAndRender(options = {}) {
     const occasionId = $("#occasionSelect").value;
     const buildAroundId = $("#buildAroundSelect").value;
+    const previousItems = currentOutfit?.items || [];
     currentOutfit = pickOutfit(occasionId, buildAroundId);
+    resultState = currentOutfit?.error ? "error" : "outfit";
+    logInProgress = false;
+    if (!currentOutfit.error) {
+      currentOutfit.changedItemIds = options.comparePrevious
+        ? changedItemIds(previousItems, currentOutfit.items)
+        : currentOutfit.items.map((item) => item.id);
+    }
     renderResult();
+    scrollResultIntoView();
+    flashChangedRows();
   }
 
   function pickOutfit(occasionId, buildAroundId) {
@@ -1031,6 +1323,7 @@
 
   function addScoredCandidate(map, outfit, occasionId, buildAroundId) {
     if (!outfit || !outfit.length) return;
+    if (buildAroundId && !outfit.some((item) => item.id === buildAroundId)) return;
     if (!isCompatibleOutfit(outfit, occasionId)) return;
     const key = comboKey(outfit.map((item) => item.id));
     if (map.has(key)) return;
@@ -1062,7 +1355,9 @@
       selected.push(buildAround);
     }
 
-    return uniqueItems(selected);
+    return reconcileBeltForOutfit(uniqueItems(selected), occasion.id, buildAround?.id || "", {
+      dropOptionalBelt: Math.random() < 0.3
+    });
   }
 
   function enumerateOutfits(occasion, buildAround, maxCombos) {
@@ -1086,7 +1381,15 @@
         if (buildAround && !usedIds.has(buildAround.id)) {
           outfit.push(buildAround);
         }
-        results.push(uniqueItems(outfit));
+        const uniqueOutfit = uniqueItems(outfit);
+        const reconciled = reconcileBeltForOutfit(uniqueOutfit, occasion.id, buildAround?.id || "");
+        if (reconciled) results.push(reconciled);
+        const withoutOptionalBelt = reconcileBeltForOutfit(uniqueOutfit, occasion.id, buildAround?.id || "", {
+          dropOptionalBelt: true
+        });
+        if (withoutOptionalBelt && comboKey(withoutOptionalBelt.map((item) => item.id)) !== comboKey((reconciled || []).map((item) => item.id))) {
+          results.push(withoutOptionalBelt);
+        }
         return;
       }
 
@@ -1135,6 +1438,12 @@
     if (!items.length || isComboBanned(items)) return false;
 
     const occasion = OCCASIONS[occasionId];
+    if (!occasion) return false;
+    const bottoms = items.find((item) => item.category === "pants");
+    const belts = items.filter((item) => item.category === "belt");
+    if (bottoms?.beltMode === "none" && belts.length) return false;
+    if (bottoms?.beltMode === "required" && occasionSupportsBelts(occasionId) && !belts.length) return false;
+
     const formalities = items.map((item) => item.formality);
     if (Math.max(...formalities) - Math.min(...formalities) > occasion.formalityGap) {
       return false;
@@ -1142,6 +1451,7 @@
 
     for (const item of items) {
       if (!matchesOccasion(item, occasionId)) return false;
+      if (isWeatherClearlyUnsuitable(item)) return false;
 
       const otherItems = items.filter((other) => other.id !== item.id);
       const otherSignals = new Set(otherItems.flatMap(itemSignals));
@@ -1182,6 +1492,7 @@
 
     const sharedTagCount = countSharedSignals(items);
     score += Math.min(sharedTagCount, 8) * 1.5;
+    score += items.reduce((sum, item) => sum + weatherScore(item), 0);
 
     const exactLastWorn = lastExactOutfitDate(items);
     const exactDays = daysSince(exactLastWorn);
@@ -1208,6 +1519,85 @@
     return score;
   }
 
+  function reconcileBeltForOutfit(items, occasionId, buildAroundId = "", options = {}) {
+    let reconciled = uniqueItems(items);
+    const bottoms = reconciled.find((item) => item.category === "pants");
+    if (!bottoms) return reconciled;
+
+    const belts = reconciled.filter((item) => item.category === "belt");
+    if (bottoms.beltMode === "none") {
+      if (belts.some((belt) => belt.id === buildAroundId)) return null;
+      return reconciled.filter((item) => item.category !== "belt");
+    }
+
+    if (bottoms.beltMode === "optional" && options.dropOptionalBelt && !belts.some((belt) => belt.id === buildAroundId)) {
+      return reconciled.filter((item) => item.category !== "belt");
+    }
+
+    if (bottoms.beltMode !== "required" || !occasionSupportsBelts(occasionId) || belts.length) {
+      return reconciled;
+    }
+
+    const baseItems = reconciled.filter((item) => item.category !== "belt");
+    const validBelts = candidateItems({ categories: ["belt"] }, occasionId)
+      .filter((belt) => isCompatibleOutfit([...baseItems, belt], occasionId))
+      .sort((a, b) => scoreOutfit([...baseItems, b], occasionId) - scoreOutfit([...baseItems, a], occasionId));
+
+    if (!validBelts.length) return null;
+    reconciled = [...baseItems, validBelts[0]];
+    return uniqueItems(reconciled);
+  }
+
+  function occasionSupportsBelts(occasionId) {
+    const occasion = OCCASIONS[occasionId];
+    if (!occasion) return false;
+    return [...occasion.slots, ...(occasion.optionalSlots || [])]
+      .some((slot) => slot.categories.includes("belt"));
+  }
+
+  function isWeatherClearlyUnsuitable(item) {
+    const weather = appState.settings.weather;
+    if (!weather.enabled) return false;
+    const temperature = weather.temperature;
+
+    if (temperature !== null) {
+      if (item.minTemperature !== null && temperature < item.minTemperature - 15) return true;
+      if (item.maxTemperature !== null && temperature > item.maxTemperature + 10) return true;
+      if (item.warmthLevel >= 4 && temperature >= 82) return true;
+      if (item.warmthLevel === 1 && temperature <= 15) return true;
+    }
+
+    return ["rain", "snow"].includes(weather.condition)
+      && item.category === "shoes"
+      && item.rainSafe === false;
+  }
+
+  function weatherScore(item) {
+    const weather = appState.settings.weather;
+    if (!weather.enabled) return 0;
+    let score = 0;
+    const temperature = weather.temperature;
+
+    if (temperature !== null) {
+      if (item.minTemperature !== null && temperature < item.minTemperature) {
+        score -= Math.min(35, (item.minTemperature - temperature) * 2);
+      }
+      if (item.maxTemperature !== null && temperature > item.maxTemperature) {
+        score -= Math.min(35, (temperature - item.maxTemperature) * 2);
+      }
+      if (item.warmthLevel !== null) {
+        const targetWarmth = temperature <= 35 ? 5 : temperature <= 50 ? 4 : temperature <= 65 ? 3 : temperature <= 78 ? 2 : 1;
+        score -= Math.abs(item.warmthLevel - targetWarmth) * 3;
+      }
+    }
+
+    if (item.suitableConditions.length) {
+      score += item.suitableConditions.includes(weather.condition) ? 5 : -8;
+    }
+    if (weather.condition === "rain" && item.rainSafe === true) score += 6;
+    return score;
+  }
+
   function countSharedSignals(items) {
     const counts = new Map();
     items.forEach((item) => {
@@ -1219,51 +1609,202 @@
   }
 
   function logCurrentOutfit() {
-    if (!currentOutfit || currentOutfit.error) return;
+    if (!currentOutfit || currentOutfit.error || logInProgress) return;
+    logInProgress = true;
     const date = new Date().toISOString();
-    const itemIds = currentOutfit.items.map((item) => item.id);
-
-    appState.history.unshift({
-      id: uid("log"),
+    addHistoryRecord({
       date,
       occasion: currentOutfit.occasion,
-      itemIds,
-      itemSnapshots: currentOutfit.items.map(snapshotItem)
+      items: currentOutfit.items,
+      source: "generated",
+      note: ""
     });
-
-    const dateOnlyValue = dateOnly(date);
-    currentOutfit.items.forEach((outfitItem) => {
-      const closetItem = findItem(outfitItem.id);
-      if (closetItem) {
-        closetItem.lastWorn = dateOnlyValue;
-        closetItem.updatedAt = date;
-      }
-    });
-
+    currentOutfit = null;
+    resultState = "logged";
     saveState();
     renderAll();
-    showToast("Outfit logged.");
   }
 
   function banCurrentCombo() {
     if (!currentOutfit || currentOutfit.error) return;
     const itemIds = currentOutfit.items.map((item) => item.id).sort();
     const key = comboKey(itemIds);
-    const alreadyBanned = appState.bannedCombos.some((combo) => comboKey(combo.itemIds) === key);
+    let bannedCombo = appState.bannedCombos.find((combo) => comboKey(combo.itemIds) === key);
 
-    if (!alreadyBanned) {
-      appState.bannedCombos.push({
+    if (!bannedCombo) {
+      bannedCombo = {
         id: uid("ban"),
         itemIds,
         occasion: currentOutfit.occasion,
         createdAt: new Date().toISOString()
-      });
-      saveState();
+      };
+      appState.bannedCombos.push(bannedCombo);
     }
 
-    showToast("Combo banned.");
-    generateAndRender();
+    pendingBanFeedback = {
+      bannedComboId: bannedCombo.id,
+      itemIds,
+      occasion: currentOutfit.occasion
+    };
+    saveState();
     renderSettings();
+    openFeedbackDialog();
+    showToast("Combo banned.");
+  }
+
+  function addHistoryRecord({ date, occasion, items, source, note }) {
+    const validItems = uniqueItems(items).filter(Boolean);
+    appState.history.unshift({
+      id: uid("log"),
+      date,
+      occasion: normalizeOccasionToken(occasion) || "casual",
+      itemIds: validItems.map((item) => item.id),
+      itemSnapshots: validItems.map(snapshotItem),
+      source: source === "manual" ? "manual" : "generated",
+      note: stringOr(note, "")
+    });
+
+    const wornDate = dateOnly(date);
+    validItems.forEach((outfitItem) => {
+      const closetItem = findItem(outfitItem.id);
+      if (closetItem) {
+        closetItem.lastWorn = wornDate;
+        closetItem.updatedAt = new Date().toISOString();
+      }
+    });
+  }
+
+  function openManualLogDialog() {
+    $("#manualLogDate").value = dateOnly(new Date().toISOString());
+    $("#manualLogOccasion").value = $("#occasionSelect").value || "casual";
+    $("#manualIncludeUnavailable").checked = false;
+    $("#manualLogNote").value = "";
+    $("#manualLogError").hidden = true;
+    renderManualItemPicker();
+    openDialog($("#manualLogDialog"));
+  }
+
+  function renderManualItemPicker() {
+    const includeUnavailable = $("#manualIncludeUnavailable").checked;
+    const selectedIds = new Set($$("input[name='manualItem']:checked").map((input) => input.value));
+    const items = appState.wardrobe
+      .filter((item) => includeUnavailable || item.active)
+      .sort(sortItems);
+
+    $("#manualItemPicker").innerHTML = CATEGORY_ORDER.map((category) => {
+      const categoryItems = items.filter((item) => item.category === category);
+      if (!categoryItems.length) return "";
+      return `
+        <fieldset class="manual-category">
+          <legend>${escapeHtml(CATEGORIES[category])}</legend>
+          <div class="manual-choice-list">
+            ${categoryItems.map((item) => `
+              <label class="check-pill">
+                <input type="checkbox" name="manualItem" value="${escapeAttribute(item.id)}" ${selectedIds.has(item.id) ? "checked" : ""}>
+                <span>${escapeHtml(item.name)}${item.active ? "" : " (unavailable)"}</span>
+              </label>
+            `).join("")}
+          </div>
+        </fieldset>
+      `;
+    }).join("");
+  }
+
+  function saveManualLog(event) {
+    event.preventDefault();
+    const itemIds = $$("input[name='manualItem']:checked").map((input) => input.value);
+    const items = itemIds.map(findItem).filter(Boolean);
+    if (!items.length) {
+      $("#manualLogError").textContent = "Choose at least one item.";
+      $("#manualLogError").hidden = false;
+      return;
+    }
+
+    const selectedDate = validDateOnly($("#manualLogDate").value);
+    if (!selectedDate) {
+      $("#manualLogError").textContent = "Choose a valid date.";
+      $("#manualLogError").hidden = false;
+      return;
+    }
+
+    addHistoryRecord({
+      date: `${selectedDate}T12:00:00`,
+      occasion: $("#manualLogOccasion").value,
+      items,
+      source: "manual",
+      note: $("#manualLogNote").value.trim()
+    });
+    saveState();
+    closeDialog($("#manualLogDialog"));
+    renderAll();
+    setActiveScreen("history");
+    showToast("Outfit logged.");
+  }
+
+  function openFeedbackDialog() {
+    $$("input[name='feedbackReason']").forEach((input) => {
+      input.checked = false;
+    });
+    $("#feedbackOther").value = "";
+    $("#feedbackOtherField").hidden = true;
+    openDialog($("#feedbackDialog"));
+  }
+
+  function updateFeedbackOtherVisibility() {
+    $("#feedbackOtherField").hidden = $("input[name='feedbackReason']:checked")?.value !== "other";
+  }
+
+  function saveBanFeedback(event) {
+    event.preventDefault();
+    if (!pendingBanFeedback) return;
+    const reason = $("input[name='feedbackReason']:checked")?.value;
+    if (!reason) {
+      showToast("Choose a reason or tap Skip.");
+      return;
+    }
+
+    const pairItemIds = feedbackPairForReason(reason, pendingBanFeedback.itemIds);
+    appState.feedback.push(normalizeFeedbackRecord({
+      id: uid("feedback"),
+      bannedComboId: pendingBanFeedback.bannedComboId,
+      reason,
+      itemIds: pendingBanFeedback.itemIds,
+      pairItemIds,
+      note: reason === "other" ? $("#feedbackOther").value.trim() : "",
+      createdAt: new Date().toISOString()
+    }));
+
+    if (pairItemIds.length === 2 && ["colors", "top_pants", "shoes", "belt_shoes"].includes(reason)) {
+      const pair = pairItemIds.map(findItem).filter(Boolean);
+      if (pair.length === 2 && window.confirm(`Also mark "${pair[0].name}" and "${pair[1].name}" as incompatible?`)) {
+        pair[0].avoidWithItems = unique([...pair[0].avoidWithItems, pair[1].id]);
+        pair[1].avoidWithItems = unique([...pair[1].avoidWithItems, pair[0].id]);
+        pair.forEach((item) => {
+          item.updatedAt = new Date().toISOString();
+        });
+      }
+    }
+
+    saveState();
+    finishBanFeedback();
+  }
+
+  function feedbackPairForReason(reason, itemIds) {
+    const items = itemIds.map(findItem).filter(Boolean);
+    const top = items.find((item) => item.category === "top");
+    const pants = items.find((item) => item.category === "pants");
+    const shoes = items.find((item) => item.category === "shoes");
+    const belt = items.find((item) => item.category === "belt");
+    if (["colors", "top_pants"].includes(reason) && top && pants) return [top.id, pants.id];
+    if (reason === "shoes" && shoes && pants) return [shoes.id, pants.id];
+    if (reason === "belt_shoes" && belt && shoes) return [belt.id, shoes.id];
+    return [];
+  }
+
+  function finishBanFeedback() {
+    closeDialog($("#feedbackDialog"));
+    pendingBanFeedback = null;
+    generateAndRender({ comparePrevious: true });
   }
 
   function deleteHistoryRecord(logId) {
@@ -1311,6 +1852,7 @@
         if (!confirmed) return;
         appState = incoming;
         currentOutfit = null;
+        resultState = "empty";
         saveState();
         renderAll();
         showToast("Backup imported.");
@@ -1329,6 +1871,7 @@
     if (!confirmed) return;
     appState = createDefaultState();
     currentOutfit = null;
+    resultState = "empty";
     saveState();
     renderAll();
     showToast("Demo data reset.");
@@ -1406,7 +1949,13 @@
       name: item.name,
       category: item.category,
       colors: [...item.colors],
-      tags: [...item.tags]
+      tags: [...item.tags],
+      beltMode: item.beltMode || "",
+      minTemperature: item.minTemperature,
+      maxTemperature: item.maxTemperature,
+      suitableConditions: [...item.suitableConditions],
+      rainSafe: item.rainSafe,
+      warmthLevel: item.warmthLevel
     };
   }
 
@@ -1446,6 +1995,12 @@
       worksWithTags: [],
       avoidWithTags: [],
       avoidWithItems: [],
+      beltMode: "optional",
+      minTemperature: null,
+      maxTemperature: null,
+      suitableConditions: [],
+      rainSafe: null,
+      warmthLevel: null,
       imageUrl: "",
       active: true,
       notes: ""
@@ -1471,6 +2026,50 @@
 
   function findItem(itemId) {
     return appState.wardrobe.find((item) => item.id === itemId) || null;
+  }
+
+  function openDialog(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "");
+    }
+  }
+
+  function closeDialog(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.close === "function") {
+      try {
+        dialog.close();
+      } catch (error) {
+        dialog.removeAttribute("open");
+      }
+    } else {
+      dialog.removeAttribute("open");
+    }
+  }
+
+  function changedItemIds(previousItems, nextItems) {
+    const previousIds = new Set((previousItems || []).map((item) => item.id));
+    return (nextItems || []).filter((item) => !previousIds.has(item.id)).map((item) => item.id);
+  }
+
+  function scrollResultIntoView() {
+    const card = $("#outfitResult");
+    if (!card || typeof card.scrollIntoView !== "function") return;
+    const run = () => card.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(run);
+    } else {
+      run();
+    }
+  }
+
+  function flashChangedRows() {
+    setTimeout(() => {
+      $$(".result-item.is-changed").forEach((row) => row.classList.remove("is-changed"));
+    }, 1600);
   }
 
   function registerServiceWorker() {
@@ -1552,6 +2151,13 @@
     return Math.max(min, Math.min(max, Math.round(number)));
   }
 
+  function nullableNumber(value, min, max) {
+    if (value === null || value === undefined || String(value).trim() === "") return null;
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    return Math.max(min, Math.min(max, Math.round(number)));
+  }
+
   function average(values) {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
@@ -1597,6 +2203,11 @@
       .slice(0, 2)
       .map((word) => word[0]?.toUpperCase())
       .join("") || "?";
+  }
+
+  function capitalize(value) {
+    const text = String(value || "");
+    return text ? text[0].toUpperCase() + text.slice(1) : "";
   }
 
   function escapeHtml(value) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "fit-roulette-v4";
+const CACHE_NAME = "fit-roulette-v1.3.1";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -8,7 +8,7 @@ const APP_ASSETS = [
   "./icons/icon-180.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./icons/maskable-512.png"
+  "./icons/favicon-32.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -22,7 +22,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith("fit-roulette-") && key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
   );
 });

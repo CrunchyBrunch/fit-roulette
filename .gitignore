@@ -1,0 +1,11 @@
+# Local editor and Codex workspace state
+.agents/
+.codex/
+.idea/
+.vscode/
+
+# Local dependencies, logs, and OS metadata
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

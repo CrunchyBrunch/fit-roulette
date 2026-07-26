@@ -3,16 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f7f8f5" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#101316" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#18786f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="Fit Roulette">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Fit Roulette</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-180.png">
-    <link rel="icon" href="icons/icon-192.png" sizes="192x192">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
+    <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -43,7 +42,40 @@
               <select id="buildAroundSelect"></select>
             </label>
 
+            <details id="weatherDetails" class="inline-details">
+              <summary>
+                <span>Weather</span>
+                <span id="weatherSummary" class="small-meta">Off</span>
+              </summary>
+              <div class="inline-details-content">
+                <label class="toggle-row availability-toggle">
+                  <input id="useWeather" type="checkbox">
+                  <span>Use weather</span>
+                </label>
+                <div id="weatherInputs" class="weather-inputs" hidden>
+                  <label class="field">
+                    <span>Temperature</span>
+                    <div class="input-with-suffix">
+                      <input id="weatherTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="72">
+                      <span>&deg;F</span>
+                    </div>
+                  </label>
+                  <label class="field">
+                    <span>Conditions</span>
+                    <select id="weatherCondition">
+                      <option value="sunny">Sunny</option>
+                      <option value="cloudy">Cloudy</option>
+                      <option value="rain">Rain</option>
+                      <option value="snow">Snow</option>
+                      <option value="windy">Windy</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </details>
+
             <button id="generateBtn" class="primary-button" type="button">Generate Fit</button>
+            <button id="manualLogGenerateBtn" class="text-button" type="button">Log Outfit Manually</button>
           </div>
 
           <article id="outfitResult" class="result-card empty-state"></article>
@@ -82,6 +114,7 @@
         <section id="screen-history" class="screen" aria-labelledby="historyTitle">
           <div class="screen-title-row">
             <h2 id="historyTitle">History</h2>
+            <button id="manualLogHistoryBtn" class="secondary-button compact" type="button">Log Outfit</button>
           </div>
           <div id="historyList" class="history-list"></div>
         </section>
@@ -186,6 +219,24 @@
         <details id="matchingDetails" class="details-block">
           <summary>Matching</summary>
           <div class="details-content">
+            <fieldset id="beltModeFieldset" class="fieldset" hidden>
+              <legend>Belt</legend>
+              <div class="segmented-control">
+                <label>
+                  <input type="radio" name="itemBeltMode" value="required">
+                  <span>Required</span>
+                </label>
+                <label>
+                  <input type="radio" name="itemBeltMode" value="optional">
+                  <span>Optional</span>
+                </label>
+                <label>
+                  <input type="radio" name="itemBeltMode" value="none">
+                  <span>No belt</span>
+                </label>
+              </div>
+            </fieldset>
+
             <label class="field range-field">
               <span>Formality</span>
               <input id="itemFormality" type="range" min="1" max="10" step="1" value="5">
@@ -243,6 +294,45 @@
         <details class="details-block">
           <summary>Extras</summary>
           <div class="details-content">
+            <fieldset class="fieldset">
+              <legend>Weather suitability <span class="optional-label">Optional</span></legend>
+              <div class="two-column">
+                <label class="field">
+                  <span>Minimum temperature</span>
+                  <input id="itemMinTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="No minimum">
+                </label>
+                <label class="field">
+                  <span>Maximum temperature</span>
+                  <input id="itemMaxTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="No maximum">
+                </label>
+              </div>
+              <label class="field">
+                <span>Suitable conditions</span>
+                <div id="itemWeatherConditions" class="quick-row condition-checks"></div>
+              </label>
+              <div class="two-column">
+                <label class="field">
+                  <span>Rain safety</span>
+                  <select id="itemRainSafe">
+                    <option value="">Not specified</option>
+                    <option value="yes">Rain-safe</option>
+                    <option value="no">Avoid in rain</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Warmth</span>
+                  <select id="itemWarmthLevel">
+                    <option value="">Not specified</option>
+                    <option value="1">Very light</option>
+                    <option value="2">Light</option>
+                    <option value="3">Medium</option>
+                    <option value="4">Warm</option>
+                    <option value="5">Very warm</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
             <label class="field">
               <span>Image URL or path</span>
               <input id="itemImageUrl" type="text" autocomplete="off" placeholder="images/navy-pants.jpg">
@@ -272,6 +362,81 @@
       </form>
     </dialog>
 
-    <script src="app.js" defer></script>
+    <dialog id="manualLogDialog" class="item-dialog compact-dialog">
+      <form id="manualLogForm" class="item-form" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">History</p>
+            <h2>Log Outfit Manually</h2>
+          </div>
+          <button id="closeManualLogBtn" class="icon-button" type="button" aria-label="Close">x</button>
+        </div>
+
+        <div class="two-column">
+          <label class="field">
+            <span>Date worn</span>
+            <input id="manualLogDate" type="date" required>
+          </label>
+          <label class="field">
+            <span>Occasion</span>
+            <select id="manualLogOccasion"></select>
+          </label>
+        </div>
+
+        <label class="toggle-row availability-toggle">
+          <input id="manualIncludeUnavailable" type="checkbox">
+          <span>Include unavailable items</span>
+        </label>
+
+        <div id="manualItemPicker" class="manual-item-picker"></div>
+        <p id="manualLogError" class="form-error" role="alert" hidden></p>
+
+        <label class="field">
+          <span>Note <span class="optional-label">Optional</span></span>
+          <textarea id="manualLogNote" rows="2" placeholder="Dinner, travel day, changed shoes later"></textarea>
+        </label>
+
+        <div class="dialog-actions single-action">
+          <button class="primary-button" type="submit">Log Outfit</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="swapDialog" class="item-dialog compact-dialog">
+      <div class="item-form">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Keep the rest</p>
+            <h2 id="swapDialogTitle">Swap Item</h2>
+          </div>
+          <button id="closeSwapDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
+        </div>
+        <div id="swapChoices" class="swap-choices"></div>
+      </div>
+    </dialog>
+
+    <dialog id="feedbackDialog" class="item-dialog compact-dialog">
+      <form id="feedbackForm" class="item-form" method="dialog">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Combo banned</p>
+            <h2>What was wrong?</h2>
+          </div>
+          <button id="dismissFeedbackBtn" class="icon-button" type="button" aria-label="Skip feedback">x</button>
+        </div>
+        <p class="small-meta">Optional. This helps preserve what you meant without changing closet rules automatically.</p>
+        <div id="feedbackChoices" class="feedback-choices"></div>
+        <label id="feedbackOtherField" class="field" hidden>
+          <span>Other note</span>
+          <input id="feedbackOther" type="text" autocomplete="off" placeholder="What felt off?">
+        </label>
+        <div class="dialog-actions feedback-actions">
+          <button id="skipFeedbackBtn" class="secondary-button" type="button">Skip</button>
+          <button class="primary-button" type="submit">Save Feedback</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js" defer></script>
   </body>
 </html>
