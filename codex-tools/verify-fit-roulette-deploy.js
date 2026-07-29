@@ -70,8 +70,8 @@ for (const asset of cachedAssets) {
 
 assert(sw.includes("caches.match(\"./index.html\")"), "Offline navigation fallback should use ./index.html.");
 assert(sw.includes('key.startsWith("fit-roulette-")'), "Service-worker activation should only remove old Fit Roulette caches.");
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.3.1"'), "Service-worker cache name is not synchronized to 1.3.1.");
-assert(app.includes('APP_VERSION = "1.3.1"'), "Visible app version is not 1.3.1.");
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.3.2"'), "Service-worker cache name is not synchronized to 1.3.2.");
+assert(app.includes('APP_VERSION = "1.3.2"'), "Visible app version is not 1.3.2.");
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'), "localStorage key changed unexpectedly.");
 assert(fs.existsSync(path.join(root, ".nojekyll")), ".nojekyll is missing.");
 

@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.3.1";
+  const APP_VERSION = "1.3.2";
 
   const CATEGORIES = {
     top: "Top",
@@ -83,6 +83,7 @@
 
   const OCCASION_ORDER = ["work", "friday", "casual", "date", "gym"];
   const THEME_VALUES = ["system", "light", "dark"];
+  const AFTER_LOGGING_VALUES = ["confirm_keep", "keep", "clear"];
   const WEATHER_CONDITIONS = ["sunny", "cloudy", "rain", "snow", "windy"];
   const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = ["black", "white", "off-white", "navy", "light blue", "gray", "dark gray", "khaki", "tan", "brown", "olive"];
@@ -194,6 +195,7 @@
   function init() {
     applyTheme(appState.settings.theme);
     renderStaticOptions();
+    initializeGenerateOccasion();
     bindEvents();
     renderAll();
     registerServiceWorker();
@@ -254,6 +256,8 @@
     $("#resetDemoBtn").addEventListener("click", resetDemoData);
     $("#clearBansBtn").addEventListener("click", clearBannedCombos);
     $("#themeSelect").addEventListener("change", (event) => updateTheme(event.target.value));
+    $("#afterLoggingSelect").addEventListener("change", (event) => updateAfterLogging(event.target.value));
+    $("#defaultOccasionSelect").addEventListener("change", (event) => updateDefaultOccasion(event.target.value));
 
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
@@ -271,6 +275,8 @@
       $("#formalityOutput").value = event.target.value;
     });
     $("#itemPrimaryColor").addEventListener("input", updateSelectedColorChip);
+    $("#itemName").addEventListener("input", updateEditorTitle);
+    $("#itemTags").addEventListener("input", updateSelectedQuickTags);
   }
 
   function renderStaticOptions() {
@@ -308,6 +314,10 @@
       return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
     }).join("");
 
+    $("#defaultOccasionSelect").innerHTML = OCCASION_ORDER.map((id) => {
+      return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
+    }).join("");
+
     $("#itemWeatherConditions").innerHTML = WEATHER_CONDITIONS.map((condition) => {
       return `
         <label class="check-pill compact-check">
@@ -335,6 +345,10 @@
     renderSettings();
     renderWeatherControls();
     renderResult();
+  }
+
+  function initializeGenerateOccasion() {
+    $("#occasionSelect").value = validOccasion(appState.settings.defaultOccasion);
   }
 
   function setActiveScreen(screenName) {
@@ -383,6 +397,8 @@
       feedback: [],
       settings: {
         theme: "system",
+        afterLogging: "confirm_keep",
+        defaultOccasion: "work",
         weather: {
           enabled: false,
           temperature: null,
@@ -412,9 +428,13 @@
 
   function normalizeSettings(settings) {
     const theme = THEME_VALUES.includes(settings?.theme) ? settings.theme : "system";
+    const afterLogging = AFTER_LOGGING_VALUES.includes(settings?.afterLogging) ? settings.afterLogging : "confirm_keep";
+    const defaultOccasion = validOccasion(settings?.defaultOccasion);
     const weather = settings?.weather && typeof settings.weather === "object" ? settings.weather : {};
     return {
       theme,
+      afterLogging,
+      defaultOccasion,
       weather: {
         enabled: weather.enabled === true,
         temperature: nullableNumber(weather.temperature, -30, 130),
@@ -432,18 +452,18 @@
       id: stringOr(item.id, uid("item")),
       name: stringOr(item.name, "Unnamed Item"),
       category,
-      colors: toArray(item.colors),
-      tags: toArray(item.tags),
+      colors: uniqueTags(item.colors),
+      tags: uniqueTags(item.tags),
       occasions: unique(occasions.length ? occasions : ["casual"]),
-      season: toArray(item.season),
+      season: uniqueTags(item.season),
       formality: clampNumber(item.formality, 1, 10, 5),
-      worksWithTags: toArray(item.worksWithTags),
-      avoidWithTags: toArray(item.avoidWithTags),
-      avoidWithItems: toArray(item.avoidWithItems),
+      worksWithTags: uniqueTags(item.worksWithTags),
+      avoidWithTags: uniqueTags(item.avoidWithTags),
+      avoidWithItems: uniqueTags(item.avoidWithItems),
       beltMode: category === "pants" && BELT_MODES.includes(item.beltMode) ? item.beltMode : (category === "pants" ? "optional" : ""),
       minTemperature: nullableNumber(item.minTemperature, -30, 130),
       maxTemperature: nullableNumber(item.maxTemperature, -30, 130),
-      suitableConditions: toArray(item.suitableConditions).map(normalizeTag).filter((condition) => WEATHER_CONDITIONS.includes(condition)),
+      suitableConditions: uniqueTags(item.suitableConditions).map(normalizeTag).filter((condition) => WEATHER_CONDITIONS.includes(condition)),
       rainSafe: typeof item.rainSafe === "boolean" ? item.rainSafe : null,
       warmthLevel: nullableNumber(item.warmthLevel, 1, 5),
       imageUrl: stringOr(item.imageUrl || item.image || "", ""),
@@ -548,15 +568,16 @@
     }).join("");
 
     $("#itemQuickTags").innerHTML = quickTags.map((tag) => {
-      return `<button class="mini-button" type="button" data-quick-tag="${escapeAttribute(tag)}">${escapeHtml(tag)}</button>`;
+      return `<button class="mini-button" type="button" aria-pressed="false" data-quick-tag="${escapeAttribute(tag)}">${escapeHtml(tag)}</button>`;
     }).join("");
+    updateSelectedQuickTags();
   }
 
   function renderResult() {
     const card = $("#outfitResult");
     const actions = $("#resultActions");
 
-    if (resultState === "logged") {
+    if (resultState === "logged" && !currentOutfit) {
       card.classList.remove("empty-state");
       card.innerHTML = `
         <div class="log-success" role="status">
@@ -589,9 +610,14 @@
     const occasion = OCCASIONS[currentOutfit.occasion];
     const buildAround = currentOutfit.buildAroundId ? findItem(currentOutfit.buildAroundId) : null;
     const buildChip = buildAround ? `<span class="chip accent">Locked: ${escapeHtml(buildAround.name)}</span>` : "";
+    const isLogged = resultState === "logged";
+    const loggedConfirmation = isLogged
+      ? renderLoggedConfirmation(appState.settings.afterLogging === "keep")
+      : "";
 
     card.classList.remove("empty-state");
     card.innerHTML = `
+      ${loggedConfirmation}
       <div class="result-heading">
         <div>
           <p class="eyebrow">${escapeHtml(occasion.label)}</p>
@@ -601,13 +627,33 @@
       </div>
       <div class="chip-row">${buildChip}</div>
       <div class="result-list">
-        ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit)).join("")}
+        ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit, isLogged)).join("")}
       </div>
     `;
-    actions.hidden = false;
+    actions.hidden = isLogged;
   }
 
-  function renderResultItem(item, outfit) {
+  function renderLoggedConfirmation(subtle) {
+    if (subtle) {
+      return `
+        <div class="logged-indicator" role="status">
+          <strong>&#10003; Logged</strong>
+          <button class="secondary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+        </div>
+      `;
+    }
+    return `
+      <div class="log-confirmation" role="status">
+        <div>
+          <strong>Fit logged.</strong>
+          <span>Make the day great.</span>
+        </div>
+        <button class="primary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+      </div>
+    `;
+  }
+
+  function renderResultItem(item, outfit, isLogged = false) {
     const changed = toArray(outfit.changedItemIds).includes(item.id);
     const locked = outfit.buildAroundId === item.id;
     const color = item.colors[0] ? `<span>${escapeHtml(item.colors[0])}</span>` : "";
@@ -619,9 +665,11 @@
           <h3>${escapeHtml(item.name)}</h3>
           ${color}
         </div>
-        <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}" ${locked ? "disabled" : ""}>
-          ${locked ? "Locked" : "Swap"}
-        </button>
+        ${isLogged ? "" : `
+          <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}" ${locked ? "disabled" : ""}>
+            ${locked ? "Locked" : "Swap"}
+          </button>
+        `}
       </div>
     `;
   }
@@ -631,6 +679,7 @@
     if (!button) return;
     if (button.dataset.resultAction === "generate-another") {
       resultState = "empty";
+      currentOutfit = null;
       generateAndRender();
     } else if (button.dataset.resultAction === "swap") {
       openSwapDialog(button.dataset.itemId);
@@ -640,18 +689,40 @@
   function renderCloset() {
     const list = $("#closetList");
     const query = normalizeTag(closetFilters.search);
-    const items = appState.wardrobe
+    const matchingItems = appState.wardrobe
       .filter((item) => closetFilters.showInactive || item.active)
       .filter((item) => closetFilters.category === "all" || item.category === closetFilters.category)
       .filter((item) => !query || itemSignals(item).some((signal) => signal.includes(query)))
       .sort(sortItems);
 
-    if (!items.length) {
+    if (!matchingItems.length) {
       list.innerHTML = `<article class="closet-card"><p class="small-meta">No matching items.</p></article>`;
       return;
     }
 
-    list.innerHTML = items.map(renderClosetCard).join("");
+    if (!closetFilters.showInactive) {
+      list.innerHTML = matchingItems.map(renderClosetCard).join("");
+      return;
+    }
+
+    const archivedItems = matchingItems.filter((item) => !item.active);
+    const activeItems = matchingItems.filter((item) => item.active);
+    const archivedSection = archivedItems.length
+      ? renderClosetGroup("Archived", archivedItems, "archived")
+      : "";
+    const activeSection = activeItems.length
+      ? renderClosetGroup("Active items", activeItems, "active")
+      : "";
+    list.innerHTML = `${archivedSection}${activeSection}`;
+  }
+
+  function renderClosetGroup(title, items, tone) {
+    return `
+      <section class="closet-group closet-group-${tone}" aria-label="${escapeAttribute(title)}">
+        <h3 class="closet-group-title">${escapeHtml(title)}</h3>
+        <div class="closet-group-list">${items.map(renderClosetCard).join("")}</div>
+      </section>
+    `;
   }
 
   function renderClosetCard(item) {
@@ -719,6 +790,8 @@
     const activeCount = appState.wardrobe.filter((item) => item.active).length;
     const archivedCount = appState.wardrobe.length - activeCount;
     $("#themeSelect").value = appState.settings.theme;
+    $("#afterLoggingSelect").value = appState.settings.afterLogging;
+    $("#defaultOccasionSelect").value = appState.settings.defaultOccasion;
     $("#appVersion").textContent = `App version ${APP_VERSION}`;
     $("#settingsStats").innerHTML = `
       <div class="stat-card"><strong>${activeCount}</strong><span>Active items</span></div>
@@ -734,6 +807,23 @@
     saveState();
     renderSettings();
     showToast("Theme saved.");
+  }
+
+  function updateAfterLogging(value) {
+    appState.settings.afterLogging = AFTER_LOGGING_VALUES.includes(value) ? value : "confirm_keep";
+    saveState();
+    renderSettings();
+    showToast("After Logging saved.");
+  }
+
+  function updateDefaultOccasion(value) {
+    appState.settings.defaultOccasion = validOccasion(value);
+    if (!currentOutfit) {
+      $("#occasionSelect").value = appState.settings.defaultOccasion;
+    }
+    saveState();
+    renderSettings();
+    showToast("Default occasion saved.");
   }
 
   function applyTheme(theme) {
@@ -806,10 +896,10 @@
 
     editingItemId = source && !options.duplicate ? item.id : null;
 
-    $("#itemDialogMode").textContent = editingItemId ? "Edit item" : "Closet item";
-    $("#itemDialogTitle").textContent = editingItemId ? "Edit Item" : "Add Item";
+    $("#itemDialogMode").textContent = editingItemId ? "Editing item" : "Closet item";
     $("#itemId").value = editingItemId || "";
     $("#itemName").value = item.name || "";
+    updateEditorTitle();
     $("#itemCategory").value = item.category || "top";
     $("#itemPrimaryColor").value = item.colors[0] || "";
     $("#itemSecondaryColors").value = item.colors.slice(1).join(", ");
@@ -851,6 +941,8 @@
     renderGuidedMatchChips();
     renderBeltModeControl();
     updateSelectedColorChip();
+    updateSelectedQuickTags();
+    $("#itemForm").scrollTop = 0;
 
     const dialog = $("#itemDialog");
     if (typeof dialog.showModal === "function") {
@@ -858,7 +950,11 @@
     } else {
       dialog.setAttribute("open", "");
     }
-    $("#itemName").focus();
+  }
+
+  function updateEditorTitle() {
+    const name = $("#itemName").value.trim();
+    $("#itemDialogTitle").textContent = name || "Add Item";
   }
 
   function closeItemDialog() {
@@ -968,9 +1064,7 @@
 
     const matchButton = event.target.closest("[data-match-kind]");
     if (matchButton) {
-      const target = matchButton.dataset.matchKind === "avoid" ? $("#itemAvoidWithTags") : $("#itemWorksWithTags");
-      appendCsvValues(target, parseCsv(matchButton.dataset.matchTags));
-      renderGuidedMatchChips();
+      toggleMatchChip(matchButton.dataset.matchKind, parseCsv(matchButton.dataset.matchTags));
       return;
     }
 
@@ -982,7 +1076,8 @@
 
     const tagButton = event.target.closest("[data-quick-tag]");
     if (tagButton) {
-      appendCsvValue($("#itemTags"), tagButton.dataset.quickTag);
+      toggleCsvValue($("#itemTags"), tagButton.dataset.quickTag);
+      updateSelectedQuickTags();
     }
   }
 
@@ -1002,6 +1097,7 @@
     applyOccasions(template.occasions || []);
     renderGuidedMatchChips();
     renderBeltModeControl();
+    updateSelectedQuickTags();
     showToast(`${template.label} template applied.`);
   }
 
@@ -1055,17 +1151,13 @@
     });
   }
 
-  function appendCsvValue(input, value) {
+  function toggleCsvValue(input, value) {
+    const normalizedValue = normalizeTag(value);
     const values = parseCsv(input.value);
-    if (!values.map(normalizeTag).includes(normalizeTag(value))) {
-      values.push(value);
-    }
-    input.value = values.join(", ");
-    input.focus();
-  }
-
-  function appendCsvValues(input, values) {
-    values.forEach((value) => appendCsvValue(input, value));
+    const isSelected = values.some((existing) => normalizeTag(existing) === normalizedValue);
+    input.value = isSelected
+      ? values.filter((existing) => normalizeTag(existing) !== normalizedValue).join(", ")
+      : uniqueTags([...values, value]).join(", ");
   }
 
   function mergeCsvValues(input, values) {
@@ -1118,15 +1210,58 @@
 
   function renderMatchButtons(chips, kind, selectedTags) {
     return chips.map(([label, tags]) => {
-      const isSelected = tags.some((tag) => selectedTags.has(normalizeTag(tag)));
-      return `<button class="mini-button ${isSelected ? "is-selected" : ""}" type="button" data-match-kind="${kind}" data-match-tags="${escapeAttribute(tags.join(", "))}">${escapeHtml(label)}</button>`;
+      const isSelected = isMatchChipSelected(tags, selectedTags);
+      return `<button class="mini-button ${isSelected ? "is-selected" : ""}" type="button" aria-pressed="${isSelected}" data-match-kind="${kind}" data-match-tags="${escapeAttribute(tags.join(", "))}">${escapeHtml(label)}</button>`;
     }).join("");
+  }
+
+  function isMatchChipSelected(tags, selectedTags) {
+    return Boolean(tags.length) && selectedTags.has(normalizeTag(tags[0]));
+  }
+
+  function toggleMatchChip(kind, tags) {
+    const category = $("#itemCategory").value || "top";
+    const groups = MATCH_CHIPS[category] || MATCH_CHIPS.accessory;
+    const groupKey = kind === "avoid" ? "avoid" : "works";
+    const input = groupKey === "avoid" ? $("#itemAvoidWithTags") : $("#itemWorksWithTags");
+    const values = uniqueTags(parseCsv(input.value));
+    const selectedTags = new Set(values.map(normalizeTag));
+    const normalizedTags = tags.map(normalizeTag).filter(Boolean);
+    const isSelected = isMatchChipSelected(normalizedTags, selectedTags);
+
+    if (!isSelected) {
+      input.value = uniqueTags([...values, ...tags]).join(", ");
+      renderGuidedMatchChips();
+      return;
+    }
+
+    const otherSelectedTags = new Set();
+    groups[groupKey].forEach(([, otherTags]) => {
+      const sameChip = otherTags.map(normalizeTag).join("|") === normalizedTags.join("|");
+      if (!sameChip && isMatchChipSelected(otherTags, selectedTags)) {
+        otherTags.forEach((tag) => otherSelectedTags.add(normalizeTag(tag)));
+      }
+    });
+
+    input.value = values
+      .filter((value) => !normalizedTags.includes(normalizeTag(value)) || otherSelectedTags.has(normalizeTag(value)))
+      .join(", ");
+    renderGuidedMatchChips();
   }
 
   function updateSelectedColorChip() {
     const selected = normalizeTag($("#itemPrimaryColor").value);
     $$("[data-color]").forEach((button) => {
       button.classList.toggle("is-selected", normalizeTag(button.dataset.color) === selected);
+    });
+  }
+
+  function updateSelectedQuickTags() {
+    const selected = new Set(parseCsv($("#itemTags").value).map(normalizeTag));
+    $$("[data-quick-tag]").forEach((button) => {
+      const isSelected = selected.has(normalizeTag(button.dataset.quickTag));
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
     });
   }
 
@@ -1469,7 +1604,7 @@
     return true;
   }
 
-  function scoreOutfit(items, occasionId) {
+  function scoreOutfit(items, occasionId, options = {}) {
     const occasion = OCCASIONS[occasionId];
     let score = 100;
 
@@ -1497,25 +1632,33 @@
     const exactLastWorn = lastExactOutfitDate(items);
     const exactDays = daysSince(exactLastWorn);
     if (exactDays !== null && exactDays <= 14) {
-      score -= 120 - exactDays * 5;
+      score -= 220 - exactDays * 8;
+    }
+
+    const pairLastWorn = lastTopBottomPairDate(items);
+    const pairDays = daysSince(pairLastWorn);
+    if (pairDays !== null && pairDays <= 7) {
+      score -= 110 - pairDays * 10;
     }
 
     for (const item of items) {
       const itemDays = daysSince(lastItemWornDate(item));
       if (itemDays === null) continue;
 
-      if (item.category === "top" && itemDays <= 4) {
-        score -= 70 - itemDays * 12;
+      if (item.category === "top" && itemDays <= 3) {
+        score -= 60 - itemDays * 12;
       } else if (item.category === "pants" && itemDays <= 2) {
-        score -= 48 - itemDays * 12;
-      } else if (item.category === "shoes" && itemDays <= 1) {
         score -= 36 - itemDays * 10;
+      } else if (item.category === "shoes" && itemDays <= 1) {
+        score -= 18 - itemDays * 6;
       } else if (itemDays <= 7) {
         score -= 10 - itemDays;
       }
     }
 
-    score += Math.random() * 16;
+    if (options.randomize !== false) {
+      score += Math.random() * 16;
+    }
     return score;
   }
 
@@ -1619,7 +1762,9 @@
       source: "generated",
       note: ""
     });
-    currentOutfit = null;
+    if (appState.settings.afterLogging === "clear") {
+      currentOutfit = null;
+    }
     resultState = "logged";
     saveState();
     renderAll();
@@ -1853,7 +1998,9 @@
         appState = incoming;
         currentOutfit = null;
         resultState = "empty";
+        logInProgress = false;
         saveState();
+        initializeGenerateOccasion();
         renderAll();
         showToast("Backup imported.");
       } catch (error) {
@@ -1872,7 +2019,9 @@
     appState = createDefaultState();
     currentOutfit = null;
     resultState = "empty";
+    logInProgress = false;
     saveState();
+    initializeGenerateOccasion();
     renderAll();
     showToast("Demo data reset.");
   }
@@ -1907,6 +2056,16 @@
     const key = comboKey(items.map((item) => item.id));
     const record = appState.history
       .filter((entry) => comboKey(entry.itemIds) === key)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    return record ? dateOnly(record.date) : null;
+  }
+
+  function lastTopBottomPairDate(items) {
+    const top = items.find((item) => item.category === "top");
+    const bottom = items.find((item) => item.category === "pants");
+    if (!top || !bottom) return null;
+    const record = appState.history
+      .filter((entry) => entry.itemIds.includes(top.id) && entry.itemIds.includes(bottom.id))
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     return record ? dateOnly(record.date) : null;
   }
@@ -1984,7 +2143,7 @@
   }
 
   function emptyItem() {
-    return normalizeItem({
+    const item = normalizeItem({
       name: "",
       category: "top",
       colors: [],
@@ -2005,6 +2164,8 @@
       active: true,
       notes: ""
     });
+    item.name = "";
+    return item;
   }
 
   function resolveAvoidItemTokens(tokens, currentId) {
@@ -2116,6 +2277,16 @@
     return [...new Set(values.filter(Boolean))];
   }
 
+  function uniqueTags(values) {
+    const seen = new Set();
+    return toArray(values).filter((value) => {
+      const normalized = normalizeTag(value);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }
+
   function normalizeTag(value) {
     return String(value || "")
       .trim()
@@ -2138,6 +2309,11 @@
       gymerrands: "gym"
     };
     return aliases[token] || (OCCASIONS[value] ? value : "");
+  }
+
+  function validOccasion(value) {
+    const normalized = normalizeOccasionToken(value);
+    return OCCASIONS[normalized] ? normalized : "work";
   }
 
   function stringOr(value, fallback) {
@@ -2456,5 +2632,24 @@
         worksWithTags: ["navy", "brown", "tan", "dress shoes"]
       })
     ];
+  }
+
+  if (window.__FIT_ROULETTE_TESTING__ === true) {
+    window.__fitRouletteTest = {
+      getState: () => appState,
+      normalizeState,
+      openItemDialog,
+      scoreOutfit,
+      lastExactOutfitDate,
+      lastTopBottomPairDate,
+      replaceState(raw) {
+        appState = normalizeState(raw);
+        currentOutfit = null;
+        resultState = "empty";
+        logInProgress = false;
+        initializeGenerateOccasion();
+        renderAll();
+      }
+    };
   }
 })();

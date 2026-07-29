@@ -549,6 +549,33 @@ textarea:focus {
   gap: 10px;
 }
 
+.closet-group {
+  display: grid;
+  gap: 8px;
+}
+
+.closet-group + .closet-group {
+  margin-top: 8px;
+}
+
+.closet-group-title {
+  margin: 0;
+  padding: 2px 2px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.closet-group-archived {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 14px;
+}
+
+.closet-group-list {
+  display: grid;
+  gap: 10px;
+}
+
 .closet-card,
 .history-card {
   padding: 12px;
@@ -677,7 +704,7 @@ textarea:focus {
 
 .item-form {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   max-height: min(92dvh, 780px);
   overflow: auto;
   padding: 14px;
@@ -692,9 +719,17 @@ textarea:focus {
   justify-content: space-between;
   gap: 12px;
   margin: -14px -14px 0;
-  padding: 14px;
+  padding: 11px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
+}
+
+.dialog-header > div {
+  min-width: 0;
+}
+
+.dialog-header h2 {
+  overflow-wrap: anywhere;
 }
 
 .two-column {
@@ -763,13 +798,13 @@ textarea:focus {
 
 .details-content {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   padding: 0 12px 12px;
 }
 
 .editor-section {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 12px;
@@ -866,11 +901,11 @@ textarea:focus {
 }
 
 .dialog-actions .primary-button {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .dialog-actions #saveGenerateBtn {
-  grid-column: 1 / -1;
+  grid-column: auto;
 }
 
 .single-action {
@@ -985,6 +1020,34 @@ textarea:focus {
 
 .log-success .primary-button {
   grid-column: 1 / -1;
+}
+
+.log-confirmation,
+.logged-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 38%, var(--line));
+  border-radius: var(--radius);
+  padding: 10px;
+  background: color-mix(in srgb, var(--success) 9%, var(--surface));
+}
+
+.log-confirmation div {
+  display: grid;
+  gap: 2px;
+}
+
+.log-confirmation span,
+.logged-indicator {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.logged-indicator strong {
+  color: var(--success);
 }
 
 .success-mark {

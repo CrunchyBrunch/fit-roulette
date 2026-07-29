@@ -1,5 +1,17 @@
 # Changelog
 
+## Fit Roulette v1.3.2 &mdash; Field Fixes
+
+- Fixed guided matching and quick-tag chips so selection, deselection, and saved state stay synchronized without duplicate values.
+- Added configurable post-log behavior with confirmation-and-keep as the backward-compatible default.
+- Added a persistent Default Occasion setting.
+- Strengthened exact-outfit and top/bottom-pair recency scoring without turning recent wear into a hard ban.
+- Removed automatic Add/Edit Item name focus so mobile keyboards open only after a deliberate tap.
+- Made the sticky item editor header show the current item name as it changes.
+- Grouped archived closet items in a clearly labeled section above active items when Show Archived is enabled.
+
+This release keeps the existing `fitRoulette.v1` localStorage key. New settings are optional and normalized safely for existing installs and older JSON backups.
+
 ## 1.3.1 - Home Screen Polish
 
 - Replaced the generated placeholder icons with the custom Fit Roulette artwork.

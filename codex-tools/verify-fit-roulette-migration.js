@@ -68,7 +68,7 @@ class MockElement {
 const ids = [
   "toast", "quickAddBtn", "occasionSelect", "buildAroundSelect", "generateBtn", "outfitResult", "resultActions",
   "rerollBtn", "logBtn", "banBtn", "addItemBtn", "closetSearch", "closetCategory", "showInactive", "closetList",
-  "historyList", "settingsStats", "themeSelect", "appVersion", "exportBtn", "importBtn", "importFile",
+  "historyList", "settingsStats", "themeSelect", "afterLoggingSelect", "defaultOccasionSelect", "appVersion", "exportBtn", "importBtn", "importFile",
   "resetDemoBtn", "clearBansBtn", "itemForm", "saveGenerateBtn", "closeItemDialogBtn", "duplicateItemBtn",
   "archiveItemBtn", "permanentDeleteBtn", "itemFormality", "formalityOutput", "itemCategory", "itemOccasions",
   "itemDialog", "itemQuickTags", "tagSuggestions", "matchingDetails", "advancedTagsDetails", "templateChips",
@@ -190,6 +190,16 @@ domReady();
 
 assert(!elements.get("buildAroundSelect").innerHTML.includes("Archived Tee"), "Archived item appeared in build-around options.");
 assert(!elements.get("buildAroundSelect").innerHTML.includes("Laundry Sneakers"), "Unavailable item appeared in build-around options.");
+assert(elements.get("occasionSelect").value === "work", "Old data did not receive the safe default occasion.");
+
+elements.get("showInactive").checked = true;
+elements.get("showInactive").listeners.get("change")({ target: elements.get("showInactive") });
+const archivedClosetHtml = elements.get("closetList").innerHTML;
+assert(archivedClosetHtml.includes('aria-label="Archived"'), "Archived items were not grouped and labeled.");
+assert(archivedClosetHtml.indexOf("Archived Tee") < archivedClosetHtml.indexOf("Active items"), "Archived items were not shown above active items.");
+elements.get("showInactive").checked = false;
+elements.get("showInactive").listeners.get("change")({ target: elements.get("showInactive") });
+assert(!elements.get("closetList").innerHTML.includes("Archived Tee"), "Archived item remained visible after Show Archived was disabled.");
 
 elements.get("manualLogGenerateBtn").click();
 assert(!elements.get("manualItemPicker").innerHTML.includes("Archived Tee"), "Manual logging showed archived items by default.");
@@ -214,6 +224,8 @@ elements.get("themeSelect").value = "light";
 elements.get("themeSelect").listeners.get("change")({ target: elements.get("themeSelect") });
 const migrated = JSON.parse(storage.get("fitRoulette.v1"));
 assert(migrated.settings.theme === "light", "Theme did not migrate into old storage record.");
+assert(migrated.settings.afterLogging === "confirm_keep", "Old settings did not receive confirmation-and-keep default.");
+assert(migrated.settings.defaultOccasion === "work", "Old settings did not receive Work / Office default.");
 assert(migrated.settings.weather.enabled === false, "Old settings did not receive weather-off default.");
 assert(migrated.wardrobe.length === oldState.wardrobe.length, "Migration changed wardrobe count.");
 assert(migrated.history.length === oldState.history.length, "Migration changed history.");

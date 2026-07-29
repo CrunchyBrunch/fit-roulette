@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.3.1 - Home Screen Polish**
+Current release: **1.3.2 - Field Fixes**
 
 ## Run Locally
 
@@ -53,7 +53,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.3.1`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.3.2`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -63,13 +63,18 @@ You can confirm the deployed version from the app:
 
 1. Open Fit Roulette.
 2. Go to Data.
-3. Check the visible app version under Theme.
+3. Check the visible app version under the settings controls.
+
+The Data screen also stores two daily-use preferences:
+
+- `Default Occasion` chooses the initial Generate occasion without changing manual occasion selections during a session.
+- `After Logging` controls whether a logged outfit remains visible or is cleared.
 
 ## Export And Import Closet Data
 
 Fit Roulette stores your wardrobe, history, banned combos, optional rejection feedback, and settings in the browser's `localStorage`.
 
-The app uses the storage key `fitRoulette.v1`. This user-data schema key is independent from the visible app release version. Updating to app version `1.3.1` does not rename, migrate, or reset this key. Newer app versions safely add permissive defaults inside the same record, so older wardrobes, history, banned combos, and JSON backups remain compatible.
+The app uses the storage key `fitRoulette.v1`. This user-data schema key is independent from the visible app release version. Updating to app version `1.3.2` does not rename or reset this key. Newer app versions safely add permissive defaults inside the same record, so older wardrobes, history, banned combos, and JSON backups remain compatible.
 
 To back up:
 
@@ -92,7 +97,7 @@ Import replaces the current local data on that device/browser.
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.3.1`.
+3. Open Data and confirm the app displays version `1.3.2`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.

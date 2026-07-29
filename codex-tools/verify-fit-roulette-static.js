@@ -6,6 +6,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+let focusedElement = null;
+
 class MockClassList {
   constructor() {
     this.values = new Set();
@@ -43,7 +45,9 @@ class MockElement {
     const callback = this.listeners.get("click");
     if (callback) callback({ target: this });
   }
-  focus() {}
+  focus() {
+    focusedElement = this;
+  }
   close() {
     this.open = false;
   }
@@ -95,6 +99,8 @@ const ids = [
   "historyList",
   "settingsStats",
   "themeSelect",
+  "afterLoggingSelect",
+  "defaultOccasionSelect",
   "appVersion",
   "exportBtn",
   "importBtn",
@@ -256,6 +262,7 @@ const context = {
   document,
   navigator: {},
   window: {
+    __FIT_ROULETTE_TESTING__: true,
     addEventListener() {},
     confirm: () => true
   },
@@ -290,6 +297,14 @@ domReady();
 
 const seeded = JSON.parse(storage.get("fitRoulette.v1"));
 assert(seeded.wardrobe.length >= 26, "Starter wardrobe did not seed.");
+assert(seeded.settings.afterLogging === "confirm_keep", "Default post-log behavior was not seeded.");
+assert(seeded.settings.defaultOccasion === "work", "Default occasion was not seeded.");
+assert(elements.get("occasionSelect").value === "work", "Generate did not initialize to the default occasion.");
+
+elements.get("defaultOccasionSelect").value = "casual";
+elements.get("defaultOccasionSelect").listeners.get("change")({ target: elements.get("defaultOccasionSelect") });
+elements.get("occasionSelect").value = "date";
+assert(JSON.parse(storage.get("fitRoulette.v1")).settings.defaultOccasion === "casual", "Active occasion overwrote the saved default.");
 
 for (const occasion of ["work", "friday", "casual", "date", "gym"]) {
   elements.get("occasionSelect").value = occasion;
@@ -321,7 +336,11 @@ const afterTheme = JSON.parse(storage.get("fitRoulette.v1"));
 assert(afterTheme.settings.theme === "dark", "Theme preference did not persist.");
 
 elements.get("addItemBtn").click();
+assert(focusedElement !== elements.get("itemName"), "Add Item focused the name field automatically.");
+assert(elements.get("itemDialogTitle").textContent === "Add Item", "New-item editor title was unclear.");
 elements.get("itemName").value = "Test Navy Polo";
+elements.get("itemName").listeners.get("input")();
+assert(elements.get("itemDialogTitle").textContent === "Test Navy Polo", "Editor title did not follow the item name.");
 elements.get("itemPrimaryColor").value = "navy";
 const templateTarget = new MockElement();
 templateTarget.dataset.templateId = "polo";
@@ -340,6 +359,8 @@ const afterGeneratedLog = JSON.parse(storage.get("fitRoulette.v1"));
 assert(afterGeneratedLog.history.length === historyBeforeLog + 1, "Generated outfit was not logged.");
 assert(afterGeneratedLog.history[0].source === "generated", "Generated log source was not saved.");
 assert(elements.get("outfitResult").innerHTML.includes("Fit logged."), "Post-log success state did not render.");
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Default post-log behavior cleared the outfit.");
+assert(elements.get("outfitResult").innerHTML.includes("Generate Another"), "Post-log flow lost Generate Another.");
 elements.get("logBtn").click();
 assert(JSON.parse(storage.get("fitRoulette.v1")).history.length === historyBeforeLog + 1, "Displayed outfit was logged twice.");
 
@@ -347,6 +368,25 @@ const generateAnotherTarget = new MockElement();
 generateAnotherTarget.dataset.resultAction = "generate-another";
 elements.get("outfitResult").listeners.get("click")({ target: generateAnotherTarget });
 assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Generate Another did not produce a fit.");
+
+elements.get("afterLoggingSelect").value = "keep";
+elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
+elements.get("logBtn").click();
+assert(elements.get("outfitResult").innerHTML.includes("Logged"), "Keep-visible mode did not show a logged indicator.");
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Keep-visible mode cleared the outfit.");
+const keepHistoryCount = JSON.parse(storage.get("fitRoulette.v1")).history.length;
+elements.get("logBtn").click();
+assert(JSON.parse(storage.get("fitRoulette.v1")).history.length === keepHistoryCount, "Keep-visible mode allowed duplicate logging.");
+elements.get("outfitResult").listeners.get("click")({ target: generateAnotherTarget });
+
+elements.get("afterLoggingSelect").value = "clear";
+elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
+elements.get("logBtn").click();
+assert(elements.get("outfitResult").innerHTML.includes("Fit logged."), "Clear mode lost its confirmation.");
+assert(!/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Clear mode kept the outfit visible.");
+
+elements.get("afterLoggingSelect").value = "confirm_keep";
+elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
 
 const storedForManual = JSON.parse(storage.get("fitRoulette.v1"));
 ["item_light_blue_ralph_lauren_polo", "item_light_jeans", "item_black_white_converse_mids"].forEach((id) => {
@@ -413,6 +453,73 @@ elements.get("copyMatchingSelect").value = "item_light_blue_ralph_lauren_polo";
 elements.get("copyMatchingBtn").click();
 assert(elements.get("itemWorksWithTags").value.includes("khaki"), "Copy matching did not copy worksWithTags.");
 assert(String(elements.get("itemFormality").value) === "6", "Copy matching did not copy formality.");
+
+elements.get("addItemBtn").click();
+elements.get("itemName").value = "Chip Toggle Polo";
+elements.get("itemName").listeners.get("input")();
+elements.get("itemPrimaryColor").value = "navy";
+const matchTarget = new MockElement();
+matchTarget.dataset.matchKind = "works";
+matchTarget.dataset.matchTags = "navy, pants";
+elements.get("itemForm").listeners.get("click")({ target: matchTarget });
+assert(elements.get("itemWorksWithTags").value.includes("navy"), "Matching chip did not select.");
+assert(/is-selected[^>]+aria-pressed="true"[^>]*>works with navy pants/.test(elements.get("worksMatchChips").innerHTML), "Matching chip visual state did not select.");
+elements.get("itemForm").listeners.get("click")({ target: matchTarget });
+assert(!elements.get("itemWorksWithTags").value.includes("navy"), "Matching chip did not deselect.");
+assert(!/is-selected[^>]+aria-pressed="true"[^>]*>works with navy pants/.test(elements.get("worksMatchChips").innerHTML), "Matching chip visual state did not deselect.");
+elements.get("itemForm").listeners.get("click")({ target: matchTarget });
+elements.get("itemForm").listeners.get("click")({ target: matchTarget });
+elements.get("itemForm").listeners.get("click")({ target: matchTarget });
+elements.get("itemForm").listeners.get("submit")({ preventDefault() {} });
+const afterChipSave = JSON.parse(storage.get("fitRoulette.v1"));
+const chipItem = afterChipSave.wardrobe.find((item) => item.name === "Chip Toggle Polo");
+assert(chipItem, "Chip regression item was not saved.");
+assert(chipItem.worksWithTags.filter((tag) => tag === "navy").length === 1, "Matching chip stored a duplicate value.");
+context.window.__fitRouletteTest.openItemDialog(chipItem.id);
+assert(elements.get("itemWorksWithTags").value.includes("navy"), "Matching chip state did not survive save and reopen.");
+assert(elements.get("itemDialogTitle").textContent === "Chip Toggle Polo", "Existing editor did not show the item name.");
+
+const today = new Date().toISOString();
+const recencyState = {
+  version: 3,
+  wardrobe: [
+    { id: "top_recent", name: "Recent Top", category: "top", colors: ["black"], occasions: ["casual"], formality: 4, active: true },
+    { id: "top_fresh", name: "Fresh Top", category: "top", colors: ["black"], occasions: ["casual"], formality: 4, active: true },
+    { id: "pants_recent", name: "Recent Pants", category: "pants", colors: ["gray"], occasions: ["casual"], formality: 4, active: true },
+    { id: "pants_fresh", name: "Fresh Pants", category: "pants", colors: ["gray"], occasions: ["casual"], formality: 4, active: true },
+    { id: "shoes_recent", name: "Recent Shoes", category: "shoes", colors: ["white"], occasions: ["casual"], formality: 4, active: true },
+    { id: "shoes_fresh", name: "Fresh Shoes", category: "shoes", colors: ["white"], occasions: ["casual"], formality: 4, active: true }
+  ],
+  history: [{ id: "recent_log", date: today, occasion: "casual", itemIds: ["top_recent", "pants_recent", "shoes_recent"], source: "generated" }],
+  bannedCombos: [],
+  feedback: [],
+  settings: { theme: "system", afterLogging: "confirm_keep", defaultOccasion: "work" }
+};
+context.window.__fitRouletteTest.replaceState(recencyState);
+const recencyItems = context.window.__fitRouletteTest.getState().wardrobe;
+const getRecencyItem = (id) => recencyItems.find((item) => item.id === id);
+const exactOutfit = ["top_recent", "pants_recent", "shoes_recent"].map(getRecencyItem);
+const repeatedPair = ["top_recent", "pants_recent", "shoes_fresh"].map(getRecencyItem);
+const freshOutfit = ["top_fresh", "pants_fresh", "shoes_fresh"].map(getRecencyItem);
+const exactScore = context.window.__fitRouletteTest.scoreOutfit(exactOutfit, "casual", { randomize: false });
+const pairScore = context.window.__fitRouletteTest.scoreOutfit(repeatedPair, "casual", { randomize: false });
+const freshScore = context.window.__fitRouletteTest.scoreOutfit(freshOutfit, "casual", { randomize: false });
+assert(exactScore < pairScore, "Exact-outfit recency was not stronger than pair recency.");
+assert(pairScore < freshScore, "Recent top/bottom pair was not penalized.");
+getRecencyItem("top_recent").active = false;
+getRecencyItem("pants_recent").active = false;
+getRecencyItem("top_recent").active = true;
+getRecencyItem("pants_recent").active = true;
+const restoredPairScore = context.window.__fitRouletteTest.scoreOutfit(repeatedPair, "casual", { randomize: false });
+assert(restoredPairScore === pairScore, "Temporary unavailability reset recency scoring.");
+
+context.window.__fitRouletteTest.replaceState({
+  ...recencyState,
+  history: [{ id: "partial_manual", date: today, occasion: "casual", itemIds: ["top_recent", "pants_recent"], source: "manual" }]
+});
+const partialItems = context.window.__fitRouletteTest.getState().wardrobe;
+const partialPair = ["top_recent", "pants_recent", "shoes_fresh"].map((id) => partialItems.find((item) => item.id === id));
+assert(context.window.__fitRouletteTest.lastTopBottomPairDate(partialPair), "Partial manual log did not contribute pair recency.");
 
 for (const asset of ["index.html", "styles.css", "manifest.json", "sw.js", "icons/favicon-32.png", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-512.png"]) {
   assert(fs.existsSync(path.resolve(__dirname, "..", asset)), `${asset} is missing.`);
