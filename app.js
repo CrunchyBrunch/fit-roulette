@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.3.2";
+  const APP_VERSION = "1.3.3";
 
   const CATEGORIES = {
     top: "Top",
@@ -15,6 +15,14 @@
   };
 
   const CATEGORY_ORDER = ["top", "pants", "shoes", "belt", "socks", "outerwear", "accessory"];
+  const BUILD_AROUND_GROUPS = [
+    { id: "tops", label: "Tops", categories: ["top"] },
+    { id: "bottoms", label: "Bottoms", categories: ["pants"] },
+    { id: "shoes", label: "Shoes", categories: ["shoes"] },
+    { id: "layers", label: "Layers", categories: ["outerwear"] },
+    { id: "accessories", label: "Accessories", categories: ["accessory", "socks"] },
+    { id: "belts", label: "Belts", categories: ["belt"] }
+  ];
 
   const OCCASIONS = {
     work: {
@@ -181,6 +189,7 @@
   let swapTargetItemId = null;
   let logInProgress = false;
   let editingItemId = null;
+  let rerollSession = createRerollSession();
   let closetFilters = {
     search: "",
     category: "all",
@@ -212,8 +221,8 @@
     });
 
     $("#addItemBtn").addEventListener("click", () => openItemDialog());
-    $("#generateBtn").addEventListener("click", generateAndRender);
-    $("#rerollBtn").addEventListener("click", () => generateAndRender({ comparePrevious: true }));
+    $("#generateBtn").addEventListener("click", () => generateAndRender({ mode: "generate" }));
+    $("#rerollBtn").addEventListener("click", () => generateAndRender({ mode: "reroll" }));
     $("#logBtn").addEventListener("click", logCurrentOutfit);
     $("#banBtn").addEventListener("click", banCurrentCombo);
     $("#outfitResult").addEventListener("click", handleResultAction);
@@ -231,6 +240,10 @@
     $("#useWeather").addEventListener("change", saveWeatherSettings);
     $("#weatherTemperature").addEventListener("change", saveWeatherSettings);
     $("#weatherCondition").addEventListener("change", saveWeatherSettings);
+    $("#occasionSelect").addEventListener("change", handleGenerationContextChange);
+    $("#buildAroundCategorySelect").addEventListener("change", handleBuildAroundCategoryChange);
+    $("#buildAroundSelect").addEventListener("change", handleGenerationContextChange);
+    $("#resetViewedFitsBtn").addEventListener("click", resetViewedFits);
 
     $("#closetSearch").addEventListener("input", (event) => {
       closetFilters.search = event.target.value;
@@ -345,6 +358,7 @@
     renderSettings();
     renderWeatherControls();
     renderResult();
+    renderRerollSessionStatus();
   }
 
   function initializeGenerateOccasion() {
@@ -516,21 +530,79 @@
     };
   }
 
-  function renderBuildAroundOptions() {
-    const select = $("#buildAroundSelect");
-    const selected = select.value || "";
+  function renderBuildAroundOptions(options = {}) {
+    const categorySelect = $("#buildAroundCategorySelect");
+    const itemSelect = $("#buildAroundSelect");
+    const itemField = $("#buildAroundItemField");
     const activeItems = appState.wardrobe.filter((item) => item.active).sort(sortItems);
-    const groups = CATEGORY_ORDER.map((category) => {
-      const items = activeItems.filter((item) => item.category === category);
-      if (!items.length) return "";
-      const options = items.map((item) => {
-        return `<option value="${escapeAttribute(item.id)}">${escapeHtml(item.name)}</option>`;
-      }).join("");
-      return `<optgroup label="${escapeAttribute(CATEGORIES[category])}">${options}</optgroup>`;
-    }).join("");
+    const availableGroups = buildAroundGroups(activeItems);
+    const requestedItemId = options.selectedItemId ?? itemSelect.value ?? "";
+    const selectedItem = activeItems.find((item) => item.id === requestedItemId) || null;
+    const selectedItemGroup = selectedItem ? buildAroundGroupForItem(selectedItem, availableGroups) : null;
+    let categoryId = selectedItemGroup?.id || options.categoryId || categorySelect.value || "";
 
-    select.innerHTML = `<option value="">Any item</option>${groups}`;
-    select.value = appState.wardrobe.some((item) => item.id === selected && item.active) ? selected : "";
+    if (!availableGroups.some((group) => group.id === categoryId)) {
+      categoryId = "";
+    }
+
+    categorySelect.innerHTML = [
+      `<option value="">Any item</option>`,
+      ...availableGroups.map((group) => `<option value="${escapeAttribute(group.id)}">${escapeHtml(group.label)}</option>`)
+    ].join("");
+    categorySelect.value = categoryId;
+
+    const selectedGroup = availableGroups.find((group) => group.id === categoryId) || null;
+    if (!selectedGroup) {
+      itemSelect.innerHTML = `<option value="">Any item</option>`;
+      itemSelect.value = "";
+      itemField.hidden = true;
+      return;
+    }
+
+    itemSelect.innerHTML = [
+      `<option value="">Choose item</option>`,
+      ...selectedGroup.items.map((item) => {
+        return `<option value="${escapeAttribute(item.id)}">${escapeHtml(buildAroundItemLabel(item, activeItems))}</option>`;
+      })
+    ].join("");
+    itemSelect.value = selectedGroup.items.some((item) => item.id === requestedItemId) ? requestedItemId : "";
+    itemField.hidden = false;
+  }
+
+  function buildAroundGroups(activeItems) {
+    const groups = BUILD_AROUND_GROUPS.map((group) => ({
+      ...group,
+      items: activeItems.filter((item) => group.categories.includes(item.category))
+    })).filter((group) => group.items.length);
+    const knownCategories = new Set(BUILD_AROUND_GROUPS.flatMap((group) => group.categories));
+    const otherItems = activeItems.filter((item) => !knownCategories.has(item.category));
+    if (otherItems.length) {
+      groups.push({ id: "other", label: "Other", categories: [], items: otherItems });
+    }
+    return groups;
+  }
+
+  function buildAroundGroupForItem(item, groups = buildAroundGroups(appState.wardrobe.filter((candidate) => candidate.active))) {
+    return groups.find((group) => group.items.some((candidate) => candidate.id === item.id)) || null;
+  }
+
+  function buildAroundItemLabel(item, activeItems) {
+    const duplicateName = activeItems.some((candidate) => {
+      return candidate.id !== item.id && normalizeTag(candidate.name) === normalizeTag(item.name);
+    });
+    if (!duplicateName) return item.name;
+    const detail = item.colors[0] || CATEGORIES[item.category] || item.category;
+    return `${item.name} (${detail})`;
+  }
+
+  function handleBuildAroundCategoryChange(event) {
+    renderBuildAroundOptions({ categoryId: event.target.value, selectedItemId: "" });
+    handleGenerationContextChange();
+  }
+
+  function handleGenerationContextChange() {
+    rerollSession = createRerollSession();
+    renderRerollSessionStatus();
   }
 
   function renderTagSuggestions() {
@@ -586,7 +658,10 @@
             <h2>Fit logged.</h2>
             <p>Make the day great.</p>
           </div>
-          <button class="primary-button" type="button" data-result-action="generate-another">Generate Another</button>
+          <div class="logged-result-actions">
+            <button class="secondary-button" type="button" data-result-action="reroll">Reroll</button>
+            <button class="primary-button" type="button" data-result-action="generate-another">Generate Another</button>
+          </div>
         </div>
       `;
       actions.hidden = true;
@@ -629,6 +704,7 @@
       <div class="result-list">
         ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit, isLogged)).join("")}
       </div>
+      ${currentOutfit.changeNote ? `<p class="result-change-note" role="status">${escapeHtml(currentOutfit.changeNote)}</p>` : ""}
     `;
     actions.hidden = isLogged;
   }
@@ -638,7 +714,10 @@
       return `
         <div class="logged-indicator" role="status">
           <strong>&#10003; Logged</strong>
-          <button class="secondary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+          <div class="logged-inline-actions">
+            <button class="text-button compact" type="button" data-result-action="reroll">Reroll</button>
+            <button class="secondary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+          </div>
         </div>
       `;
     }
@@ -648,7 +727,10 @@
           <strong>Fit logged.</strong>
           <span>Make the day great.</span>
         </div>
-        <button class="primary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+        <div class="logged-inline-actions">
+          <button class="text-button compact" type="button" data-result-action="reroll">Reroll</button>
+          <button class="primary-button compact" type="button" data-result-action="generate-another">Generate Another</button>
+        </div>
       </div>
     `;
   }
@@ -678,9 +760,9 @@
     const button = event.target.closest("[data-result-action]");
     if (!button) return;
     if (button.dataset.resultAction === "generate-another") {
-      resultState = "empty";
-      currentOutfit = null;
-      generateAndRender();
+      generateAndRender({ mode: "generate" });
+    } else if (button.dataset.resultAction === "reroll") {
+      generateAndRender({ mode: "reroll" });
     } else if (button.dataset.resultAction === "swap") {
       openSwapDialog(button.dataset.itemId);
     }
@@ -820,6 +902,7 @@
     appState.settings.defaultOccasion = validOccasion(value);
     if (!currentOutfit) {
       $("#occasionSelect").value = appState.settings.defaultOccasion;
+      handleGenerationContextChange();
     }
     saveState();
     renderSettings();
@@ -854,6 +937,7 @@
     };
     saveState();
     renderWeatherControls();
+    handleGenerationContextChange();
   }
 
   function weatherResultLabel() {
@@ -1274,9 +1358,9 @@
     if (!item) return;
     setActiveScreen("generate");
     $("#occasionSelect").value = item.occasions[0] || "casual";
-    renderBuildAroundOptions();
-    $("#buildAroundSelect").value = item.id;
-    generateAndRender();
+    const group = buildAroundGroupForItem(item);
+    renderBuildAroundOptions({ categoryId: group?.id || "other", selectedItemId: item.id });
+    generateAndRender({ mode: "generate" });
   }
 
   function openSwapDialog(itemId) {
@@ -1351,12 +1435,15 @@
       ...currentOutfit,
       items: choice.items,
       score: choice.score,
-      changedItemIds: changedItemIds(previousItems, choice.items)
+      changedItemIds: changedItemIds(previousItems, choice.items),
+      changeNote: describeDependentChanges(previousItems, choice.items)
     };
     resultState = "outfit";
     swapTargetItemId = null;
     closeDialog($("#swapDialog"));
+    trackCurrentOutfitInSession();
     renderResult();
+    renderRerollSessionStatus();
     scrollResultIntoView();
     flashChangedRows();
     const changedItem = currentOutfit.items.find((item) => item.id === choice.replacementId);
@@ -1402,24 +1489,44 @@
     showToast("Item permanently deleted.");
   }
 
+  // Result transitions are intentionally centralized: Generate starts a new
+  // viewed-fit session, while Reroll continues the current context. Both clear
+  // any prior logged/confirmation state and make the next result loggable once.
   function generateAndRender(options = {}) {
+    const mode = options.mode === "reroll" ? "reroll" : "generate";
     const occasionId = $("#occasionSelect").value;
     const buildAroundId = $("#buildAroundSelect").value;
-    const previousItems = currentOutfit?.items || [];
-    currentOutfit = pickOutfit(occasionId, buildAroundId);
+    const previousOutfit = currentOutfit && !currentOutfit.error ? currentOutfit : null;
+    const previousItems = previousOutfit?.items || [];
+    beginResultTransition(mode);
+    currentOutfit = pickOutfit(occasionId, buildAroundId, {
+      mode,
+      currentSignature: previousItems.length ? comboKey(previousItems.map((item) => item.id)) : ""
+    });
     resultState = currentOutfit?.error ? "error" : "outfit";
-    logInProgress = false;
     if (!currentOutfit.error) {
-      currentOutfit.changedItemIds = options.comparePrevious
+      currentOutfit.changedItemIds = mode === "reroll"
         ? changedItemIds(previousItems, currentOutfit.items)
         : currentOutfit.items.map((item) => item.id);
+      currentOutfit.changeNote = mode === "reroll"
+        ? describeDependentChanges(previousItems, currentOutfit.items)
+        : "";
     }
     renderResult();
+    renderRerollSessionStatus();
     scrollResultIntoView();
     flashChangedRows();
   }
 
-  function pickOutfit(occasionId, buildAroundId) {
+  function beginResultTransition(mode) {
+    resultState = "empty";
+    logInProgress = false;
+    if (mode === "generate") {
+      rerollSession = createRerollSession();
+    }
+  }
+
+  function pickOutfit(occasionId, buildAroundId, options = {}) {
     const occasion = OCCASIONS[occasionId];
     if (!occasion) {
       return { error: "Choose an occasion." };
@@ -1434,26 +1541,71 @@
       return { error: "That item is not tagged for this occasion." };
     }
 
-    const candidates = new Map();
-    for (let i = 0; i < 900; i += 1) {
-      const outfit = randomOutfit(occasion, buildAround);
-      addScoredCandidate(candidates, outfit, occasionId, buildAround?.id || "");
+    const contextKey = generationContextKey(occasionId, buildAroundId);
+    if (rerollSession.contextKey !== contextKey) {
+      rerollSession = createRerollSession(contextKey);
     }
 
-    if (candidates.size < 8) {
-      enumerateOutfits(occasion, buildAround, 2400).forEach((outfit) => {
-        addScoredCandidate(candidates, outfit, occasionId, buildAround?.id || "");
-      });
+    if (!rerollSession.candidates.length) {
+      rerollSession.candidates = buildCandidatePool(occasion, buildAround);
+      rerollSession.poolSize = rerollSession.candidates.length;
     }
 
-    const ranked = [...candidates.values()].sort((a, b) => b.score - a.score);
+    const ranked = rerollSession.candidates;
     if (!ranked.length) {
       return { error: "No compatible fit found. Loosen an avoid tag or add another active item." };
     }
 
+    const unseen = ranked.filter((candidate) => !rerollSession.seen.has(candidate.signature));
+    let choice;
+    if (unseen.length) {
+      const freshAlternatives = unseen.filter((candidate) => candidate.signature !== options.currentSignature);
+      choice = chooseCandidate(freshAlternatives.length ? freshAlternatives : unseen);
+      rerollSession.seen.add(choice.signature);
+      if (rerollSession.seen.size >= rerollSession.poolSize && rerollSession.poolSize > 1) {
+        rerollSession.repeatsEnabled = true;
+        rerollSession.message = `You've seen all ${rerollSession.poolSize} valid outfits for these settings. Repeats are now allowed.`;
+      }
+      return cloneCandidate(choice);
+    }
+
+    rerollSession.repeatsEnabled = true;
+    if (ranked.length === 1) {
+      rerollSession.message = "Only one valid outfit matches these settings.";
+      rerollSession.seen.add(ranked[0].signature);
+      return cloneCandidate(ranked[0]);
+    }
+
+    rerollSession.message = `You've seen all ${ranked.length} valid outfits for these settings. Repeats are now allowed.`;
+    const alternatives = ranked.filter((candidate) => candidate.signature !== options.currentSignature);
+    choice = chooseCandidate(alternatives.length ? alternatives : ranked);
+    return cloneCandidate(choice);
+  }
+
+  function buildCandidatePool(occasion, buildAround) {
+    const candidates = new Map();
+    for (let i = 0; i < 700; i += 1) {
+      const outfit = randomOutfit(occasion, buildAround);
+      addScoredCandidate(candidates, outfit, occasion.id, buildAround?.id || "");
+    }
+
+    enumerateOutfits(occasion, buildAround, 2200).forEach((outfit) => {
+      addScoredCandidate(candidates, outfit, occasion.id, buildAround?.id || "");
+    });
+    return [...candidates.values()].sort((a, b) => b.score - a.score);
+  }
+
+  function chooseCandidate(ranked) {
     const topPool = ranked.slice(0, Math.min(5, ranked.length));
     const index = Math.floor(Math.pow(Math.random(), 1.7) * topPool.length);
     return topPool[index];
+  }
+
+  function cloneCandidate(candidate) {
+    return {
+      ...candidate,
+      items: [...candidate.items]
+    };
   }
 
   function addScoredCandidate(map, outfit, occasionId, buildAroundId) {
@@ -1463,11 +1615,116 @@
     const key = comboKey(outfit.map((item) => item.id));
     if (map.has(key)) return;
     map.set(key, {
+      signature: key,
       occasion: occasionId,
       buildAroundId,
       items: sortOutfitItems(outfit),
       score: scoreOutfit(outfit, occasionId)
     });
+  }
+
+  function createRerollSession(contextKey = "") {
+    return {
+      contextKey,
+      candidates: [],
+      seen: new Set(),
+      poolSize: 0,
+      repeatsEnabled: false,
+      message: ""
+    };
+  }
+
+  function generationContextKey(occasionId = $("#occasionSelect").value, buildAroundId = $("#buildAroundSelect").value) {
+    const weather = appState.settings.weather;
+    const wardrobeContext = appState.wardrobe
+      .filter((item) => item.active)
+      .map((item) => ({
+        id: item.id,
+        category: item.category,
+        occasions: item.occasions,
+        formality: item.formality,
+        worksWithTags: item.worksWithTags,
+        avoidWithTags: item.avoidWithTags,
+        avoidWithItems: item.avoidWithItems,
+        beltMode: item.beltMode,
+        minTemperature: item.minTemperature,
+        maxTemperature: item.maxTemperature,
+        suitableConditions: item.suitableConditions,
+        rainSafe: item.rainSafe,
+        warmthLevel: item.warmthLevel
+      }));
+    return JSON.stringify({
+      occasionId,
+      buildAroundId,
+      weather: {
+        enabled: weather.enabled,
+        temperature: weather.temperature,
+        condition: weather.condition
+      },
+      bannedCombos: appState.bannedCombos.map((combo) => comboKey(combo.itemIds)).sort(),
+      wardrobeContext
+    });
+  }
+
+  function trackCurrentOutfitInSession() {
+    if (!currentOutfit || currentOutfit.error || resultState !== "outfit") return;
+    const contextKey = generationContextKey(currentOutfit.occasion, currentOutfit.buildAroundId || "");
+    if (rerollSession.contextKey !== contextKey) {
+      rerollSession = createRerollSession(contextKey);
+    }
+    const signature = comboKey(currentOutfit.items.map((item) => item.id));
+    if (!rerollSession.candidates.some((candidate) => candidate.signature === signature)) {
+      rerollSession.candidates.push({
+        signature,
+        occasion: currentOutfit.occasion,
+        buildAroundId: currentOutfit.buildAroundId || "",
+        items: [...currentOutfit.items],
+        score: currentOutfit.score
+      });
+      rerollSession.poolSize = rerollSession.candidates.length;
+    }
+    rerollSession.seen.add(signature);
+    if (rerollSession.poolSize > 1 && rerollSession.seen.size >= rerollSession.poolSize) {
+      rerollSession.repeatsEnabled = true;
+      rerollSession.message = `You've seen all ${rerollSession.poolSize} valid outfits for these settings. Repeats are now allowed.`;
+    }
+  }
+
+  function renderRerollSessionStatus() {
+    const status = $("#rerollSessionStatus");
+    const resetButton = $("#resetViewedFitsBtn");
+    if (!currentOutfit || currentOutfit.error || resultState !== "outfit") {
+      status.hidden = true;
+      return;
+    }
+    const contextKey = generationContextKey(currentOutfit.occasion, currentOutfit.buildAroundId || "");
+    if (rerollSession.contextKey !== contextKey || !rerollSession.poolSize) {
+      status.hidden = true;
+      return;
+    }
+
+    const viewedCount = Math.min(rerollSession.seen.size, rerollSession.poolSize);
+    let text = `${viewedCount} of ${rerollSession.poolSize} combinations viewed`;
+    if (rerollSession.poolSize === 1) {
+      text = rerollSession.message || "Only one valid outfit matches these settings.";
+    } else if (rerollSession.repeatsEnabled) {
+      text = `All ${rerollSession.poolSize} valid combinations viewed - repeats enabled`;
+    }
+    $("#rerollSessionText").textContent = text;
+    resetButton.hidden = rerollSession.poolSize <= 1;
+    status.hidden = false;
+  }
+
+  function resetViewedFits() {
+    if (!currentOutfit || currentOutfit.error) return;
+    const contextKey = generationContextKey(currentOutfit.occasion, currentOutfit.buildAroundId || "");
+    const candidates = rerollSession.contextKey === contextKey ? rerollSession.candidates : [];
+    rerollSession = createRerollSession(contextKey);
+    rerollSession.candidates = candidates;
+    rerollSession.poolSize = candidates.length;
+    trackCurrentOutfitInSession();
+    renderRerollSessionStatus();
+    showToast("Viewed fits reset.");
   }
 
   function randomOutfit(occasion, buildAround) {
@@ -1765,6 +2022,8 @@
     if (appState.settings.afterLogging === "clear") {
       currentOutfit = null;
     }
+    rerollSession.candidates = [];
+    rerollSession.poolSize = 0;
     resultState = "logged";
     saveState();
     renderAll();
@@ -1949,7 +2208,7 @@
   function finishBanFeedback() {
     closeDialog($("#feedbackDialog"));
     pendingBanFeedback = null;
-    generateAndRender({ comparePrevious: true });
+    generateAndRender({ mode: "reroll" });
   }
 
   function deleteHistoryRecord(logId) {
@@ -1999,6 +2258,7 @@
         currentOutfit = null;
         resultState = "empty";
         logInProgress = false;
+        rerollSession = createRerollSession();
         saveState();
         initializeGenerateOccasion();
         renderAll();
@@ -2020,6 +2280,7 @@
     currentOutfit = null;
     resultState = "empty";
     logInProgress = false;
+    rerollSession = createRerollSession();
     saveState();
     initializeGenerateOccasion();
     renderAll();
@@ -2216,6 +2477,16 @@
     return (nextItems || []).filter((item) => !previousIds.has(item.id)).map((item) => item.id);
   }
 
+  function describeDependentChanges(previousItems, nextItems) {
+    if (!previousItems.length) return "";
+    const previousBelt = previousItems.find((item) => item.category === "belt");
+    const nextBelt = nextItems.find((item) => item.category === "belt");
+    if (!previousBelt && nextBelt) return "Belt added to match the new bottoms.";
+    if (previousBelt && !nextBelt) return "Belt removed to match the new bottoms.";
+    if (previousBelt && nextBelt && previousBelt.id !== nextBelt.id) return "Belt updated to match the new bottoms.";
+    return "";
+  }
+
   function scrollResultIntoView() {
     const card = $("#outfitResult");
     if (!card || typeof card.scrollIntoView !== "function") return;
@@ -2228,9 +2499,11 @@
   }
 
   function flashChangedRows() {
-    setTimeout(() => {
-      $$(".result-item.is-changed").forEach((row) => row.classList.remove("is-changed"));
-    }, 1600);
+    setTimeout(clearChangedHighlights, 1250);
+  }
+
+  function clearChangedHighlights() {
+    $$(".result-item.is-changed").forEach((row) => row.classList.remove("is-changed"));
   }
 
   function registerServiceWorker() {
@@ -2637,16 +2910,28 @@
   if (window.__FIT_ROULETTE_TESTING__ === true) {
     window.__fitRouletteTest = {
       getState: () => appState,
+      getCurrentOutfit: () => currentOutfit,
+      getRerollSession: () => ({
+        contextKey: rerollSession.contextKey,
+        poolSize: rerollSession.poolSize,
+        seen: [...rerollSession.seen],
+        repeatsEnabled: rerollSession.repeatsEnabled,
+        message: rerollSession.message
+      }),
       normalizeState,
       openItemDialog,
       scoreOutfit,
       lastExactOutfitDate,
       lastTopBottomPairDate,
+      changedItemIds,
+      describeDependentChanges,
+      clearChangedHighlights,
       replaceState(raw) {
         appState = normalizeState(raw);
         currentOutfit = null;
         resultState = "empty";
         logInProgress = false;
+        rerollSession = createRerollSession();
         initializeGenerateOccasion();
         renderAll();
       }

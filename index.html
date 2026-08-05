@@ -37,10 +37,16 @@
               <select id="occasionSelect"></select>
             </label>
 
-            <label class="field">
-              <span>Build around item</span>
-              <select id="buildAroundSelect"></select>
-            </label>
+            <div class="build-around-controls">
+              <label class="field">
+                <span>Build around</span>
+                <select id="buildAroundCategorySelect"></select>
+              </label>
+              <label id="buildAroundItemField" class="field" hidden>
+                <span>Item</span>
+                <select id="buildAroundSelect"></select>
+              </label>
+            </div>
 
             <details id="weatherDetails" class="inline-details">
               <summary>
@@ -84,6 +90,11 @@
             <button id="logBtn" class="success-button" type="button">Looks Good, Log It</button>
             <button id="rerollBtn" class="secondary-button" type="button">Reroll</button>
             <button id="banBtn" class="danger-button" type="button">Never Suggest This Combo Again</button>
+          </div>
+
+          <div id="rerollSessionStatus" class="session-status" hidden>
+            <span id="rerollSessionText"></span>
+            <button id="resetViewedFitsBtn" class="text-button compact" type="button">Reset viewed fits</button>
           </div>
         </section>
 

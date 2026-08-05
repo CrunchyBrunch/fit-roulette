@@ -1,5 +1,15 @@
 # Changelog
 
+## Fit Roulette v1.3.3 &mdash; Interaction Polish
+
+- Grouped Build Around selection by closet category so mobile item menus stay short and scannable.
+- Centralized Generate, Reroll, and post-log state transitions so new results never inherit stale confirmation state.
+- Fixed native manual-log date sizing and related form shrink constraints on narrow phone viewports.
+- Made reroll and Swap changes easier to follow with a gentler highlight and dependent belt-change notes.
+- Added an in-memory unseen-first reroll session with viewed counts, exhaustion messaging, controlled repeats, and an explicit reset.
+
+This release keeps the existing `fitRoulette.v1` localStorage key and adds no persistent data fields.
+
 ## Fit Roulette v1.3.2 &mdash; Field Fixes
 
 - Fixed guided matching and quick-tag chips so selection, deselection, and saved state stay synchronized without duplicate values.

@@ -66,8 +66,8 @@ class MockElement {
 }
 
 const ids = [
-  "toast", "quickAddBtn", "occasionSelect", "buildAroundSelect", "generateBtn", "outfitResult", "resultActions",
-  "rerollBtn", "logBtn", "banBtn", "addItemBtn", "closetSearch", "closetCategory", "showInactive", "closetList",
+  "toast", "quickAddBtn", "occasionSelect", "buildAroundCategorySelect", "buildAroundSelect", "buildAroundItemField", "generateBtn", "outfitResult", "resultActions",
+  "rerollBtn", "logBtn", "banBtn", "rerollSessionStatus", "rerollSessionText", "resetViewedFitsBtn", "addItemBtn", "closetSearch", "closetCategory", "showInactive", "closetList",
   "historyList", "settingsStats", "themeSelect", "afterLoggingSelect", "defaultOccasionSelect", "appVersion", "exportBtn", "importBtn", "importFile",
   "resetDemoBtn", "clearBansBtn", "itemForm", "saveGenerateBtn", "closeItemDialogBtn", "duplicateItemBtn",
   "archiveItemBtn", "permanentDeleteBtn", "itemFormality", "formalityOutput", "itemCategory", "itemOccasions",
@@ -188,7 +188,13 @@ const code = fs.readFileSync(path.resolve(__dirname, "..", "app.js"), "utf8");
 vm.runInNewContext(code, context, { filename: "app.js" });
 domReady();
 
+elements.get("buildAroundCategorySelect").value = "tops";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(elements.get("buildAroundSelect").innerHTML.includes("Old Tee"), "Grouped build-around did not show an active old item.");
 assert(!elements.get("buildAroundSelect").innerHTML.includes("Archived Tee"), "Archived item appeared in build-around options.");
+elements.get("buildAroundCategorySelect").value = "shoes";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(elements.get("buildAroundSelect").innerHTML.includes("Old Sneakers"), "Grouped build-around did not show active old shoes.");
 assert(!elements.get("buildAroundSelect").innerHTML.includes("Laundry Sneakers"), "Unavailable item appeared in build-around options.");
 assert(elements.get("occasionSelect").value === "work", "Old data did not receive the safe default occasion.");
 

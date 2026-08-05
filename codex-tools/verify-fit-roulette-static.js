@@ -18,6 +18,9 @@ class MockClassList {
   remove(value) {
     this.values.delete(value);
   }
+  contains(value) {
+    return this.values.has(value);
+  }
   toggle(value, force) {
     const shouldAdd = force === undefined ? !this.values.has(value) : Boolean(force);
     if (shouldAdd) this.values.add(value);
@@ -84,13 +87,18 @@ const ids = [
   "toast",
   "quickAddBtn",
   "occasionSelect",
+  "buildAroundCategorySelect",
   "buildAroundSelect",
+  "buildAroundItemField",
   "generateBtn",
   "outfitResult",
   "resultActions",
   "rerollBtn",
   "logBtn",
   "banBtn",
+  "rerollSessionStatus",
+  "rerollSessionText",
+  "resetViewedFitsBtn",
   "addItemBtn",
   "closetSearch",
   "closetCategory",
@@ -218,6 +226,7 @@ const feedbackReasonInputs = ["colors", "top_pants", "shoes", "belt_shoes", "too
   return input;
 });
 const manualItemInputs = [];
+const changedResultRows = [];
 
 let domReady = null;
 const storage = new Map();
@@ -251,7 +260,7 @@ const document = {
     if (selector === "input[name='itemWeatherCondition']:checked") return weatherConditionInputs.filter((input) => input.checked);
     if (selector === "input[name='feedbackReason']") return feedbackReasonInputs;
     if (selector === "input[name='manualItem']:checked") return manualItemInputs.filter((input) => input.checked);
-    if (selector === ".result-item.is-changed") return [];
+    if (selector === ".result-item.is-changed") return changedResultRows.filter((row) => row.classList.contains("is-changed"));
     if (selector === "[data-color]") return [];
     return [];
   }
@@ -316,10 +325,24 @@ for (const occasion of ["work", "friday", "casual", "date", "gym"]) {
   assert(elements.get("resultActions").hidden === false, `Actions hidden for ${occasion}.`);
 }
 
+elements.get("buildAroundCategorySelect").value = "bottoms";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(elements.get("buildAroundItemField").hidden === false, "Build-around item selector did not appear after choosing a category.");
+assert(elements.get("buildAroundSelect").innerHTML.includes("Light Jeans"), "Bottoms group did not include pants.");
+assert(!elements.get("buildAroundSelect").innerHTML.includes("Gray Polo"), "Bottoms group included a top.");
 elements.get("occasionSelect").value = "casual";
 elements.get("buildAroundSelect").value = "item_light_jeans";
+elements.get("buildAroundSelect").listeners.get("change")({ target: elements.get("buildAroundSelect") });
 elements.get("generateBtn").click();
 assert(elements.get("outfitResult").innerHTML.includes("Light Jeans"), "Build-around item was not included.");
+assert(elements.get("outfitResult").innerHTML.includes("Locked"), "Build-around item was not locked during Swap.");
+elements.get("buildAroundCategorySelect").value = "tops";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(elements.get("buildAroundSelect").value === "", "Changing build-around category did not clear the prior item.");
+assert(elements.get("buildAroundSelect").innerHTML.includes("Gray Polo"), "Tops group did not include tops.");
+elements.get("buildAroundCategorySelect").value = "";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(elements.get("buildAroundItemField").hidden === true, "Clearing build-around category did not hide the item selector.");
 
 elements.get("banBtn").click();
 const afterBan = JSON.parse(storage.get("fitRoulette.v1"));
@@ -368,6 +391,14 @@ const generateAnotherTarget = new MockElement();
 generateAnotherTarget.dataset.resultAction = "generate-another";
 elements.get("outfitResult").listeners.get("click")({ target: generateAnotherTarget });
 assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Generate Another did not produce a fit.");
+assert(!elements.get("outfitResult").innerHTML.includes("Fit logged."), "Generate kept stale confirmation state.");
+
+elements.get("logBtn").click();
+const rerollLoggedTarget = new MockElement();
+rerollLoggedTarget.dataset.resultAction = "reroll";
+elements.get("outfitResult").listeners.get("click")({ target: rerollLoggedTarget });
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Reroll after confirmation-and-keep did not produce a fit.");
+assert(!elements.get("outfitResult").innerHTML.includes("Fit logged."), "Reroll kept stale confirmation state.");
 
 elements.get("afterLoggingSelect").value = "keep";
 elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
@@ -378,12 +409,24 @@ const keepHistoryCount = JSON.parse(storage.get("fitRoulette.v1")).history.lengt
 elements.get("logBtn").click();
 assert(JSON.parse(storage.get("fitRoulette.v1")).history.length === keepHistoryCount, "Keep-visible mode allowed duplicate logging.");
 elements.get("outfitResult").listeners.get("click")({ target: generateAnotherTarget });
+assert(!elements.get("outfitResult").innerHTML.includes("Logged"), "Generate after keep-visible retained its logged badge.");
+elements.get("logBtn").click();
+elements.get("outfitResult").listeners.get("click")({ target: rerollLoggedTarget });
+assert(!elements.get("outfitResult").innerHTML.includes("Logged"), "Reroll after keep-visible retained its logged badge.");
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Reroll after keep-visible did not produce a fit.");
 
 elements.get("afterLoggingSelect").value = "clear";
 elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
 elements.get("logBtn").click();
 assert(elements.get("outfitResult").innerHTML.includes("Fit logged."), "Clear mode lost its confirmation.");
 assert(!/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Clear mode kept the outfit visible.");
+elements.get("outfitResult").listeners.get("click")({ target: generateAnotherTarget });
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Generate after clear mode did not produce a fit.");
+assert(!elements.get("outfitResult").innerHTML.includes("Fit logged."), "Generate after clear mode retained confirmation.");
+elements.get("logBtn").click();
+elements.get("outfitResult").listeners.get("click")({ target: rerollLoggedTarget });
+assert(/Today's fit|Today&apos;s fit/.test(elements.get("outfitResult").innerHTML), "Reroll after clear mode did not produce a fit.");
+assert(!elements.get("outfitResult").innerHTML.includes("Fit logged."), "Reroll after clear mode retained confirmation.");
 
 elements.get("afterLoggingSelect").value = "confirm_keep";
 elements.get("afterLoggingSelect").listeners.get("change")({ target: elements.get("afterLoggingSelect") });
@@ -404,6 +447,7 @@ const afterManualLog = JSON.parse(storage.get("fitRoulette.v1"));
 assert(afterManualLog.history.length === storedForManual.history.length + 1, "Manual outfit was not logged.");
 assert(afterManualLog.history[0].source === "manual", "Manual log source was not saved.");
 assert(afterManualLog.history[0].note === "Manual smoke log", "Manual log note was not saved.");
+assert(afterManualLog.history[0].date.startsWith("2026-07-25"), "Manual log date was not saved.");
 
 elements.get("useWeather").checked = true;
 elements.get("weatherTemperature").value = "48";
@@ -479,6 +523,86 @@ context.window.__fitRouletteTest.openItemDialog(chipItem.id);
 assert(elements.get("itemWorksWithTags").value.includes("navy"), "Matching chip state did not survive save and reopen.");
 assert(elements.get("itemDialogTitle").textContent === "Chip Toggle Polo", "Existing editor did not show the item name.");
 
+const sessionState = {
+  version: 3,
+  wardrobe: [
+    { id: "session_top_a", name: "Session Top A", category: "top", colors: ["black"], occasions: ["casual"], formality: 4, active: true },
+    { id: "session_top_b", name: "Session Top B", category: "top", colors: ["navy"], occasions: ["casual"], formality: 4, active: true },
+    { id: "session_pants", name: "Session Pants", category: "pants", colors: ["gray"], occasions: ["casual"], formality: 4, active: true },
+    { id: "session_shoes", name: "Session Shoes", category: "shoes", colors: ["white"], occasions: ["casual"], formality: 4, active: true }
+  ],
+  history: [],
+  bannedCombos: [],
+  feedback: [],
+  settings: { theme: "system", afterLogging: "confirm_keep", defaultOccasion: "casual", weather: { enabled: false, temperature: null, condition: "sunny" } }
+};
+context.window.__fitRouletteTest.replaceState(sessionState);
+elements.get("occasionSelect").value = "casual";
+elements.get("buildAroundCategorySelect").value = "";
+elements.get("buildAroundSelect").value = "";
+elements.get("generateBtn").click();
+const firstSessionOutfit = context.window.__fitRouletteTest.getCurrentOutfit();
+const firstSessionSignature = firstSessionOutfit.items.map((item) => item.id).sort().join("|");
+let sessionInfo = context.window.__fitRouletteTest.getRerollSession();
+assert(sessionInfo.poolSize === 2 && sessionInfo.seen.length === 1, "First generated outfit was not tracked in the reroll session.");
+elements.get("rerollBtn").click();
+const secondSessionOutfit = context.window.__fitRouletteTest.getCurrentOutfit();
+const secondSessionSignature = secondSessionOutfit.items.map((item) => item.id).sort().join("|");
+assert(secondSessionSignature !== firstSessionSignature, "Reroll repeated before showing an unseen outfit.");
+assert(secondSessionOutfit.changedItemIds.length === 1, "Reroll did not identify only the changed item.");
+sessionInfo = context.window.__fitRouletteTest.getRerollSession();
+assert(sessionInfo.seen.length === 2 && sessionInfo.repeatsEnabled, "Reroll session did not enter repeat mode after exhaustion.");
+assert(elements.get("rerollSessionText").textContent.includes("repeats enabled"), "Pool exhaustion feedback was not rendered.");
+elements.get("rerollBtn").click();
+const repeatedSessionOutfit = context.window.__fitRouletteTest.getCurrentOutfit();
+const repeatedSessionSignature = repeatedSessionOutfit.items.map((item) => item.id).sort().join("|");
+assert(repeatedSessionSignature !== secondSessionSignature, "Repeat mode immediately repeated the current outfit despite an alternative.");
+assert(context.window.__fitRouletteTest.getState().history.length === 0, "Reroll-session views leaked into worn history.");
+
+elements.get("occasionSelect").value = "work";
+elements.get("occasionSelect").listeners.get("change")();
+assert(context.window.__fitRouletteTest.getRerollSession().seen.length === 0, "Occasion change did not reset the reroll session.");
+elements.get("occasionSelect").value = "casual";
+elements.get("generateBtn").click();
+elements.get("buildAroundCategorySelect").value = "tops";
+elements.get("buildAroundCategorySelect").listeners.get("change")({ target: elements.get("buildAroundCategorySelect") });
+assert(context.window.__fitRouletteTest.getRerollSession().seen.length === 0, "Build-around category change did not reset the reroll session.");
+elements.get("buildAroundSelect").value = "session_top_a";
+elements.get("buildAroundSelect").listeners.get("change")();
+elements.get("generateBtn").click();
+assert(context.window.__fitRouletteTest.getCurrentOutfit().items.some((item) => item.id === "session_top_a"), "Grouped build-around generation did not require the selected item.");
+
+elements.get("useWeather").checked = true;
+elements.get("weatherTemperature").value = "70";
+elements.get("weatherCondition").value = "sunny";
+elements.get("useWeather").listeners.get("change")();
+assert(context.window.__fitRouletteTest.getRerollSession().seen.length === 0, "Weather context change did not reset the reroll session.");
+
+context.window.__fitRouletteTest.replaceState({
+  ...sessionState,
+  wardrobe: sessionState.wardrobe.filter((item) => item.id !== "session_top_b")
+});
+elements.get("occasionSelect").value = "casual";
+elements.get("buildAroundCategorySelect").value = "";
+elements.get("buildAroundSelect").value = "";
+elements.get("generateBtn").click();
+const onlySessionSignature = context.window.__fitRouletteTest.getCurrentOutfit().items.map((item) => item.id).sort().join("|");
+elements.get("rerollBtn").click();
+const onlyReroll = context.window.__fitRouletteTest.getCurrentOutfit();
+assert(onlyReroll.items.map((item) => item.id).sort().join("|") === onlySessionSignature, "One-valid-outfit reroll replaced the only fit.");
+assert(onlyReroll.changedItemIds.length === 0, "One-valid-outfit reroll showed a fake changed-item state.");
+assert(context.window.__fitRouletteTest.getRerollSession().message.includes("Only one valid outfit"), "One-valid-outfit explanation was missing.");
+
+const changedRow = new MockElement();
+changedRow.classList.add("is-changed");
+changedResultRows.push(changedRow);
+context.window.__fitRouletteTest.clearChangedHighlights();
+assert(!changedRow.classList.contains("is-changed"), "Changed-item highlight did not clear.");
+assert(context.window.__fitRouletteTest.describeDependentChanges(
+  [{ id: "pants", category: "pants" }, { id: "belt", category: "belt" }],
+  [{ id: "pants_new", category: "pants" }]
+).includes("Belt removed"), "Dependent belt removal was not explained.");
+
 const today = new Date().toISOString();
 const recencyState = {
   version: 3,
@@ -524,6 +648,10 @@ assert(context.window.__fitRouletteTest.lastTopBottomPairDate(partialPair), "Par
 for (const asset of ["index.html", "styles.css", "manifest.json", "sw.js", "icons/favicon-32.png", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-512.png"]) {
   assert(fs.existsSync(path.resolve(__dirname, "..", asset)), `${asset} is missing.`);
 }
+const styles = fs.readFileSync(path.resolve(__dirname, "..", "styles.css"), "utf8");
+assert(styles.includes('input[type="date"]'), "Native date input mobile sizing rules are missing.");
+assert(styles.includes("animation: changed-item 1.15s"), "Changed-item highlight duration is not in the requested range.");
+assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Reduced-motion handling is missing.");
 
 console.log(JSON.stringify({
   ok: true,

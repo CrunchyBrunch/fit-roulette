@@ -72,11 +72,13 @@
 
 html {
   min-height: 100%;
+  max-width: 100%;
   background: var(--bg);
 }
 
 body {
   min-height: 100%;
+  max-width: 100%;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -194,6 +196,7 @@ h3 {
 .field {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .field > span,
@@ -212,6 +215,8 @@ input,
 select,
 textarea {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: var(--tap);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -219,6 +224,25 @@ textarea {
   color: var(--text);
   padding: 12px;
   outline: none;
+}
+
+input[type="date"] {
+  display: block;
+  -webkit-min-logical-width: 0;
+  padding-inline: 10px;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+
+.build-around-controls,
+.weather-inputs,
+.input-with-suffix,
+.two-column > *,
+.item-form > * {
+  min-width: 0;
 }
 
 textarea {
@@ -373,6 +397,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-soft);
+  transition: border-color 180ms ease, background-color 180ms ease;
 }
 
 .result-item-copy {
@@ -392,9 +417,9 @@ textarea:focus {
 }
 
 .result-item.is-changed {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface));
-  animation: changed-item 1.5s ease-out;
+  border-color: color-mix(in srgb, var(--accent) 78%, var(--line));
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  animation: changed-item 1.15s ease-out;
 }
 
 .swap-button {
@@ -420,11 +445,40 @@ textarea:focus {
 
 @keyframes changed-item {
   0% {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  55% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
   }
   100% {
     box-shadow: none;
   }
+}
+
+.result-change-note {
+  margin: 9px 2px 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.session-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.session-status .text-button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 8px;
+  font-size: 0.8rem;
 }
 
 .item-kicker {
@@ -688,6 +742,7 @@ textarea:focus {
 
 .item-dialog {
   width: min(calc(100% - 20px), 560px);
+  max-width: calc(100vw - 20px);
   max-height: min(92dvh, 780px);
   margin: auto;
   border: 1px solid var(--line);
@@ -1019,12 +1074,34 @@ textarea:focus {
 }
 
 .log-success .primary-button {
+  min-width: 0;
+}
+
+.logged-result-actions {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 8px;
+}
+
+.logged-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.logged-inline-actions button {
+  min-width: 0;
+  padding-inline: 10px;
 }
 
 .log-confirmation,
 .logged-indicator {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
