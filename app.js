@@ -2,24 +2,20 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.3.3";
+  const APP_VERSION = "1.4.0";
+  const SmartCloset = window.FitRouletteSmartCloset;
+  if (!SmartCloset) throw new Error("Smart Closet module failed to load.");
+  const SCHEMA_VERSION = SmartCloset.SCHEMA_VERSION;
+  const RECOVERY_KEY = SmartCloset.RECOVERY_KEY;
 
-  const CATEGORIES = {
-    top: "Top",
-    pants: "Pants",
-    shoes: "Shoes",
-    belt: "Belt",
-    socks: "Socks",
-    outerwear: "Outerwear",
-    accessory: "Accessory"
-  };
+  const CATEGORIES = SmartCloset.CATEGORIES;
 
-  const CATEGORY_ORDER = ["top", "pants", "shoes", "belt", "socks", "outerwear", "accessory"];
+  const CATEGORY_ORDER = SmartCloset.CATEGORY_ORDER;
   const BUILD_AROUND_GROUPS = [
     { id: "tops", label: "Tops", categories: ["top"] },
-    { id: "bottoms", label: "Bottoms", categories: ["pants"] },
+    { id: "bottoms", label: "Bottoms", categories: ["bottom"] },
     { id: "shoes", label: "Shoes", categories: ["shoes"] },
-    { id: "layers", label: "Layers", categories: ["outerwear"] },
+    { id: "layers", label: "Layers", categories: ["layer"] },
     { id: "accessories", label: "Accessories", categories: ["accessory", "socks"] },
     { id: "belts", label: "Belts", categories: ["belt"] }
   ];
@@ -28,11 +24,11 @@
     work: {
       id: "work",
       label: "Work / Office",
-      targetFormality: 7,
+      targetFormality: 4,
       formalityGap: 3,
       slots: [
         { key: "top", label: "Top", categories: ["top"] },
-        { key: "pants", label: "Pants", categories: ["pants"] },
+        { key: "bottom", label: "Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] },
         { key: "belt", label: "Belt", categories: ["belt"] },
         { key: "socks", label: "Socks", categories: ["socks"] }
@@ -41,11 +37,11 @@
     friday: {
       id: "friday",
       label: "Friday Jeans",
-      targetFormality: 5,
+      targetFormality: 3,
       formalityGap: 4,
       slots: [
         { key: "top", label: "Top", categories: ["top"] },
-        { key: "pants", label: "Jeans/Pants", categories: ["pants"] },
+        { key: "bottom", label: "Jeans/Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] },
         { key: "belt", label: "Belt", categories: ["belt"] },
         { key: "socks", label: "Socks", categories: ["socks"] }
@@ -54,22 +50,22 @@
     casual: {
       id: "casual",
       label: "Casual",
-      targetFormality: 4,
+      targetFormality: 2,
       formalityGap: 5,
       slots: [
         { key: "top", label: "Top", categories: ["top"] },
-        { key: "pants", label: "Pants", categories: ["pants"] },
+        { key: "bottom", label: "Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] }
       ]
     },
     date: {
       id: "date",
       label: "Date",
-      targetFormality: 6,
+      targetFormality: 3,
       formalityGap: 4,
       slots: [
         { key: "top", label: "Top", categories: ["top"] },
-        { key: "pants", label: "Pants", categories: ["pants"] },
+        { key: "bottom", label: "Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] }
       ],
       optionalSlots: [
@@ -79,11 +75,11 @@
     gym: {
       id: "gym",
       label: "Gym/Errands",
-      targetFormality: 3,
+      targetFormality: 1,
       formalityGap: 6,
       slots: [
         { key: "top", label: "Top", categories: ["top"] },
-        { key: "pants", label: "Pants/Shorts", categories: ["pants"] },
+        { key: "bottom", label: "Bottom/Shorts", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] }
       ]
     }
@@ -94,7 +90,7 @@
   const AFTER_LOGGING_VALUES = ["confirm_keep", "keep", "clear"];
   const WEATHER_CONDITIONS = ["sunny", "cloudy", "rain", "snow", "windy"];
   const BELT_MODES = ["required", "optional", "none"];
-  const COLOR_OPTIONS = ["black", "white", "off-white", "navy", "light blue", "gray", "dark gray", "khaki", "tan", "brown", "olive"];
+  const COLOR_OPTIONS = SmartCloset.COLOR_PALETTE;
   const FEEDBACK_REASONS = [
     ["colors", "These colors do not work together"],
     ["top_pants", "Top and pants do not work together"],
@@ -107,81 +103,9 @@
     ["other", "Other"]
   ];
 
-  const ITEM_TEMPLATES = {
-    polo: { label: "Polo", category: "top", tags: ["polo", "smart casual"], occasions: ["work", "friday", "casual", "date"], formality: 6, worksWithTags: ["navy", "gray", "black", "khaki", "jeans", "olive", "brown"] },
-    tshirt: { label: "T-Shirt", category: "top", tags: ["t-shirt", "casual"], occasions: ["casual", "gym"], formality: 3, worksWithTags: ["jeans", "black", "gray", "navy", "olive"] },
-    dress_pants: { label: "Dress Pants", category: "pants", tags: ["dress pants", "office", "pressed"], occasions: ["work", "friday", "date"], formality: 7, beltMode: "optional", worksWithTags: ["polo", "dress shoes", "belt", "black", "navy", "gray", "tan"], avoidWithTags: ["athletic", "running"] },
-    jeans: { label: "Jeans", category: "pants", tags: ["jeans", "denim", "casual"], occasions: ["friday", "casual", "date", "gym"], formality: 4, beltMode: "optional", worksWithTags: ["polo", "t-shirt", "sneakers", "boots"] },
-    cargos: { label: "Cargos", category: "pants", tags: ["cargo", "cargos", "casual", "errands"], occasions: ["casual", "gym"], formality: 3, beltMode: "optional", worksWithTags: ["sneakers", "boots", "black", "gray", "olive"], avoidWithTags: ["dress shoes", "pressed"] },
-    dress_shoes: { label: "Dress Shoes", category: "shoes", tags: ["dress shoes", "office", "date"], occasions: ["work", "friday", "date"], formality: 8, worksWithTags: ["dress pants", "belt", "black", "navy", "gray", "khaki"], avoidWithTags: ["cargo", "athletic", "running"] },
-    sneakers: { label: "Sneakers", category: "shoes", tags: ["sneakers", "casual"], occasions: ["friday", "casual", "gym"], formality: 3, worksWithTags: ["jeans", "cargo", "black", "gray", "navy"] },
-    boots: { label: "Boots", category: "shoes", tags: ["boots", "casual", "date"], occasions: ["friday", "casual", "date"], formality: 5, worksWithTags: ["jeans", "khaki", "brown", "olive", "navy"] },
-    belt: { label: "Belt", category: "belt", tags: ["belt"], occasions: ["work", "friday", "casual", "date"], formality: 6, worksWithTags: ["dress shoes", "jeans", "dress pants"] },
-    socks: { label: "Socks", category: "socks", tags: ["socks"], occasions: ["work", "friday", "date"], formality: 5, worksWithTags: ["dress shoes", "black", "brown", "navy", "gray"] }
-  };
-
-  const MATCH_CHIPS = {
-    top: {
-      works: [
-        ["works with navy pants", ["navy", "pants"]],
-        ["works with gray pants", ["gray", "pants"]],
-        ["works with black pants", ["black", "pants"]],
-        ["works with khaki pants", ["khaki", "pants"]],
-        ["works with jeans", ["jeans"]],
-        ["works with olive", ["olive"]],
-        ["works with brown", ["brown"]]
-      ],
-      avoid: [["avoid cargos", ["cargo", "cargos"]], ["avoid athletic", ["athletic", "running"]]]
-    },
-    pants: {
-      works: [
-        ["works with white tops", ["white", "top"]],
-        ["works with black tops", ["black", "top"]],
-        ["works with gray tops", ["gray", "top"]],
-        ["works with navy tops", ["navy", "top"]],
-        ["works with light blue tops", ["light blue", "top"]],
-        ["works with tan tops", ["tan", "top"]],
-        ["works with off-white tops", ["off-white", "top"]]
-      ],
-      avoid: [["avoid running shoes", ["running"]], ["avoid dress shoes", ["dress shoes"]]]
-    },
-    shoes: {
-      works: [
-        ["works with black belt", ["black", "belt"]],
-        ["works with brown belt", ["brown", "belt"]],
-        ["works with jeans", ["jeans"]],
-        ["works with navy pants", ["navy", "pants"]],
-        ["works with gray pants", ["gray", "pants"]],
-        ["works with khaki pants", ["khaki", "pants"]],
-        ["office-safe", ["office", "dress pants"]],
-        ["casual-only", ["casual", "jeans", "cargo"]]
-      ],
-      avoid: [["avoid cargos", ["cargo", "cargos"]], ["avoid dress outfits", ["dress pants", "office"]]]
-    },
-    belt: {
-      works: [
-        ["works with black shoes", ["black", "shoes"]],
-        ["works with brown shoes", ["brown", "shoes"]],
-        ["works with dress outfits", ["dress pants", "dress shoes", "office"]],
-        ["works with casual outfits", ["jeans", "casual"]]
-      ],
-      avoid: []
-    },
-    socks: {
-      works: [
-        ["office-safe", ["office", "dress shoes"]],
-        ["casual", ["casual", "sneakers"]],
-        ["black shoes", ["black", "shoes"]],
-        ["brown shoes", ["brown", "shoes"]],
-        ["navy pants", ["navy", "pants"]],
-        ["gray pants", ["gray", "pants"]]
-      ],
-      avoid: []
-    },
-    outerwear: { works: [["works with casual", ["casual"]], ["works with office", ["office"]]], avoid: [] },
-    accessory: { works: [["works with casual", ["casual"]], ["works with date", ["date"]]], avoid: [] }
-  };
-
+  let storageWriteLocked = false;
+  let loadIssue = null;
+  let migrationInfo = { migrated: false, recoveryCreated: false };
   let appState = loadState();
   let currentOutfit = null;
   let resultState = "empty";
@@ -189,6 +113,7 @@
   let swapTargetItemId = null;
   let logInProgress = false;
   let editingItemId = null;
+  let addSimilarSourceId = null;
   let rerollSession = createRerollSession();
   let closetFilters = {
     search: "",
@@ -226,6 +151,9 @@
     $("#logBtn").addEventListener("click", logCurrentOutfit);
     $("#banBtn").addEventListener("click", banCurrentCombo);
     $("#outfitResult").addEventListener("click", handleResultAction);
+    $("#todayLoggedNotice").addEventListener("click", (event) => {
+      if (event.target.closest("[data-today-log-id]")) setActiveScreen("history");
+    });
     $("#manualLogGenerateBtn").addEventListener("click", openManualLogDialog);
     $("#manualLogHistoryBtn").addEventListener("click", openManualLogDialog);
     $("#manualLogForm").addEventListener("submit", saveManualLog);
@@ -261,9 +189,12 @@
     });
 
     $("#closetList").addEventListener("click", handleClosetAction);
+    $("#freshSetup").addEventListener("click", handleFreshSetupAction);
+    $("#reviewQueue").addEventListener("click", handleReviewQueueAction);
     $("#historyList").addEventListener("click", handleHistoryAction);
 
     $("#exportBtn").addEventListener("click", exportBackup);
+    $("#exportRecoveryBtn").addEventListener("click", exportRecoveryPayload);
     $("#importBtn").addEventListener("click", () => $("#importFile").click());
     $("#importFile").addEventListener("change", importBackup);
     $("#resetDemoBtn").addEventListener("click", resetDemoData);
@@ -275,21 +206,16 @@
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
     $("#itemCategory").addEventListener("change", () => {
-      renderGuidedMatchChips();
-      renderBeltModeControl();
+      renderSubtypeOptions();
+      applyTemplate($("#itemSubtype").value);
     });
-    $("#copyMatchingBtn").addEventListener("click", copyMatchingFromSelectedItem);
+    $("#itemSubtype").addEventListener("change", () => applyTemplate($("#itemSubtype").value));
     $("#saveGenerateBtn").addEventListener("click", () => saveItemFromEditor({ generateAfter: true }));
     $("#closeItemDialogBtn").addEventListener("click", closeItemDialog);
-    $("#duplicateItemBtn").addEventListener("click", duplicateFromDialog);
-    $("#archiveItemBtn").addEventListener("click", toggleArchiveFromDialog);
+    $("#addSimilarBtn").addEventListener("click", addSimilarFromDialog);
     $("#permanentDeleteBtn").addEventListener("click", permanentlyDeleteFromDialog);
-    $("#itemFormality").addEventListener("input", (event) => {
-      $("#formalityOutput").value = event.target.value;
-    });
     $("#itemPrimaryColor").addEventListener("input", updateSelectedColorChip);
     $("#itemName").addEventListener("input", updateEditorTitle);
-    $("#itemTags").addEventListener("input", updateSelectedQuickTags);
   }
 
   function renderStaticOptions() {
@@ -304,6 +230,7 @@
 
     $("#itemCategory").innerHTML = categoryOptions;
     $("#closetCategory").innerHTML = `<option value="all">All categories</option>${categoryOptions}`;
+    renderSubtypeOptions();
 
     $("#itemOccasions").innerHTML = OCCASION_ORDER.map((id) => {
       const occasion = OCCASIONS[id];
@@ -315,13 +242,22 @@
       `;
     }).join("");
 
-    $("#templateChips").innerHTML = Object.entries(ITEM_TEMPLATES).map(([id, template]) => {
-      return `<button class="mini-button" type="button" data-template-id="${escapeAttribute(id)}">${escapeHtml(template.label)}</button>`;
+    const quickTemplates = ["polo", "t-shirt", "button-down", "sweater", "jeans", "dress pants", "chinos", "cargos", "athletic shorts", "sneakers", "athletic/running shoes", "dress shoes", "boots", "jacket", "hoodie"];
+    $("#templateChips").innerHTML = quickTemplates.map((id) => {
+      return `<button class="mini-button" type="button" data-template-id="${escapeAttribute(id)}">${escapeHtml(SmartCloset.titleCase(id))}</button>`;
     }).join("");
 
     $("#primaryColorChips").innerHTML = COLOR_OPTIONS.map((color) => {
-      return `<button class="mini-button" type="button" data-color="${escapeAttribute(color)}">${escapeHtml(color)}</button>`;
+      return `<button class="mini-button" type="button" data-color="${escapeAttribute(SmartCloset.titleCase(color))}">${escapeHtml(SmartCloset.titleCase(color))}</button>`;
     }).join("");
+
+    $("#colorSuggestions").innerHTML = COLOR_OPTIONS.map((color) => `<option value="${escapeAttribute(SmartCloset.titleCase(color))}"></option>`).join("");
+    $("#itemPattern").innerHTML = SmartCloset.PATTERNS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemFormality").innerHTML = Object.entries(SmartCloset.FORMALITY_LABELS).map(([value, label]) => `<option value="${value}">${value}. ${escapeHtml(label)}</option>`).join("");
+    $("#itemSleeveLength").innerHTML = SmartCloset.SLEEVE_LENGTHS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemBottomLength").innerHTML = SmartCloset.BOTTOM_LENGTHS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemWarmth").innerHTML = SmartCloset.WARMTH_LEVELS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemRainPolicy").innerHTML = SmartCloset.RAIN_POLICIES.map((value) => `<option value="${value}">${escapeHtml(value === "avoid" ? "Avoid rain / snow" : SmartCloset.titleCase(value))}</option>`).join("");
 
     $("#manualLogOccasion").innerHTML = OCCASION_ORDER.map((id) => {
       return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
@@ -329,15 +265,6 @@
 
     $("#defaultOccasionSelect").innerHTML = OCCASION_ORDER.map((id) => {
       return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
-    }).join("");
-
-    $("#itemWeatherConditions").innerHTML = WEATHER_CONDITIONS.map((condition) => {
-      return `
-        <label class="check-pill compact-check">
-          <input type="checkbox" name="itemWeatherCondition" value="${condition}">
-          <span>${escapeHtml(capitalize(condition))}</span>
-        </label>
-      `;
     }).join("");
 
     $("#feedbackChoices").innerHTML = FEEDBACK_REASONS.map(([value, label]) => {
@@ -352,13 +279,26 @@
 
   function renderAll() {
     renderBuildAroundOptions();
-    renderTagSuggestions();
+    renderLabelSuggestions();
+    renderDataSafetyNotice();
+    renderFreshSetup();
+    renderReviewQueue();
     renderCloset();
     renderHistory();
     renderSettings();
     renderWeatherControls();
     renderResult();
+    renderTodayLoggedNotice();
     renderRerollSessionStatus();
+  }
+
+  function renderSubtypeOptions(selectedValue = "") {
+    const category = $("#itemCategory")?.value || "top";
+    const values = SmartCloset.SUBTYPES[category] || ["other"];
+    $("#itemSubtype").innerHTML = values.map((value) => `<option value="${escapeAttribute(value)}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemSubtype").value = values.includes(selectedValue) ? selectedValue : values[0];
+    $("#sleeveLengthField").hidden = !["top", "layer"].includes(category);
+    $("#bottomLengthField").hidden = category !== "bottom";
   }
 
   function initializeGenerateOccasion() {
@@ -383,61 +323,84 @@
       return fresh;
     }
 
+    let raw;
     try {
-      return normalizeState(JSON.parse(saved));
+      raw = JSON.parse(saved);
+    } catch (error) {
+      try {
+        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved);
+      } catch (recoveryError) {
+        console.error(recoveryError);
+        return loadFailureState(recoveryError, "Saved closet data is malformed and a recovery copy could not be created. The original data remains untouched.");
+      }
+      return loadFailureState(error, "Saved closet data is malformed. The original data is untouched and editing is locked until a valid backup is imported.");
+    }
+
+    const incomingVersion = Number(raw?.schemaVersion ?? raw?.version ?? 1);
+    if (Number.isFinite(incomingVersion) && incomingVersion > SCHEMA_VERSION) {
+      return loadFailureState(
+        Object.assign(new Error(`Unsupported future schema ${incomingVersion}.`), { code: "UNSUPPORTED_FUTURE_SCHEMA" }),
+        `This closet uses schema ${incomingVersion}, which is newer than this app supports. No data was changed.`
+      );
+    }
+
+    try {
+      if (!Number.isFinite(incomingVersion) || incomingVersion < SCHEMA_VERSION) {
+        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved);
+      }
+      const result = SmartCloset.migrateAndValidate(raw);
+      if (result.migrated) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(result.state));
+        migrationInfo.migrated = true;
+      }
+      return result.state;
     } catch (error) {
       console.error(error);
-      const fresh = createDefaultState();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-      return fresh;
+      return loadFailureState(error, "Smart Closet migration could not be completed safely. The original data is untouched and editing is locked.");
     }
   }
 
-  function saveState() {
+  function preserveRecoveryPayload(payload) {
+    if (localStorage.getItem(RECOVERY_KEY) !== null) return false;
     try {
+      localStorage.setItem(RECOVERY_KEY, payload);
+      return true;
+    } catch (error) {
+      console.error(error);
+      throw Object.assign(new Error("Could not create the required recovery copy."), { code: "RECOVERY_WRITE_FAILED" });
+    }
+  }
+
+  function loadFailureState(error, message) {
+    storageWriteLocked = true;
+    loadIssue = { code: error?.code || "LOAD_FAILED", message };
+    const safeState = SmartCloset.createFreshState();
+    safeState.setup = { completed: true, choice: "recovery" };
+    return safeState;
+  }
+
+  function saveState() {
+    if (storageWriteLocked) {
+      showToast("Data is locked to protect the original closet. Import a valid backup to continue.");
+      return false;
+    }
+    try {
+      SmartCloset.validateState(appState);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      return true;
     } catch (error) {
       console.error(error);
       showToast("Could not save locally. Storage may be full.");
+      return false;
     }
   }
 
   function createDefaultState() {
-    return normalizeState({
-      version: 3,
-      wardrobe: demoWardrobe(),
-      history: [],
-      bannedCombos: [],
-      feedback: [],
-      settings: {
-        theme: "system",
-        afterLogging: "confirm_keep",
-        defaultOccasion: "work",
-        weather: {
-          enabled: false,
-          temperature: null,
-          condition: "sunny"
-        }
-      }
-    });
+    return SmartCloset.createFreshState();
   }
 
   function normalizeState(raw) {
-    const settings = normalizeSettings(raw?.settings);
-    const normalized = {
-      version: Math.max(3, Number(raw?.version) || 1),
-      wardrobe: Array.isArray(raw?.wardrobe) ? raw.wardrobe.map(normalizeItem).filter(Boolean) : [],
-      history: Array.isArray(raw?.history) ? raw.history.map(normalizeHistoryRecord).filter(Boolean) : [],
-      bannedCombos: Array.isArray(raw?.bannedCombos) ? raw.bannedCombos.map(normalizeBannedCombo).filter(Boolean) : [],
-      feedback: Array.isArray(raw?.feedback) ? raw.feedback.map(normalizeFeedbackRecord).filter(Boolean) : [],
-      settings
-    };
-
-    if (!normalized.wardrobe.length) {
-      normalized.wardrobe = demoWardrobe().map(normalizeItem);
-    }
-
-    return normalized;
+    return SmartCloset.migrateAndValidate(raw).state;
   }
 
   function normalizeSettings(settings) {
@@ -458,35 +421,7 @@
   }
 
   function normalizeItem(item) {
-    if (!item || typeof item !== "object") return null;
-    const category = CATEGORIES[item.category] ? item.category : "top";
-    const occasions = toArray(item.occasions).map(normalizeOccasionToken).filter(Boolean);
-
-    return {
-      id: stringOr(item.id, uid("item")),
-      name: stringOr(item.name, "Unnamed Item"),
-      category,
-      colors: uniqueTags(item.colors),
-      tags: uniqueTags(item.tags),
-      occasions: unique(occasions.length ? occasions : ["casual"]),
-      season: uniqueTags(item.season),
-      formality: clampNumber(item.formality, 1, 10, 5),
-      worksWithTags: uniqueTags(item.worksWithTags),
-      avoidWithTags: uniqueTags(item.avoidWithTags),
-      avoidWithItems: uniqueTags(item.avoidWithItems),
-      beltMode: category === "pants" && BELT_MODES.includes(item.beltMode) ? item.beltMode : (category === "pants" ? "optional" : ""),
-      minTemperature: nullableNumber(item.minTemperature, -30, 130),
-      maxTemperature: nullableNumber(item.maxTemperature, -30, 130),
-      suitableConditions: uniqueTags(item.suitableConditions).map(normalizeTag).filter((condition) => WEATHER_CONDITIONS.includes(condition)),
-      rainSafe: typeof item.rainSafe === "boolean" ? item.rainSafe : null,
-      warmthLevel: nullableNumber(item.warmthLevel, 1, 5),
-      imageUrl: stringOr(item.imageUrl || item.image || "", ""),
-      lastWorn: validDateOnly(item.lastWorn) || null,
-      active: item.active !== false && item.unavailable !== true,
-      notes: stringOr(item.notes, ""),
-      createdAt: stringOr(item.createdAt, new Date().toISOString()),
-      updatedAt: stringOr(item.updatedAt, new Date().toISOString())
-    };
+    return SmartCloset.createItem(item);
   }
 
   function normalizeHistoryRecord(record) {
@@ -534,7 +469,7 @@
     const categorySelect = $("#buildAroundCategorySelect");
     const itemSelect = $("#buildAroundSelect");
     const itemField = $("#buildAroundItemField");
-    const activeItems = appState.wardrobe.filter((item) => item.active).sort(sortItems);
+    const activeItems = appState.wardrobe.filter(isAvailable).sort(sortItems);
     const availableGroups = buildAroundGroups(activeItems);
     const requestedItemId = options.selectedItemId ?? itemSelect.value ?? "";
     const selectedItem = activeItems.find((item) => item.id === requestedItemId) || null;
@@ -582,7 +517,7 @@
     return groups;
   }
 
-  function buildAroundGroupForItem(item, groups = buildAroundGroups(appState.wardrobe.filter((candidate) => candidate.active))) {
+  function buildAroundGroupForItem(item, groups = buildAroundGroups(appState.wardrobe.filter(isAvailable))) {
     return groups.find((group) => group.items.some((candidate) => candidate.id === item.id)) || null;
   }
 
@@ -591,7 +526,7 @@
       return candidate.id !== item.id && normalizeTag(candidate.name) === normalizeTag(item.name);
     });
     if (!duplicateName) return item.name;
-    const detail = item.colors[0] || CATEGORIES[item.category] || item.category;
+    const detail = item.primaryColor || CATEGORIES[item.category] || item.category;
     return `${item.name} (${detail})`;
   }
 
@@ -605,44 +540,92 @@
     renderRerollSessionStatus();
   }
 
-  function renderTagSuggestions() {
-    const commonTags = [
-      "office",
-      "casual",
-      "date",
-      "errands",
-      "summer",
-      "winter",
-      "polo",
-      "jeans",
-      "dress pants",
-      "dress shoes",
-      "sneakers",
-      "black",
-      "navy",
-      "gray",
-      "khaki",
-      "tan",
-      "olive"
-    ];
-    const closetTags = appState.wardrobe.flatMap((item) => [
-      ...item.colors,
-      ...item.tags,
-      ...item.season,
-      ...item.worksWithTags,
-      ...item.avoidWithTags
-    ]);
-    const suggestions = unique([...commonTags, ...closetTags].map(normalizeTag)).filter(Boolean).sort();
-    const quickTags = ["office", "casual", "date", "jeans", "dress pants", "sneakers", "summer", "winter"];
+  function renderLabelSuggestions() {
+    const suggestions = unique(appState.wardrobe.flatMap((item) => item.labels || []).map(normalizeTag)).filter(Boolean).sort();
+    $("#labelSuggestions").innerHTML = suggestions.map((label) => `<option value="${escapeAttribute(label)}"></option>`).join("");
+  }
 
-    $("#tagSuggestions").innerHTML = suggestions.map((tag) => {
-      return `<option value="${escapeAttribute(tag)}"></option>`;
-    }).join("");
+  function renderDataSafetyNotice() {
+    const notice = $("#dataSafetyNotice");
+    if (!loadIssue) {
+      notice.hidden = true;
+      notice.textContent = "";
+      return;
+    }
+    notice.hidden = false;
+    notice.innerHTML = `<strong>Closet data protected.</strong> ${escapeHtml(loadIssue.message)} <span class="notice-code">${escapeHtml(loadIssue.code)}</span>`;
+  }
 
-    $("#itemQuickTags").innerHTML = quickTags.map((tag) => {
-      return `<button class="mini-button" type="button" aria-pressed="false" data-quick-tag="${escapeAttribute(tag)}">${escapeHtml(tag)}</button>`;
-    }).join("");
-    updateSelectedQuickTags();
+  function renderFreshSetup() {
+    const setup = $("#freshSetup");
+    if (appState.setup?.completed || loadIssue) {
+      setup.hidden = true;
+      setup.innerHTML = "";
+      return;
+    }
+    setup.hidden = false;
+    setup.innerHTML = `
+      <p class="eyebrow">New closet</p>
+      <h2 id="freshSetupTitle">How would you like to start?</h2>
+      <p class="small-meta">This choice only appears on a genuinely fresh installation.</p>
+      <div class="setup-actions">
+        <button class="secondary-button" type="button" data-setup-choice="empty">Start with an empty closet</button>
+        <button class="primary-button" type="button" data-setup-choice="quick_add">Add clothes with Quick Add</button>
+        <button class="secondary-button" type="button" data-setup-choice="sample">Explore a sample closet</button>
+      </div>`;
+  }
+
+  function handleFreshSetupAction(event) {
+    const button = event.target.closest("[data-setup-choice]");
+    if (!button || storageWriteLocked) return;
+    const choice = button.dataset.setupChoice;
+    if (choice === "sample") appState.wardrobe = sampleWardrobe();
+    appState.setup = { completed: true, choice };
+    invalidateGenerationState();
+    saveState();
+    renderAll();
+    if (choice === "quick_add") openItemDialog();
+  }
+
+  function renderReviewQueue() {
+    const queue = $("#reviewQueue");
+    const items = appState.wardrobe.filter((item) => item.review?.status === "needs_review");
+    if (!items.length) {
+      queue.hidden = true;
+      queue.innerHTML = "";
+      return;
+    }
+    queue.hidden = false;
+    queue.innerHTML = `
+      <div class="review-queue-heading">
+        <div><p class="eyebrow">Smart Closet</p><h2 id="reviewQueueTitle">Review Smart Closet Settings</h2></div>
+        <span class="count-badge">${items.length}</span>
+      </div>
+      <p class="small-meta">Generation remains available. Review inferred or ambiguous details whenever convenient.</p>
+      <div class="review-items">${items.slice(0, 6).map((item) => `
+        <button type="button" class="review-item" data-review-id="${escapeAttribute(item.id)}">
+          <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.review.reasons[0] || "Confirm structured settings.")}</small></span>
+          <span aria-hidden="true">&rsaquo;</span>
+        </button>`).join("")}</div>
+      ${items.length > 6 ? `<p class="small-meta">${items.length - 6} more items remain in the queue.</p>` : ""}`;
+  }
+
+  function handleReviewQueueAction(event) {
+    const button = event.target.closest("[data-review-id]");
+    if (button) openItemDialog(button.dataset.reviewId);
+  }
+
+  function renderTodayLoggedNotice() {
+    const notice = $("#todayLoggedNotice");
+    const today = dateOnly(new Date());
+    const record = appState.history.find((entry) => entry.source === "manual" && dateOnly(entry.date) === today);
+    if (!record) {
+      notice.hidden = true;
+      notice.innerHTML = "";
+      return;
+    }
+    notice.hidden = false;
+    notice.innerHTML = `<span><strong>Today's fit is logged</strong><small>From your history</small></span><button class="text-button compact" type="button" data-today-log-id="${escapeAttribute(record.id)}">View in History</button>`;
   }
 
   function renderResult() {
@@ -738,7 +721,7 @@
   function renderResultItem(item, outfit, isLogged = false) {
     const changed = toArray(outfit.changedItemIds).includes(item.id);
     const locked = outfit.buildAroundId === item.id;
-    const color = item.colors[0] ? `<span>${escapeHtml(item.colors[0])}</span>` : "";
+    const color = item.primaryColor ? `<span>${escapeHtml(item.primaryColor)}</span>` : "";
 
     return `
       <div class="result-item ${changed ? "is-changed" : ""}" data-result-item-id="${escapeAttribute(item.id)}">
@@ -772,7 +755,7 @@
     const list = $("#closetList");
     const query = normalizeTag(closetFilters.search);
     const matchingItems = appState.wardrobe
-      .filter((item) => closetFilters.showInactive || item.active)
+      .filter((item) => closetFilters.showInactive || isAvailable(item))
       .filter((item) => closetFilters.category === "all" || item.category === closetFilters.category)
       .filter((item) => !query || itemSignals(item).some((signal) => signal.includes(query)))
       .sort(sortItems);
@@ -787,15 +770,19 @@
       return;
     }
 
-    const archivedItems = matchingItems.filter((item) => !item.active);
-    const activeItems = matchingItems.filter((item) => item.active);
+    const archivedItems = matchingItems.filter((item) => item.status === "archived");
+    const unavailableItems = matchingItems.filter((item) => item.status === "unavailable");
+    const activeItems = matchingItems.filter(isAvailable);
     const archivedSection = archivedItems.length
       ? renderClosetGroup("Archived", archivedItems, "archived")
       : "";
     const activeSection = activeItems.length
-      ? renderClosetGroup("Active items", activeItems, "active")
+      ? renderClosetGroup("Available", activeItems, "active")
       : "";
-    list.innerHTML = `${archivedSection}${activeSection}`;
+    const unavailableSection = unavailableItems.length
+      ? renderClosetGroup("Unavailable", unavailableItems, "unavailable")
+      : "";
+    list.innerHTML = `${archivedSection}${unavailableSection}${activeSection}`;
   }
 
   function renderClosetGroup(title, items, tone) {
@@ -811,29 +798,30 @@
     const occasionLabels = item.occasions.map((id) => OCCASIONS[id]?.label || id);
     const chips = [
       renderChip(CATEGORIES[item.category]),
-      ...item.colors.slice(0, 3).map(renderChip),
-      ...item.tags.slice(0, 4).map(renderChip),
+      renderChip(SmartCloset.titleCase(item.subtype)),
+      ...SmartCloset.itemColors(item).map(renderChip),
+      ...item.labels.slice(0, 3).map(renderChip),
       ...occasionLabels.slice(0, 2).map((label) => renderChip(label, "accent"))
     ].join("");
 
-    const status = item.active ? "" : `<span class="chip">Archived</span>`;
-    const lastWorn = item.lastWorn ? `Last worn ${formatShortDate(item.lastWorn)}` : "Not logged yet";
-    const archiveLabel = item.active ? "Archive" : "Restore";
+    const status = isAvailable(item) ? "" : `<span class="chip">${escapeHtml(SmartCloset.titleCase(item.status))}</span>`;
+    const lastWornDate = lastItemWornDate(item);
+    const lastWorn = lastWornDate ? `Last worn ${formatShortDate(lastWornDate)}` : "Not logged yet";
+    const review = item.review?.status === "needs_review" ? `<span class="chip warning">Needs review</span>` : "";
 
     return `
-      <article class="closet-card ${item.active ? "" : "is-inactive"}" data-item-id="${escapeAttribute(item.id)}">
+      <article class="closet-card ${isAvailable(item) ? "" : "is-inactive"}" data-item-id="${escapeAttribute(item.id)}">
         <div class="card-topline">
           <div class="card-title-wrap">
             <h3>${escapeHtml(item.name)}</h3>
-            <p class="small-meta">${escapeHtml(lastWorn)} - Formality ${item.formality}</p>
+            <p class="small-meta">${escapeHtml(lastWorn)} - ${escapeHtml(SmartCloset.FORMALITY_LABELS[item.formality])}</p>
           </div>
-          ${status}
+          <div class="status-chips">${review}${status}</div>
         </div>
         <div class="chip-row">${chips}</div>
         <div class="card-actions">
           <button class="secondary-button edit-action" type="button" data-action="edit">Edit</button>
-          <button class="secondary-button" type="button" data-action="duplicate">Duplicate</button>
-          <button class="secondary-button" type="button" data-action="archive">${archiveLabel}</button>
+          <button class="secondary-button" type="button" data-action="add-similar">Add Similar</button>
         </div>
       </article>
     `;
@@ -869,14 +857,17 @@
   }
 
   function renderSettings() {
-    const activeCount = appState.wardrobe.filter((item) => item.active).length;
-    const archivedCount = appState.wardrobe.length - activeCount;
+    const activeCount = appState.wardrobe.filter(isAvailable).length;
+    const unavailableCount = appState.wardrobe.filter((item) => item.status === "unavailable").length;
+    const archivedCount = appState.wardrobe.filter((item) => item.status === "archived").length;
     $("#themeSelect").value = appState.settings.theme;
     $("#afterLoggingSelect").value = appState.settings.afterLogging;
     $("#defaultOccasionSelect").value = appState.settings.defaultOccasion;
-    $("#appVersion").textContent = `App version ${APP_VERSION}`;
+    $("#appVersion").textContent = `App version ${APP_VERSION} · Data schema ${appState.schemaVersion}`;
+    $("#exportRecoveryBtn").hidden = localStorage.getItem(RECOVERY_KEY) === null && !loadIssue;
     $("#settingsStats").innerHTML = `
-      <div class="stat-card"><strong>${activeCount}</strong><span>Active items</span></div>
+      <div class="stat-card"><strong>${activeCount}</strong><span>Available</span></div>
+      <div class="stat-card"><strong>${unavailableCount}</strong><span>Unavailable</span></div>
       <div class="stat-card"><strong>${archivedCount}</strong><span>Archived</span></div>
       <div class="stat-card"><strong>${appState.history.length}</strong><span>Outfits logged</span></div>
       <div class="stat-card"><strong>${appState.bannedCombos.length}</strong><span>Banned combos</span></div>
@@ -956,10 +947,8 @@
 
     if (button.dataset.action === "edit") {
       openItemDialog(itemId);
-    } else if (button.dataset.action === "duplicate") {
-      openItemDialog(itemId, { duplicate: true });
-    } else if (button.dataset.action === "archive") {
-      toggleArchive(itemId);
+    } else if (button.dataset.action === "add-similar") {
+      openItemDialog(itemId, { addSimilar: true });
     }
   }
 
@@ -974,39 +963,33 @@
 
   function openItemDialog(itemId = null, options = {}) {
     const source = itemId ? findItem(itemId) : null;
-    const item = options.duplicate && source
-      ? { ...source, id: "", name: `${source.name} Copy`, active: true }
-      : source || emptyItem();
+    const item = options.addSimilar && source ? similarItem(source) : source || emptyItem();
+    editingItemId = source && !options.addSimilar ? item.id : null;
+    addSimilarSourceId = options.addSimilar && source ? source.id : null;
 
-    editingItemId = source && !options.duplicate ? item.id : null;
-
-    $("#itemDialogMode").textContent = editingItemId ? "Editing item" : "Closet item";
+    $("#itemDialogMode").textContent = editingItemId ? "Editing Smart Closet item" : (addSimilarSourceId ? "Add Similar" : "Quick Add");
     $("#itemId").value = editingItemId || "";
     $("#itemName").value = item.name || "";
     updateEditorTitle();
     $("#itemCategory").value = item.category || "top";
-    $("#itemPrimaryColor").value = item.colors[0] || "";
-    $("#itemSecondaryColors").value = item.colors.slice(1).join(", ");
-    $("#itemTags").value = item.tags.join(", ");
-    $("#itemFormality").value = item.formality || 5;
-    $("#formalityOutput").value = item.formality || 5;
-    $("#itemSeason").value = item.season.join(", ");
-    $("#itemWorksWithTags").value = item.worksWithTags.join(", ");
-    $("#itemAvoidWithTags").value = item.avoidWithTags.join(", ");
-    $("#itemAvoidWithItems").value = formatAvoidItems(item.avoidWithItems).join(", ");
+    renderSubtypeOptions(item.subtype);
+    $("#itemPrimaryColor").value = item.primaryColor || "";
+    $("#itemSecondaryColor").value = item.secondaryColor || "";
+    $("#itemPattern").value = item.pattern || "solid";
+    $("#itemFormality").value = item.formality || 3;
+    $("#itemSleeveLength").value = item.sleeveLength || "unspecified";
+    $("#itemBottomLength").value = item.bottomLength || "not_applicable";
+    $("#itemWarmth").value = item.warmth || "unspecified";
+    $("#itemRainPolicy").value = item.rainPolicy || "unspecified";
+    $("#itemStatus").value = item.status || "available";
+    $("#itemPreference").value = item.preference || "neutral";
+    $("#itemLabels").value = (item.labels || []).join(", ");
     $$("input[name='itemBeltMode']").forEach((input) => {
       input.checked = input.value === item.beltMode;
     });
-    $("#itemMinTemperature").value = item.minTemperature ?? "";
-    $("#itemMaxTemperature").value = item.maxTemperature ?? "";
-    $("#itemRainSafe").value = item.rainSafe === true ? "yes" : item.rainSafe === false ? "no" : "";
-    $("#itemWarmthLevel").value = item.warmthLevel ?? "";
-    $$("input[name='itemWeatherCondition']").forEach((input) => {
-      input.checked = item.suitableConditions.includes(input.value);
-    });
     $("#itemImageUrl").value = item.imageUrl || "";
+    $("#itemImageField").hidden = !item.imageUrl;
     $("#itemNotes").value = item.notes || "";
-    $("#itemActive").checked = item.active !== false;
     $("#formError").hidden = true;
     $("#formError").textContent = "";
 
@@ -1014,18 +997,22 @@
       input.checked = item.occasions.includes(input.value);
     });
 
-    $("#duplicateItemBtn").hidden = !editingItemId;
-    $("#archiveItemBtn").hidden = !editingItemId;
-    $("#archiveItemBtn").textContent = item.active ? "Archive" : "Restore";
-    $("#advancedDeleteDetails").hidden = !editingItemId;
+    $("#addSimilarBtn").hidden = !editingItemId;
+    $("#permanentDeleteBtn").hidden = !editingItemId;
     $("#matchingDetails").open = Boolean(editingItemId);
-    $("#advancedTagsDetails").open = false;
-    renderCopyMatchingOptions(editingItemId);
-    renderAvoidItemsOptions(item.avoidWithItems, editingItemId);
-    renderGuidedMatchChips();
+    $("#advancedDetails").open = false;
+    const reviewReasons = item.review?.reasons || [];
+    $("#itemReviewNotice").hidden = item.review?.status !== "needs_review";
+    $("#itemReviewNotice").innerHTML = reviewReasons.length
+      ? `<strong>Review requested</strong><ul>${reviewReasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
+      : "";
+    $("#legacyMatchingNotice").hidden = !item.legacyFallback;
+    $("#legacyMatchingNotice").textContent = item.legacyFallback
+      ? "Legacy matching remains active for this migrated item. Saving valid Smart Closet settings will retire only this item's fallback; the legacy data remains preserved."
+      : "";
+    renderPairRelationshipOptions(item.id, options.addSimilar === true);
     renderBeltModeControl();
     updateSelectedColorChip();
-    updateSelectedQuickTags();
     $("#itemForm").scrollTop = 0;
 
     const dialog = $("#itemDialog");
@@ -1042,8 +1029,9 @@
   }
 
   function closeItemDialog() {
-    $("#itemDialog").close();
+    closeDialog($("#itemDialog"));
     editingItemId = null;
+    addSimilarSourceId = null;
   }
 
   function saveItemFromForm(event) {
@@ -1052,6 +1040,10 @@
   }
 
   function saveItemFromEditor({ generateAfter }) {
+    if (storageWriteLocked) {
+      showToast("Data is locked to protect the original closet.");
+      return;
+    }
     const item = collectItemFromForm();
     const error = validateItem(item);
     if (error) {
@@ -1060,6 +1052,7 @@
       return;
     }
 
+    const now = new Date().toISOString();
     let savedItemId = editingItemId;
     if (editingItemId) {
       const index = appState.wardrobe.findIndex((existing) => existing.id === editingItemId);
@@ -1068,23 +1061,32 @@
           ...appState.wardrobe[index],
           ...item,
           id: editingItemId,
-          updatedAt: new Date().toISOString()
+          review: { status: "reviewed", reasons: [], reviewedAt: now },
+          legacyFallback: false,
+          updatedAt: now
         };
       }
       showToast("Item saved.");
     } else {
-      const savedItem = {
+      const savedItem = SmartCloset.createItem({
         ...item,
         id: uid("item"),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+        status: "available",
+        review: { status: "reviewed", reasons: [], reviewedAt: now },
+        legacyFallback: false,
+        legacyMatching: {},
+        lastWorn: null,
+        createdAt: now,
+        updatedAt: now
+      }, { now });
       appState.wardrobe.push(savedItem);
       savedItemId = savedItem.id;
       showToast("Item added.");
     }
 
-    saveState();
+    syncPairRelationships(savedItemId, selectedOptions($("#preferItemsSelect")), selectedOptions($("#neverItemsSelect")), now);
+    invalidateGenerationState();
+    if (!saveState()) return;
     closeItemDialog();
     renderAll();
     if (generateAfter && savedItemId) {
@@ -1093,42 +1095,39 @@
   }
 
   function collectItemFromForm() {
-    const primaryColor = $("#itemPrimaryColor").value.trim();
-    const secondaryColors = parseCsv($("#itemSecondaryColors").value);
-    const rawAvoidItems = parseCsv($("#itemAvoidWithItems").value);
-    const selectedAvoidItems = selectedOptions($("#avoidItemsSelect"));
-    return normalizeItem({
+    const category = $("#itemCategory").value;
+    return {
       id: $("#itemId").value,
       name: $("#itemName").value.trim(),
-      category: $("#itemCategory").value,
-      colors: unique([primaryColor, ...secondaryColors].filter(Boolean)),
-      tags: parseCsv($("#itemTags").value),
+      category,
+      subtype: $("#itemSubtype").value,
+      primaryColor: $("#itemPrimaryColor").value.trim(),
+      secondaryColor: $("#itemSecondaryColor").value.trim(),
+      pattern: $("#itemPattern").value,
+      sleeveLength: ["top", "layer"].includes(category) ? $("#itemSleeveLength").value : "not_applicable",
+      bottomLength: category === "bottom" ? $("#itemBottomLength").value : "not_applicable",
       occasions: $$("input[name='itemOccasion']:checked").map((input) => input.value),
       formality: Number($("#itemFormality").value),
-      season: parseCsv($("#itemSeason").value),
-      worksWithTags: parseCsv($("#itemWorksWithTags").value),
-      avoidWithTags: parseCsv($("#itemAvoidWithTags").value),
-      avoidWithItems: unique([...resolveAvoidItemTokens(rawAvoidItems, editingItemId), ...selectedAvoidItems]),
-      beltMode: $("input[name='itemBeltMode']:checked")?.value || "optional",
-      minTemperature: nullableNumber($("#itemMinTemperature").value, -30, 130),
-      maxTemperature: nullableNumber($("#itemMaxTemperature").value, -30, 130),
-      suitableConditions: $$("input[name='itemWeatherCondition']:checked").map((input) => input.value),
-      rainSafe: $("#itemRainSafe").value === "yes" ? true : $("#itemRainSafe").value === "no" ? false : null,
-      warmthLevel: nullableNumber($("#itemWarmthLevel").value, 1, 5),
+      beltMode: category === "bottom" ? ($("input[name='itemBeltMode']:checked")?.value || "optional") : "",
+      warmth: $("#itemWarmth").value,
+      rainPolicy: $("#itemRainPolicy").value,
+      status: $("#itemStatus").value,
+      preference: $("#itemPreference").value,
+      labels: parseCsv($("#itemLabels").value),
       imageUrl: $("#itemImageUrl").value.trim(),
-      active: $("#itemActive").checked,
       notes: $("#itemNotes").value.trim()
-    });
+    };
   }
 
   function validateItem(item) {
     if (!item.name) return "Name is required.";
     if (!item.category) return "Category is required.";
-    if (!item.colors.length) return "Primary color is required.";
+    if (!item.subtype) return "Subtype is required.";
+    if (!item.primaryColor) return "Primary color is required.";
     if (!item.occasions.length) return "Choose at least one occasion.";
-    if (item.minTemperature !== null && item.maxTemperature !== null && item.minTemperature > item.maxTemperature) {
-      return "Minimum temperature must be lower than maximum temperature.";
-    }
+    const preferred = selectedOptions($("#preferItemsSelect"));
+    const never = selectedOptions($("#neverItemsSelect"));
+    if (preferred.some((id) => never.includes(id))) return "An item cannot be both preferred and never paired.";
     return "";
   }
 
@@ -1141,14 +1140,9 @@
 
     const colorButton = event.target.closest("[data-color]");
     if (colorButton) {
-      $("#itemPrimaryColor").value = colorButton.dataset.color;
+      const selected = normalizeTag($("#itemPrimaryColor").value) === normalizeTag(colorButton.dataset.color);
+      $("#itemPrimaryColor").value = selected ? "" : colorButton.dataset.color;
       updateSelectedColorChip();
-      return;
-    }
-
-    const matchButton = event.target.closest("[data-match-kind]");
-    if (matchButton) {
-      toggleMatchChip(matchButton.dataset.matchKind, parseCsv(matchButton.dataset.matchTags));
       return;
     }
 
@@ -1158,63 +1152,86 @@
       return;
     }
 
-    const tagButton = event.target.closest("[data-quick-tag]");
-    if (tagButton) {
-      toggleCsvValue($("#itemTags"), tagButton.dataset.quickTag);
-      updateSelectedQuickTags();
-    }
   }
 
   function applyTemplate(templateId) {
-    const template = ITEM_TEMPLATES[templateId];
+    const template = SmartCloset.SUBTYPE_TEMPLATES[templateId];
     if (!template) return;
     $("#itemCategory").value = template.category;
+    renderSubtypeOptions(templateId);
     $("#itemFormality").value = template.formality;
-    $("#formalityOutput").value = template.formality;
-    mergeCsvValues($("#itemTags"), template.tags || []);
-    mergeCsvValues($("#itemWorksWithTags"), template.worksWithTags || []);
-    mergeCsvValues($("#itemAvoidWithTags"), template.avoidWithTags || []);
-    if (template.category === "pants") {
+    $("#itemPattern").value = template.pattern;
+    $("#itemSleeveLength").value = template.sleeveLength;
+    $("#itemBottomLength").value = template.bottomLength;
+    $("#itemWarmth").value = template.warmth;
+    $("#itemRainPolicy").value = template.rainPolicy;
+    if (template.category === "bottom") {
       const beltInput = $(`input[name='itemBeltMode'][value='${template.beltMode || "optional"}']`);
       if (beltInput) beltInput.checked = true;
     }
     applyOccasions(template.occasions || []);
-    renderGuidedMatchChips();
     renderBeltModeControl();
-    updateSelectedQuickTags();
-    showToast(`${template.label} template applied.`);
+    showToast(`${SmartCloset.titleCase(templateId)} defaults applied.`);
   }
 
-  function copyMatchingFromSelectedItem() {
-    const source = findItem($("#copyMatchingSelect").value);
-    if (!source) {
-      showToast("Choose an item to copy from.");
-      return;
-    }
-    applyOccasions(source.occasions);
-    $("#itemFormality").value = source.formality;
-    $("#formalityOutput").value = source.formality;
-    $("#itemWorksWithTags").value = source.worksWithTags.join(", ");
-    $("#itemAvoidWithTags").value = source.avoidWithTags.join(", ");
-    $("#itemAvoidWithItems").value = formatAvoidItems(source.avoidWithItems).join(", ");
-    if (source.category === "pants" && $("#itemCategory").value === "pants") {
-      const beltInput = $(`input[name='itemBeltMode'][value='${source.beltMode}']`);
-      if (beltInput) beltInput.checked = true;
-    }
-    $("#itemMinTemperature").value = source.minTemperature ?? "";
-    $("#itemMaxTemperature").value = source.maxTemperature ?? "";
-    $("#itemRainSafe").value = source.rainSafe === true ? "yes" : source.rainSafe === false ? "no" : "";
-    $("#itemWarmthLevel").value = source.warmthLevel ?? "";
-    $$("input[name='itemWeatherCondition']").forEach((input) => {
-      input.checked = source.suitableConditions.includes(input.value);
-    });
-    renderAvoidItemsOptions(source.avoidWithItems, editingItemId);
-    renderGuidedMatchChips();
-    showToast(`Copied matching from ${source.name}.`);
+  function similarItem(source) {
+    const now = new Date().toISOString();
+    return SmartCloset.createItem({
+      name: `${source.name} Similar`,
+      category: source.category,
+      subtype: source.subtype,
+      primaryColor: source.primaryColor,
+      secondaryColor: source.secondaryColor,
+      pattern: source.pattern,
+      sleeveLength: source.sleeveLength,
+      bottomLength: source.bottomLength,
+      formality: source.formality,
+      occasions: [...source.occasions],
+      warmth: source.warmth,
+      rainPolicy: source.rainPolicy,
+      preference: source.preference,
+      labels: [...source.labels],
+      beltMode: source.beltMode,
+      status: "available",
+      lastWorn: null,
+      imageUrl: "",
+      notes: source.notes,
+      legacyFallback: false,
+      legacyMatching: {},
+      review: { status: "reviewed", reasons: [], reviewedAt: now },
+      createdAt: now,
+      updatedAt: now
+    }, { now });
+  }
+
+  function renderPairRelationshipOptions(itemId, clearSelections = false) {
+    const relationships = itemId && !clearSelections
+      ? appState.pairRelationships.filter((record) => record.itemIds.includes(itemId))
+      : [];
+    const selectedFor = (type) => new Set(relationships.filter((record) => record.type === type).flatMap((record) => record.itemIds).filter((id) => id !== itemId));
+    const render = (type) => {
+      const selected = selectedFor(type);
+      return appState.wardrobe.filter((item) => item.id !== itemId).sort(sortItems).map((item) => {
+        return `<option value="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "selected" : ""}>${escapeHtml(item.name)} — ${escapeHtml(CATEGORIES[item.category])}</option>`;
+      }).join("");
+    };
+    $("#preferItemsSelect").innerHTML = render("prefer");
+    $("#neverItemsSelect").innerHTML = render("never");
+  }
+
+  function syncPairRelationships(itemId, preferredIds, neverIds, now) {
+    appState.pairRelationships = appState.pairRelationships.filter((record) => !record.itemIds.includes(itemId));
+    const add = (otherId, type) => {
+      const itemIds = SmartCloset.canonicalPair(itemId, otherId);
+      if (itemIds.length !== 2) return;
+      appState.pairRelationships.push({ id: uid("pair"), type, itemIds, createdAt: now, updatedAt: now });
+    };
+    unique(preferredIds).forEach((id) => add(id, "prefer"));
+    unique(neverIds).forEach((id) => add(id, "never"));
   }
 
   function renderBeltModeControl() {
-    const isBottom = $("#itemCategory").value === "pants";
+    const isBottom = $("#itemCategory").value === "bottom";
     $("#beltModeFieldset").hidden = !isBottom;
     if (isBottom && !$("input[name='itemBeltMode']:checked")) {
       const optional = $("input[name='itemBeltMode'][value='optional']");
@@ -1235,25 +1252,6 @@
     });
   }
 
-  function toggleCsvValue(input, value) {
-    const normalizedValue = normalizeTag(value);
-    const values = parseCsv(input.value);
-    const isSelected = values.some((existing) => normalizeTag(existing) === normalizedValue);
-    input.value = isSelected
-      ? values.filter((existing) => normalizeTag(existing) !== normalizedValue).join(", ")
-      : uniqueTags([...values, value]).join(", ");
-  }
-
-  function mergeCsvValues(input, values) {
-    const existing = parseCsv(input.value);
-    values.forEach((value) => {
-      if (!existing.map(normalizeTag).includes(normalizeTag(value))) {
-        existing.push(value);
-      }
-    });
-    input.value = existing.join(", ");
-  }
-
   function applyOccasions(occasions) {
     const selected = new Set(occasions);
     $$("input[name='itemOccasion']").forEach((input) => {
@@ -1261,91 +1259,10 @@
     });
   }
 
-  function renderCopyMatchingOptions(currentId) {
-    const options = appState.wardrobe
-      .filter((item) => item.id !== currentId)
-      .sort(sortItems)
-      .map((item) => `<option value="${escapeAttribute(item.id)}">${escapeHtml(item.name)}</option>`)
-      .join("");
-    $("#copyMatchingSelect").innerHTML = `<option value="">Choose similar item</option>${options}`;
-  }
-
-  function renderAvoidItemsOptions(selectedValues = [], currentId = null) {
-    const selected = new Set(selectedValues.map(normalizeTag));
-    $("#avoidItemsSelect").innerHTML = appState.wardrobe
-      .filter((item) => item.id !== currentId)
-      .sort(sortItems)
-      .map((item) => {
-        const isSelected = selected.has(normalizeTag(item.id)) || selected.has(normalizeTag(item.name));
-        return `<option value="${escapeAttribute(item.id)}" ${isSelected ? "selected" : ""}>${escapeHtml(item.name)}</option>`;
-      })
-      .join("");
-  }
-
-  function renderGuidedMatchChips() {
-    const category = $("#itemCategory").value || "top";
-    const groups = MATCH_CHIPS[category] || MATCH_CHIPS.accessory;
-    const worksTags = new Set(parseCsv($("#itemWorksWithTags").value).map(normalizeTag));
-    const avoidTags = new Set(parseCsv($("#itemAvoidWithTags").value).map(normalizeTag));
-
-    $("#worksMatchChips").innerHTML = renderMatchButtons(groups.works, "works", worksTags);
-    $("#avoidMatchChips").innerHTML = renderMatchButtons(groups.avoid, "avoid", avoidTags) || `<span class="small-meta">No common avoid chips for this category.</span>`;
-  }
-
-  function renderMatchButtons(chips, kind, selectedTags) {
-    return chips.map(([label, tags]) => {
-      const isSelected = isMatchChipSelected(tags, selectedTags);
-      return `<button class="mini-button ${isSelected ? "is-selected" : ""}" type="button" aria-pressed="${isSelected}" data-match-kind="${kind}" data-match-tags="${escapeAttribute(tags.join(", "))}">${escapeHtml(label)}</button>`;
-    }).join("");
-  }
-
-  function isMatchChipSelected(tags, selectedTags) {
-    return Boolean(tags.length) && selectedTags.has(normalizeTag(tags[0]));
-  }
-
-  function toggleMatchChip(kind, tags) {
-    const category = $("#itemCategory").value || "top";
-    const groups = MATCH_CHIPS[category] || MATCH_CHIPS.accessory;
-    const groupKey = kind === "avoid" ? "avoid" : "works";
-    const input = groupKey === "avoid" ? $("#itemAvoidWithTags") : $("#itemWorksWithTags");
-    const values = uniqueTags(parseCsv(input.value));
-    const selectedTags = new Set(values.map(normalizeTag));
-    const normalizedTags = tags.map(normalizeTag).filter(Boolean);
-    const isSelected = isMatchChipSelected(normalizedTags, selectedTags);
-
-    if (!isSelected) {
-      input.value = uniqueTags([...values, ...tags]).join(", ");
-      renderGuidedMatchChips();
-      return;
-    }
-
-    const otherSelectedTags = new Set();
-    groups[groupKey].forEach(([, otherTags]) => {
-      const sameChip = otherTags.map(normalizeTag).join("|") === normalizedTags.join("|");
-      if (!sameChip && isMatchChipSelected(otherTags, selectedTags)) {
-        otherTags.forEach((tag) => otherSelectedTags.add(normalizeTag(tag)));
-      }
-    });
-
-    input.value = values
-      .filter((value) => !normalizedTags.includes(normalizeTag(value)) || otherSelectedTags.has(normalizeTag(value)))
-      .join(", ");
-    renderGuidedMatchChips();
-  }
-
   function updateSelectedColorChip() {
     const selected = normalizeTag($("#itemPrimaryColor").value);
     $$("[data-color]").forEach((button) => {
       button.classList.toggle("is-selected", normalizeTag(button.dataset.color) === selected);
-    });
-  }
-
-  function updateSelectedQuickTags() {
-    const selected = new Set(parseCsv($("#itemTags").value).map(normalizeTag));
-    $$("[data-quick-tag]").forEach((button) => {
-      const isSelected = selected.has(normalizeTag(button.dataset.quickTag));
-      button.classList.toggle("is-selected", isSelected);
-      button.setAttribute("aria-pressed", String(isSelected));
     });
   }
 
@@ -1368,25 +1285,23 @@
     const currentItem = currentOutfit.items.find((item) => item.id === itemId);
     if (!currentItem) return;
 
-    const choices = validSwapChoices(currentItem);
+    const report = swapChoiceReport(currentItem);
+    const choices = report.eligible;
     if (!choices.length) {
-      showToast("No compatible swaps are available.");
-      return;
-    }
-    if (choices.length === 1) {
-      applySwapChoice(currentItem.id, choices[0]);
+      showToast(`No eligible replacements. ${report.excludedSummary}`);
       return;
     }
 
     swapTargetItemId = currentItem.id;
     $("#swapDialogTitle").textContent = `Swap ${CATEGORIES[currentItem.category] || "Item"}`;
-    $("#swapChoices").innerHTML = choices.slice(0, 8).map((choice) => {
+    $("#swapSummary").textContent = `${choices.length} eligible replacement${choices.length === 1 ? "" : "s"}. ${report.excludedSummary}`;
+    $("#swapChoices").innerHTML = choices.map((choice) => {
       const replacement = choice.items.find((item) => item.id === choice.replacementId);
       return `
         <button class="swap-choice" type="button" data-replacement-id="${escapeAttribute(choice.replacementId)}">
           <span>
             <strong>${escapeHtml(replacement.name)}</strong>
-            <small>${escapeHtml(replacement.colors[0] || CATEGORIES[replacement.category])}</small>
+            <small>${escapeHtml(replacement.primaryColor || CATEGORIES[replacement.category])}</small>
           </span>
           <span aria-hidden="true">&rsaquo;</span>
         </button>
@@ -1396,22 +1311,39 @@
   }
 
   function validSwapChoices(currentItem) {
+    return swapChoiceReport(currentItem).eligible;
+  }
+
+  function swapChoiceReport(currentItem) {
     const occasionId = currentOutfit.occasion;
-    return appState.wardrobe
-      .filter((item) => item.active && item.category === currentItem.category && item.id !== currentItem.id)
-      .filter((item) => matchesOccasion(item, occasionId))
+    const excluded = { status: 0, occasion: 0, matching: 0 };
+    const eligible = appState.wardrobe
+      .filter((item) => item.category === currentItem.category && item.id !== currentItem.id)
       .map((replacement) => {
+        if (!isAvailable(replacement)) {
+          excluded.status += 1;
+          return null;
+        }
+        if (!matchesOccasion(replacement, occasionId)) {
+          excluded.occasion += 1;
+          return null;
+        }
         const replaced = currentOutfit.items.map((item) => item.id === currentItem.id ? replacement : item);
         const reconciled = reconcileBeltForOutfit(replaced, occasionId, currentOutfit.buildAroundId);
-        if (!reconciled || !isCompatibleOutfit(reconciled, occasionId)) return null;
+        if (!reconciled || !isCompatibleOutfit(reconciled, occasionId, currentOutfit.buildAroundId)) {
+          excluded.matching += 1;
+          return null;
+        }
         return {
           replacementId: replacement.id,
           items: sortOutfitItems(reconciled),
-          score: scoreOutfit(reconciled, occasionId)
+          score: scoreOutfit(reconciled, occasionId, { buildAroundId: currentOutfit.buildAroundId })
         };
       })
       .filter(Boolean)
       .sort((a, b) => b.score - a.score);
+    const details = Object.entries(excluded).filter(([, count]) => count).map(([reason, count]) => `${count} ${reason}`).join(", ");
+    return { eligible, excluded, excludedSummary: details ? `Excluded: ${details}.` : "No other items were excluded." };
   }
 
   function handleSwapChoice(event) {
@@ -1450,26 +1382,11 @@
     showToast(changedItem ? `Swapped to ${changedItem.name}.` : "Item swapped.");
   }
 
-  function duplicateFromDialog() {
+  function addSimilarFromDialog() {
     if (!editingItemId) return;
+    const sourceId = editingItemId;
     closeItemDialog();
-    openItemDialog(editingItemId, { duplicate: true });
-  }
-
-  function toggleArchiveFromDialog() {
-    if (!editingItemId) return;
-    toggleArchive(editingItemId);
-    closeItemDialog();
-  }
-
-  function toggleArchive(itemId) {
-    const item = findItem(itemId);
-    if (!item) return;
-    item.active = !item.active;
-    item.updatedAt = new Date().toISOString();
-    saveState();
-    renderAll();
-    showToast(item.active ? "Item restored." : "Item archived.");
+    openItemDialog(sourceId, { addSimilar: true });
   }
 
   function permanentlyDeleteFromDialog() {
@@ -1480,9 +1397,8 @@
     if (!confirmed) return;
 
     appState.wardrobe = appState.wardrobe.filter((existing) => existing.id !== editingItemId);
-    appState.wardrobe.forEach((existing) => {
-      existing.avoidWithItems = existing.avoidWithItems.filter((ref) => normalizeTag(ref) !== normalizeTag(editingItemId));
-    });
+    appState.pairRelationships = appState.pairRelationships.filter((record) => !record.itemIds.includes(editingItemId));
+    invalidateGenerationState();
     saveState();
     closeItemDialog();
     renderAll();
@@ -1533,12 +1449,12 @@
     }
 
     const buildAround = buildAroundId ? findItem(buildAroundId) : null;
-    if (buildAroundId && (!buildAround || !buildAround.active)) {
-      return { error: "That build-around item is not active." };
+    if (buildAroundId && (!buildAround || !isAvailable(buildAround))) {
+      return { error: "That build-around item is not available." };
     }
 
     if (buildAround && !matchesOccasion(buildAround, occasionId)) {
-      return { error: "That item is not tagged for this occasion." };
+      return { error: "That item is explicitly excluded from this occasion." };
     }
 
     const contextKey = generationContextKey(occasionId, buildAroundId);
@@ -1553,7 +1469,7 @@
 
     const ranked = rerollSession.candidates;
     if (!ranked.length) {
-      return { error: "No compatible fit found. Loosen an avoid tag or add another active item." };
+      return { error: "No eligible fit found. Review item status, occasion eligibility, or Never pair settings." };
     }
 
     const unseen = ranked.filter((candidate) => !rerollSession.seen.has(candidate.signature));
@@ -1611,7 +1527,7 @@
   function addScoredCandidate(map, outfit, occasionId, buildAroundId) {
     if (!outfit || !outfit.length) return;
     if (buildAroundId && !outfit.some((item) => item.id === buildAroundId)) return;
-    if (!isCompatibleOutfit(outfit, occasionId)) return;
+    if (!isCompatibleOutfit(outfit, occasionId, buildAroundId)) return;
     const key = comboKey(outfit.map((item) => item.id));
     if (map.has(key)) return;
     map.set(key, {
@@ -1619,7 +1535,7 @@
       occasion: occasionId,
       buildAroundId,
       items: sortOutfitItems(outfit),
-      score: scoreOutfit(outfit, occasionId)
+      score: scoreOutfit(outfit, occasionId, { buildAroundId })
     });
   }
 
@@ -1637,21 +1553,24 @@
   function generationContextKey(occasionId = $("#occasionSelect").value, buildAroundId = $("#buildAroundSelect").value) {
     const weather = appState.settings.weather;
     const wardrobeContext = appState.wardrobe
-      .filter((item) => item.active)
+      .filter(isAvailable)
       .map((item) => ({
         id: item.id,
         category: item.category,
+        subtype: item.subtype,
         occasions: item.occasions,
         formality: item.formality,
-        worksWithTags: item.worksWithTags,
-        avoidWithTags: item.avoidWithTags,
-        avoidWithItems: item.avoidWithItems,
+        primaryColor: item.primaryColor,
+        secondaryColor: item.secondaryColor,
+        pattern: item.pattern,
+        sleeveLength: item.sleeveLength,
+        bottomLength: item.bottomLength,
+        preference: item.preference,
+        legacyFallback: item.legacyFallback,
+        legacyMatching: item.legacyFallback ? item.legacyMatching : undefined,
         beltMode: item.beltMode,
-        minTemperature: item.minTemperature,
-        maxTemperature: item.maxTemperature,
-        suitableConditions: item.suitableConditions,
-        rainSafe: item.rainSafe,
-        warmthLevel: item.warmthLevel
+        warmth: item.warmth,
+        rainPolicy: item.rainPolicy
       }));
     return JSON.stringify({
       occasionId,
@@ -1662,6 +1581,8 @@
         condition: weather.condition
       },
       bannedCombos: appState.bannedCombos.map((combo) => comboKey(combo.itemIds)).sort(),
+      pairRelationships: appState.pairRelationships.map((record) => `${record.type}:${record.itemIds.join("|")}`).sort(),
+      history: appState.history.map((record) => `${record.id}:${record.date}:${comboKey(record.itemIds)}`).sort(),
       wardrobeContext
     });
   }
@@ -1818,7 +1739,7 @@
 
   function candidateItems(slot, occasionId) {
     return appState.wardrobe.filter((item) => {
-      return item.active && slot.categories.includes(item.category) && matchesOccasion(item, occasionId);
+      return isAvailable(item) && slot.categories.includes(item.category) && matchesOccasion(item, occasionId);
     });
   }
 
@@ -1826,64 +1747,41 @@
     return slot.categories.includes(item.category);
   }
 
-  function isCompatibleOutfit(items, occasionId) {
+  function isCompatibleOutfit(items, occasionId, buildAroundId = "") {
     if (!items.length || isComboBanned(items)) return false;
 
     const occasion = OCCASIONS[occasionId];
     if (!occasion) return false;
-    const bottoms = items.find((item) => item.category === "pants");
+    const bottoms = items.find((item) => item.category === "bottom");
     const belts = items.filter((item) => item.category === "belt");
     if (bottoms?.beltMode === "none" && belts.length) return false;
     if (bottoms?.beltMode === "required" && occasionSupportsBelts(occasionId) && !belts.length) return false;
 
-    const formalities = items.map((item) => item.formality);
-    if (Math.max(...formalities) - Math.min(...formalities) > occasion.formalityGap) {
-      return false;
-    }
-
-    for (const item of items) {
-      if (!matchesOccasion(item, occasionId)) return false;
-      if (isWeatherClearlyUnsuitable(item)) return false;
-
-      const otherItems = items.filter((other) => other.id !== item.id);
-      const otherSignals = new Set(otherItems.flatMap(itemSignals));
-
-      if (item.avoidWithTags.some((tag) => otherSignals.has(normalizeTag(tag)))) {
-        return false;
-      }
-
-      if (otherItems.some((other) => itemAvoidsItem(item, other))) {
-        return false;
-      }
-
-    }
-
-    return true;
+    return SmartCloset.semanticCompatibility(items, occasionId, {
+      settings: appState.settings,
+      pairRelationships: appState.pairRelationships,
+      buildAroundId
+    }).valid;
   }
 
   function scoreOutfit(items, occasionId, options = {}) {
     const occasion = OCCASIONS[occasionId];
     let score = 100;
 
-    // Hard compatibility checks happen before scoring. This score stays soft:
-    // recent wear lowers the rank instead of banning an item, so small closets
-    // still produce outfits when there are no fresh alternatives.
+    const semantic = SmartCloset.semanticCompatibility(items, occasionId, {
+      settings: appState.settings,
+      pairRelationships: appState.pairRelationships,
+      buildAroundId: options.buildAroundId || ""
+    });
+    if (!semantic.valid) return -Infinity;
+    score += semantic.score;
+
     const formalities = items.map((item) => item.formality);
     const averageFormality = average(formalities);
     const formalitySpread = Math.max(...formalities) - Math.min(...formalities);
     score -= Math.abs(averageFormality - occasion.targetFormality) * 5;
     score -= formalitySpread * 2.5;
 
-    // Positive worksWithTags matches lift combos that the user has explicitly
-    // marked as good pairings. Shared color/tag vocabulary gets a smaller bump.
-    for (const item of items) {
-      const otherSignals = new Set(items.filter((other) => other.id !== item.id).flatMap(itemSignals));
-      const matches = item.worksWithTags.filter((tag) => otherSignals.has(normalizeTag(tag))).length;
-      score += matches * 8;
-    }
-
-    const sharedTagCount = countSharedSignals(items);
-    score += Math.min(sharedTagCount, 8) * 1.5;
     score += items.reduce((sum, item) => sum + weatherScore(item), 0);
 
     const exactLastWorn = lastExactOutfitDate(items);
@@ -1904,7 +1802,7 @@
 
       if (item.category === "top" && itemDays <= 3) {
         score -= 60 - itemDays * 12;
-      } else if (item.category === "pants" && itemDays <= 2) {
+      } else if (item.category === "bottom" && itemDays <= 2) {
         score -= 36 - itemDays * 10;
       } else if (item.category === "shoes" && itemDays <= 1) {
         score -= 18 - itemDays * 6;
@@ -1921,7 +1819,7 @@
 
   function reconcileBeltForOutfit(items, occasionId, buildAroundId = "", options = {}) {
     let reconciled = uniqueItems(items);
-    const bottoms = reconciled.find((item) => item.category === "pants");
+    const bottoms = reconciled.find((item) => item.category === "bottom");
     if (!bottoms) return reconciled;
 
     const belts = reconciled.filter((item) => item.category === "belt");
@@ -1955,23 +1853,6 @@
       .some((slot) => slot.categories.includes("belt"));
   }
 
-  function isWeatherClearlyUnsuitable(item) {
-    const weather = appState.settings.weather;
-    if (!weather.enabled) return false;
-    const temperature = weather.temperature;
-
-    if (temperature !== null) {
-      if (item.minTemperature !== null && temperature < item.minTemperature - 15) return true;
-      if (item.maxTemperature !== null && temperature > item.maxTemperature + 10) return true;
-      if (item.warmthLevel >= 4 && temperature >= 82) return true;
-      if (item.warmthLevel === 1 && temperature <= 15) return true;
-    }
-
-    return ["rain", "snow"].includes(weather.condition)
-      && item.category === "shoes"
-      && item.rainSafe === false;
-  }
-
   function weatherScore(item) {
     const weather = appState.settings.weather;
     if (!weather.enabled) return 0;
@@ -1985,27 +1866,21 @@
       if (item.maxTemperature !== null && temperature > item.maxTemperature) {
         score -= Math.min(35, (temperature - item.maxTemperature) * 2);
       }
-      if (item.warmthLevel !== null) {
+      const warmthValue = { very_light: 1, light: 2, medium: 3, warm: 4, very_warm: 5 }[item.warmth];
+      if (warmthValue) {
         const targetWarmth = temperature <= 35 ? 5 : temperature <= 50 ? 4 : temperature <= 65 ? 3 : temperature <= 78 ? 2 : 1;
-        score -= Math.abs(item.warmthLevel - targetWarmth) * 3;
+        score -= Math.abs(warmthValue - targetWarmth) * 3;
       }
     }
 
-    if (item.suitableConditions.length) {
+    if (Array.isArray(item.suitableConditions) && item.suitableConditions.length) {
       score += item.suitableConditions.includes(weather.condition) ? 5 : -8;
     }
-    if (weather.condition === "rain" && item.rainSafe === true) score += 6;
+    if (["rain", "snow"].includes(weather.condition)) {
+      if (item.rainPolicy === "preferred") score += 7;
+      else if (item.rainPolicy === "okay") score += 3;
+    }
     return score;
-  }
-
-  function countSharedSignals(items) {
-    const counts = new Map();
-    items.forEach((item) => {
-      unique([...item.colors, ...item.tags].map(normalizeTag)).forEach((signal) => {
-        counts.set(signal, (counts.get(signal) || 0) + 1);
-      });
-    });
-    return [...counts.values()].filter((count) => count > 1).length;
   }
 
   function logCurrentOutfit() {
@@ -2039,7 +1914,6 @@
       bannedCombo = {
         id: uid("ban"),
         itemIds,
-        occasion: currentOutfit.occasion,
         createdAt: new Date().toISOString()
       };
       appState.bannedCombos.push(bannedCombo);
@@ -2068,14 +1942,6 @@
       note: stringOr(note, "")
     });
 
-    const wornDate = dateOnly(date);
-    validItems.forEach((outfitItem) => {
-      const closetItem = findItem(outfitItem.id);
-      if (closetItem) {
-        closetItem.lastWorn = wornDate;
-        closetItem.updatedAt = new Date().toISOString();
-      }
-    });
   }
 
   function openManualLogDialog() {
@@ -2092,7 +1958,7 @@
     const includeUnavailable = $("#manualIncludeUnavailable").checked;
     const selectedIds = new Set($$("input[name='manualItem']:checked").map((input) => input.value));
     const items = appState.wardrobe
-      .filter((item) => includeUnavailable || item.active)
+      .filter((item) => includeUnavailable || isAvailable(item))
       .sort(sortItems);
 
     $("#manualItemPicker").innerHTML = CATEGORY_ORDER.map((category) => {
@@ -2105,7 +1971,7 @@
             ${categoryItems.map((item) => `
               <label class="check-pill">
                 <input type="checkbox" name="manualItem" value="${escapeAttribute(item.id)}" ${selectedIds.has(item.id) ? "checked" : ""}>
-                <span>${escapeHtml(item.name)}${item.active ? "" : " (unavailable)"}</span>
+                <span>${escapeHtml(item.name)}${isAvailable(item) ? "" : ` (${escapeHtml(item.status)})`}</span>
               </label>
             `).join("")}
           </div>
@@ -2138,6 +2004,7 @@
       source: "manual",
       note: $("#manualLogNote").value.trim()
     });
+    rerollSession = createRerollSession();
     saveState();
     closeDialog($("#manualLogDialog"));
     renderAll();
@@ -2181,11 +2048,10 @@
     if (pairItemIds.length === 2 && ["colors", "top_pants", "shoes", "belt_shoes"].includes(reason)) {
       const pair = pairItemIds.map(findItem).filter(Boolean);
       if (pair.length === 2 && window.confirm(`Also mark "${pair[0].name}" and "${pair[1].name}" as incompatible?`)) {
-        pair[0].avoidWithItems = unique([...pair[0].avoidWithItems, pair[1].id]);
-        pair[1].avoidWithItems = unique([...pair[1].avoidWithItems, pair[0].id]);
-        pair.forEach((item) => {
-          item.updatedAt = new Date().toISOString();
-        });
+        const itemIds = SmartCloset.canonicalPair(pair[0].id, pair[1].id);
+        appState.pairRelationships = appState.pairRelationships.filter((record) => record.itemIds.join("|") !== itemIds.join("|"));
+        appState.pairRelationships.push({ id: uid("pair"), type: "never", itemIds, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        rerollSession = createRerollSession();
       }
     }
 
@@ -2196,7 +2062,7 @@
   function feedbackPairForReason(reason, itemIds) {
     const items = itemIds.map(findItem).filter(Boolean);
     const top = items.find((item) => item.category === "top");
-    const pants = items.find((item) => item.category === "pants");
+    const pants = items.find((item) => item.category === "bottom");
     const shoes = items.find((item) => item.category === "shoes");
     const belt = items.find((item) => item.category === "belt");
     if (["colors", "top_pants"].includes(reason) && top && pants) return [top.id, pants.id];
@@ -2218,13 +2084,7 @@
     if (!confirmed) return;
 
     appState.history = appState.history.filter((entry) => entry.id !== logId);
-    record.itemIds.forEach((itemId) => {
-      const item = findItem(itemId);
-      if (!item) return;
-      item.lastWorn = latestHistoryDateForItem(itemId);
-      item.updatedAt = new Date().toISOString();
-    });
-
+    invalidateGenerationState();
     saveState();
     renderAll();
     showToast("Log deleted.");
@@ -2244,6 +2104,24 @@
     showToast("Backup exported.");
   }
 
+  function exportRecoveryPayload() {
+    const payload = localStorage.getItem(RECOVERY_KEY) ?? (loadIssue ? localStorage.getItem(STORAGE_KEY) : null);
+    if (payload === null) {
+      showToast("No protected original is available.");
+      return;
+    }
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `fit-roulette-protected-original-${dateOnly(new Date())}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast("Protected original downloaded.");
+  }
+
   function importBackup(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2251,15 +2129,19 @@
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const incoming = normalizeState(JSON.parse(String(reader.result)));
+        const rawText = String(reader.result);
+        const incoming = SmartCloset.migrateAndValidate(JSON.parse(rawText)).state;
+        SmartCloset.validateState(incoming);
         const confirmed = window.confirm("Import this backup and replace current local data?");
         if (!confirmed) return;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(incoming));
         appState = incoming;
+        storageWriteLocked = false;
+        loadIssue = null;
         currentOutfit = null;
         resultState = "empty";
         logInProgress = false;
         rerollSession = createRerollSession();
-        saveState();
         initializeGenerateOccasion();
         renderAll();
         showToast("Backup imported.");
@@ -2274,9 +2156,11 @@
   }
 
   function resetDemoData() {
-    const confirmed = window.confirm("Reset wardrobe, history, and banned combos to demo data?");
+    const confirmed = window.confirm("Replace this closet, history, pair preferences, and banned outfits with the generalized sample closet? This cannot be undone from inside the app.");
     if (!confirmed) return;
     appState = createDefaultState();
+    appState.wardrobe = sampleWardrobe();
+    appState.setup = { completed: true, choice: "sample" };
     currentOutfit = null;
     resultState = "empty";
     logInProgress = false;
@@ -2323,7 +2207,7 @@
 
   function lastTopBottomPairDate(items) {
     const top = items.find((item) => item.category === "top");
-    const bottom = items.find((item) => item.category === "pants");
+    const bottom = items.find((item) => item.category === "bottom");
     if (!top || !bottom) return null;
     const record = appState.history
       .filter((entry) => entry.itemIds.includes(top.id) && entry.itemIds.includes(bottom.id))
@@ -2333,9 +2217,7 @@
 
   function lastItemWornDate(item) {
     const latestFromHistory = latestHistoryDateForItem(item.id);
-    if (!latestFromHistory) return item.lastWorn || null;
-    if (!item.lastWorn) return latestFromHistory;
-    return new Date(latestFromHistory) > new Date(item.lastWorn) ? latestFromHistory : item.lastWorn;
+    return latestFromHistory || item.lastWorn || null;
   }
 
   function latestHistoryDateForItem(itemId) {
@@ -2345,21 +2227,20 @@
     return record ? dateOnly(record.date) : null;
   }
 
-  function itemAvoidsItem(item, other) {
-    const refs = item.avoidWithItems.map(normalizeTag);
-    return refs.includes(normalizeTag(other.id)) || refs.includes(normalizeTag(other.name));
-  }
-
   function itemSignals(item) {
     return unique([
       item.id,
       item.name,
       item.category,
       CATEGORIES[item.category] || item.category,
-      ...item.colors,
-      ...item.tags,
+      item.subtype,
+      item.primaryColor,
+      item.secondaryColor,
+      item.pattern,
+      item.status,
+      SmartCloset.FORMALITY_LABELS[item.formality],
+      ...item.labels,
       ...item.occasions,
-      ...item.season
     ].map(normalizeTag).filter(Boolean));
   }
 
@@ -2368,14 +2249,20 @@
       id: item.id,
       name: item.name,
       category: item.category,
-      colors: [...item.colors],
-      tags: [...item.tags],
+      subtype: item.subtype,
+      primaryColor: item.primaryColor,
+      secondaryColor: item.secondaryColor,
+      pattern: item.pattern,
+      sleeveLength: item.sleeveLength,
+      bottomLength: item.bottomLength,
+      formality: item.formality,
+      occasions: [...item.occasions],
+      warmth: item.warmth,
+      rainPolicy: item.rainPolicy,
+      preference: item.preference,
+      labels: [...item.labels],
       beltMode: item.beltMode || "",
-      minTemperature: item.minTemperature,
-      maxTemperature: item.maxTemperature,
-      suitableConditions: [...item.suitableConditions],
-      rainSafe: item.rainSafe,
-      warmthLevel: item.warmthLevel
+      imageUrl: item.imageUrl || ""
     };
   }
 
@@ -2397,33 +2284,36 @@
   }
 
   function sortItems(a, b) {
-    if (a.active !== b.active) return a.active ? -1 : 1;
+    const statusOrder = { available: 0, unavailable: 1, archived: 2 };
+    if (a.status !== b.status) return (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
     const categoryDiff = CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category);
     if (categoryDiff) return categoryDiff;
     return a.name.localeCompare(b.name);
   }
 
   function emptyItem() {
-    const item = normalizeItem({
+    const item = SmartCloset.createItem({
       name: "",
       category: "top",
-      colors: [],
-      tags: [],
+      subtype: "other",
+      primaryColor: "",
+      secondaryColor: "",
+      pattern: "solid",
+      sleeveLength: "unspecified",
+      bottomLength: "not_applicable",
       occasions: ["casual"],
-      season: [],
-      formality: 5,
-      worksWithTags: [],
-      avoidWithTags: [],
-      avoidWithItems: [],
+      formality: 2,
       beltMode: "optional",
-      minTemperature: null,
-      maxTemperature: null,
-      suitableConditions: [],
-      rainSafe: null,
-      warmthLevel: null,
+      warmth: "unspecified",
+      rainPolicy: "unspecified",
+      status: "available",
+      preference: "neutral",
+      labels: [],
       imageUrl: "",
-      active: true,
-      notes: ""
+      notes: "",
+      legacyFallback: false,
+      legacyMatching: {},
+      review: { status: "reviewed", reasons: [], reviewedAt: new Date().toISOString() }
     });
     item.name = "";
     return item;
@@ -2448,6 +2338,19 @@
 
   function findItem(itemId) {
     return appState.wardrobe.find((item) => item.id === itemId) || null;
+  }
+
+  function isAvailable(item) {
+    return item?.status === "available";
+  }
+
+  function invalidateGenerationState(options = {}) {
+    rerollSession = createRerollSession();
+    swapTargetItemId = null;
+    if (options.preserveCurrent) return;
+    currentOutfit = null;
+    resultState = "empty";
+    logInProgress = false;
   }
 
   function openDialog(dialog) {
@@ -2509,7 +2412,7 @@
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch((error) => {
+      navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`, { updateViaCache: "none" }).catch((error) => {
         console.info("Service worker registration skipped.", error);
       });
     });
@@ -2681,6 +2584,43 @@
     return normalizeTag(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   }
 
+  function sampleWardrobe() {
+    const now = "2026-08-07T12:00:00.000Z";
+    const make = (id, name, subtype, color, overrides = {}) => {
+      const template = SmartCloset.SUBTYPE_TEMPLATES[subtype];
+      return SmartCloset.createItem({
+        id,
+        name,
+        ...template,
+        primaryColor: color,
+        secondaryColor: "",
+        status: "available",
+        preference: "neutral",
+        labels: ["sample"],
+        review: { status: "reviewed", reasons: [], reviewedAt: now },
+        legacyFallback: false,
+        legacyMatching: {},
+        createdAt: now,
+        updatedAt: now,
+        ...overrides
+      }, { now });
+    };
+    return [
+      make("sample_white_tee", "White T-Shirt", "t-shirt", "White"),
+      make("sample_blue_button_down", "Light Blue Button-Down", "button-down", "Light Blue"),
+      make("sample_navy_polo", "Navy Polo", "polo", "Navy"),
+      make("sample_gray_hoodie", "Gray Hoodie", "hoodie", "Gray"),
+      make("sample_dark_jeans", "Dark Blue Jeans", "jeans", "Navy"),
+      make("sample_khaki_chinos", "Khaki Chinos", "chinos", "Khaki"),
+      make("sample_black_shorts", "Black Athletic Shorts", "athletic shorts", "Black"),
+      make("sample_white_sneakers", "White Sneakers", "sneakers", "White"),
+      make("sample_running_shoes", "Black Running Shoes", "athletic/running shoes", "Black"),
+      make("sample_brown_dress_shoes", "Brown Dress Shoes", "dress shoes", "Brown"),
+      make("sample_brown_belt", "Brown Dress Belt", "dress belt", "Brown"),
+      make("sample_navy_socks", "Navy Dress Socks", "dress socks", "Navy")
+    ];
+  }
+
   function demoWardrobe() {
     const item = (name, category, options) => normalizeItem({
       id: `item_${slug(name)}`,
@@ -2696,25 +2636,25 @@
     });
 
     return [
-      item("Light Blue Ralph Lauren Polo", "top", {
+      item("Light Blue Polo", "top", {
         colors: ["light blue"],
-        tags: ["polo", "ralph lauren", "smart casual", "summer"],
+        tags: ["polo", "smart casual", "summer"],
         occasions: ["work", "friday", "casual", "date"],
         season: ["spring", "summer"],
         formality: 6,
         worksWithTags: ["navy", "gray", "khaki", "tan", "dark jeans"]
       }),
-      item("Black Ralph Lauren Polo", "top", {
+      item("Black Polo", "top", {
         colors: ["black"],
-        tags: ["polo", "ralph lauren", "smart casual"],
+        tags: ["polo", "smart casual"],
         occasions: ["work", "friday", "casual", "date", "gym"],
         season: ["all season"],
         formality: 6,
         worksWithTags: ["gray", "khaki", "black", "jeans", "olive"]
       }),
-      item("Navy Ralph Lauren Polo", "top", {
+      item("Navy Polo", "top", {
         colors: ["navy"],
-        tags: ["polo", "ralph lauren", "smart casual"],
+        tags: ["polo", "smart casual"],
         occasions: ["work", "friday", "casual", "date"],
         season: ["all season"],
         formality: 6,
@@ -2798,9 +2738,9 @@
         formality: 3,
         avoidWithTags: ["dress shoes", "pressed"]
       }),
-      item("Brown Levi's", "pants", {
+      item("Brown Jeans", "pants", {
         colors: ["brown"],
-        tags: ["levis", "jeans", "brown jeans", "casual"],
+        tags: ["jeans", "brown jeans", "casual"],
         occasions: ["friday", "casual", "date"],
         season: ["fall", "winter"],
         formality: 4
@@ -2840,33 +2780,33 @@
         formality: 6,
         worksWithTags: ["black", "gray", "navy", "dress shoes", "jeans"]
       }),
-      item("Black/White Converse Mids", "shoes", {
+      item("Black/White High-Top Sneakers", "shoes", {
         colors: ["black", "white"],
-        tags: ["sneakers", "converse", "casual", "canvas"],
+        tags: ["sneakers", "high-top", "casual", "canvas"],
         occasions: ["friday", "casual", "gym"],
         season: ["spring", "summer", "fall"],
         formality: 3,
         worksWithTags: ["jeans", "cargo", "black", "gray"]
       }),
-      item("Off-white New Balance Sneakers", "shoes", {
+      item("Off-White Casual Sneakers", "shoes", {
         colors: ["off-white", "cream"],
-        tags: ["sneakers", "new balance", "casual", "errands"],
+        tags: ["sneakers", "casual", "errands"],
         occasions: ["friday", "casual", "gym"],
         season: ["spring", "summer"],
         formality: 4,
         worksWithTags: ["jeans", "cargo", "khaki", "olive", "light blue"]
       }),
-      item("Black Brooks Sneakers", "shoes", {
+      item("Black Running Sneakers", "shoes", {
         colors: ["black"],
-        tags: ["sneakers", "brooks", "running", "athletic", "errands"],
+        tags: ["sneakers", "running", "athletic", "errands"],
         occasions: ["casual", "gym"],
         season: ["all season"],
         formality: 2,
         worksWithTags: ["cargo", "jeans", "black", "gray"]
       }),
-      item("White/Blue Jordan Mids", "shoes", {
+      item("White/Blue High-Top Sneakers", "shoes", {
         colors: ["white", "blue"],
-        tags: ["sneakers", "jordan", "casual"],
+        tags: ["sneakers", "high-top", "casual"],
         occasions: ["friday", "casual", "gym"],
         season: ["spring", "summer"],
         formality: 4,
@@ -2920,12 +2860,28 @@
       }),
       normalizeState,
       openItemDialog,
+      pickOutfit,
+      isCompatibleOutfit,
+      validSwapChoices,
+      swapChoiceReport,
+      generationContextKey,
+      candidateItems,
       scoreOutfit,
       lastExactOutfitDate,
       lastTopBottomPairDate,
+      lastItemWornDate,
+      addHistoryRecord,
+      similarItem,
+      sampleWardrobe,
       changedItemIds,
       describeDependentChanges,
       clearChangedHighlights,
+      getLoadIssue: () => loadIssue,
+      isStorageWriteLocked: () => storageWriteLocked,
+      setCurrentOutfit(outfit) {
+        currentOutfit = outfit;
+        resultState = outfit?.error ? "error" : (outfit ? "outfit" : "empty");
+      },
       replaceState(raw) {
         appState = normalizeState(raw);
         currentOutfit = null;

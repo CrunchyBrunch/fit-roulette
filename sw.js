@@ -1,8 +1,10 @@
-const CACHE_NAME = "fit-roulette-v1.3.3";
+const CACHE_NAME = "fit-roulette-v1.4.0";
+const ASSET_VERSION = "1.4.0";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
+  "./smart-closet.js",
   "./app.js",
   "./manifest.json",
   "./icons/icon-180.png",
@@ -14,7 +16,18 @@ const APP_ASSETS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_ASSETS))
+      .then((cache) => Promise.all(APP_ASSETS.map((asset) => {
+        const canonicalUrl = new URL(asset, self.location.href);
+        const updateUrl = new URL(canonicalUrl);
+        updateUrl.searchParams.set("v", ASSET_VERSION);
+        return fetch(updateUrl, { cache: "reload" }).then((response) => {
+          if (!response.ok) throw new Error(`Could not cache ${asset}: ${response.status}`);
+          return Promise.all([
+            cache.put(canonicalUrl, response.clone()),
+            cache.put(updateUrl, response)
+          ]);
+        });
+      })))
       .then(() => self.skipWaiting())
   );
 });

@@ -1,0 +1,122 @@
+{
+  "version": 3,
+  "wardrobe": [
+    {
+      "id": "legacy_white_tee",
+      "name": "Legacy White Tee",
+      "category": "top",
+      "colors": ["Cerulean", "Cream", "Gold"],
+      "tags": ["t-shirt", "weekend"],
+      "occasions": ["casual", "friday"],
+      "formality": 3,
+      "active": true,
+      "notes": "Synthetic release-candidate migration fixture.",
+      "imageUrl": "./icons/favicon-32.png"
+    },
+    {
+      "id": "legacy_black_polo",
+      "name": "Legacy Black Polo",
+      "category": "top",
+      "colors": ["Black"],
+      "tags": ["polo", "favorite"],
+      "occasions": ["casual", "friday", "date"],
+      "formality": 5,
+      "active": true
+    },
+    {
+      "id": "legacy_blue_shirt",
+      "name": "Legacy Blue Button-Down",
+      "category": "top",
+      "colors": ["Light Blue"],
+      "tags": ["button-down", "office"],
+      "occasions": ["work", "friday", "date"],
+      "formality": 7,
+      "active": true
+    },
+    {
+      "id": "legacy_jeans",
+      "name": "Legacy Navy Jeans",
+      "category": "pants",
+      "colors": ["Navy"],
+      "tags": ["jeans"],
+      "occasions": ["casual", "friday", "date"],
+      "formality": 4,
+      "active": true
+    },
+    {
+      "id": "legacy_chinos",
+      "name": "Legacy Khaki Chinos",
+      "category": "pants",
+      "colors": ["Khaki"],
+      "tags": ["chinos", "office"],
+      "occasions": ["work", "friday", "casual", "date"],
+      "formality": 6,
+      "active": true
+    },
+    {
+      "id": "legacy_white_sneakers",
+      "name": "Legacy White Sneakers",
+      "category": "shoes",
+      "colors": ["White"],
+      "tags": ["sneakers"],
+      "occasions": ["casual", "friday", "date"],
+      "formality": 3,
+      "active": true
+    },
+    {
+      "id": "legacy_brown_boots",
+      "name": "Legacy Brown Boots",
+      "category": "shoes",
+      "colors": ["Brown"],
+      "tags": ["boots"],
+      "occasions": ["work", "friday", "casual", "date"],
+      "formality": 6,
+      "active": true
+    },
+    {
+      "id": "legacy_olive_jacket",
+      "name": "Legacy Olive Jacket",
+      "category": "outerwear",
+      "colors": ["Olive"],
+      "tags": ["jacket"],
+      "occasions": ["casual", "friday", "date"],
+      "formality": 5,
+      "active": true
+    },
+    {
+      "id": "legacy_laundry_shoes",
+      "name": "Legacy Laundry Shoes",
+      "category": "shoes",
+      "colors": ["Gray"],
+      "tags": ["sneakers"],
+      "occasions": ["casual"],
+      "formality": 3,
+      "unavailable": true
+    },
+    {
+      "id": "legacy_archived_top",
+      "name": "Legacy Archived Tee",
+      "category": "top",
+      "colors": ["Red"],
+      "tags": ["t-shirt"],
+      "occasions": ["casual"],
+      "formality": 3,
+      "active": false
+    }
+  ],
+  "history": [
+    {
+      "id": "synthetic_history_1",
+      "date": "2026-07-20T12:00:00.000Z",
+      "occasion": "casual",
+      "itemIds": ["legacy_white_tee", "legacy_jeans", "legacy_white_sneakers"],
+      "note": "Synthetic migration-history fixture."
+    }
+  ],
+  "bannedCombos": [],
+  "feedback": [],
+  "settings": {
+    "defaultOccasion": "casual",
+    "theme": "light"
+  }
+}
