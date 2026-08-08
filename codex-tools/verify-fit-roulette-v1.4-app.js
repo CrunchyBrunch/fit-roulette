@@ -58,7 +58,7 @@ class MockElement {
   querySelectorAll() { return []; }
 }
 
-function runApp(savedValue) {
+function runApp(savedValue, options = {}) {
   const elements = new Map(htmlIds.map((id) => [id, new MockElement(id)]));
   const tabButtons = ["generate", "closet", "history", "settings"].map((screen) => {
     const element = new MockElement();
@@ -71,7 +71,12 @@ function runApp(savedValue) {
   const feedbackInputs = ["colors", "top_pants", "shoes", "belt_shoes", "too_formal", "too_casual", "weather", "exact", "other"].map((value) => Object.assign(new MockElement(), { value, name: "feedbackReason" }));
   let domReady;
   const storage = new Map();
+  const storageWrites = [];
+  const storageWriteAttempts = [];
+  const confirmations = [];
+  const events = [];
   if (savedValue !== undefined && savedValue !== null) storage.set("fitRoulette.v1", savedValue);
+  if (options.initialRecovery !== undefined && options.initialRecovery !== null) storage.set(Smart.RECOVERY_KEY, options.initialRecovery);
 
   const document = {
     documentElement: new MockElement("documentElement"),
@@ -100,14 +105,26 @@ function runApp(savedValue) {
 
   const localStorage = {
     getItem(key) { return storage.has(key) ? storage.get(key) : null; },
-    setItem(key, value) { storage.set(key, String(value)); },
+    setItem(key, value) {
+      const stringValue = String(value);
+      storageWriteAttempts.push({ key, value: stringValue });
+      events.push(`attempt:${key}`);
+      if (options.failSetItem?.(key, stringValue)) throw new Error(`Synthetic storage failure for ${key}`);
+      storage.set(key, stringValue);
+      storageWrites.push({ key, value: stringValue });
+      events.push(`write:${key}`);
+    },
     removeItem(key) { storage.delete(key); }
   };
   const windowObject = {
     __FIT_ROULETTE_TESTING__: true,
     FitRouletteSmartCloset: Smart,
     addEventListener() {},
-    confirm: () => true,
+    confirm(message) {
+      confirmations.push(message);
+      events.push("confirm");
+      return options.confirmResult !== false;
+    },
     requestAnimationFrame(callback) { callback(); }
   };
   const context = {
@@ -132,7 +149,7 @@ function runApp(savedValue) {
   };
   vm.runInNewContext(appCode, context, { filename: "app.js" });
   domReady();
-  return { api: windowObject.__fitRouletteTest, elements, storage, windowObject };
+  return { api: windowObject.__fitRouletteTest, elements, storage, storageWrites, storageWriteAttempts, confirmations, events, windowObject };
 }
 
 const legacyRaw = JSON.stringify({
@@ -184,6 +201,134 @@ assert.equal(invalidSchema.storage.get("fitRoulette.v1"), invalidSchemaRaw);
 assert.equal(invalidSchema.storage.get(Smart.RECOVERY_KEY), invalidSchemaRaw, "Invalid declared schemas must receive a protected original before safe rejection.");
 assert.equal(invalidSchema.api.isStorageWriteLocked(), true);
 assert.equal(invalidSchema.api.getLoadIssue().code, "INVALID_SCHEMA");
+
+const importBaselineRaw = JSON.stringify(Smart.createFreshState("2026-08-08T12:00:00.000Z"));
+const exactLegacyImportRaw = `{
+  "version": 3,
+  "customTopLevel": { "ordering": "must stay exact" },
+  "wardrobe": [
+    {
+      "id": "import_custom_top",
+      "name": "Imported Custom Top",
+      "category": "top",
+      "colors": ["Cerulean", "Cream", "Gold"],
+      "tags": ["t-shirt", "Unknown Label"],
+      "occasions": ["casual"],
+      "formality": 3,
+      "active": true,
+      "notes": "Preserve exact legacy import text.",
+      "imageUrl": "./icons/favicon-32.png"
+    }
+  ],
+  "history": [],
+  "bannedCombos": [],
+  "feedback": [],
+  "settings": { "defaultOccasion": "casual" }
+}`;
+
+const importedLegacy = runApp(importBaselineRaw);
+const importedLegacyResult = importedLegacy.api.importBackupText(exactLegacyImportRaw);
+assert.equal(importedLegacyResult.ok, true);
+assert.equal(importedLegacyResult.legacy, true);
+assert.equal(importedLegacyResult.recoveryCreated, true);
+assert.equal(importedLegacy.confirmations.length, 1, "Legacy import must retain the destructive confirmation.");
+assert.deepEqual(
+  importedLegacy.events.slice(0, 5),
+  ["confirm", `attempt:${Smart.RECOVERY_KEY}`, `write:${Smart.RECOVERY_KEY}`, "attempt:fitRoulette.v1", "write:fitRoulette.v1"],
+  "Recovery must be written after confirmation and before primary storage."
+);
+assert.equal(importedLegacy.storage.get(Smart.RECOVERY_KEY), exactLegacyImportRaw, "Legacy recovery must preserve the exact raw bytes represented by the input string.");
+assert.equal(JSON.parse(importedLegacy.storage.get("fitRoulette.v1")).schemaVersion, 4);
+assert.equal(importedLegacy.api.getState().wardrobe[0].primaryColor, "Cerulean");
+assert.equal(importedLegacy.elements.get("exportRecoveryBtn").hidden, false, "Protected-original control must enable immediately.");
+
+const cancelledImport = runApp(importBaselineRaw, { confirmResult: false });
+const cancelledState = cancelledImport.api.getState();
+const cancelledResult = cancelledImport.api.importBackupText(exactLegacyImportRaw);
+assert.equal(cancelledResult.cancelled, true);
+assert.strictEqual(cancelledImport.api.getState(), cancelledState);
+assert.equal(cancelledImport.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(cancelledImport.storage.has(Smart.RECOVERY_KEY), false);
+
+const recoveryFailure = runApp(importBaselineRaw, {
+  failSetItem: (key) => key === Smart.RECOVERY_KEY
+});
+const recoveryFailureState = recoveryFailure.api.getState();
+const recoveryFailureCloset = recoveryFailure.elements.get("closetList").innerHTML;
+const recoveryFailureResult = recoveryFailure.api.importBackupText(exactLegacyImportRaw);
+assert.equal(recoveryFailureResult.ok, false);
+assert.equal(recoveryFailureResult.error.code, "RECOVERY_WRITE_FAILED");
+assert.strictEqual(recoveryFailure.api.getState(), recoveryFailureState, "Recovery failure must not replace in-memory state.");
+assert.equal(recoveryFailure.storage.get("fitRoulette.v1"), importBaselineRaw, "Recovery failure must not replace primary storage.");
+assert.equal(recoveryFailure.elements.get("closetList").innerHTML, recoveryFailureCloset, "Recovery failure must not change visible closet data.");
+assert(!recoveryFailure.storageWriteAttempts.some((entry) => entry.key === "fitRoulette.v1"), "Primary storage must not be attempted after recovery failure.");
+assert(recoveryFailure.elements.get("toast").textContent.includes("protected original could not be created"));
+
+const existingRecoveryRaw = "{\n  \"syntheticProtectedOriginal\": \"keep byte-for-byte\"\n}";
+const existingRecovery = runApp(importBaselineRaw, { initialRecovery: existingRecoveryRaw });
+const existingRecoveryResult = existingRecovery.api.importBackupText(exactLegacyImportRaw);
+assert.equal(existingRecoveryResult.ok, true);
+assert.equal(existingRecoveryResult.recoveryCreated, false);
+assert.equal(existingRecovery.storage.get(Smart.RECOVERY_KEY), existingRecoveryRaw, "Existing recovery must never be overwritten.");
+assert.equal(existingRecovery.elements.get("exportRecoveryBtn").hidden, false);
+assert(existingRecovery.elements.get("toast").textContent.includes("Existing protected original retained"));
+assert(!existingRecovery.elements.get("toast").textContent.includes("Protected original saved"));
+
+const invalidLegacyImportRaw = '{"version":3,"wardrobe":{},"history":[],"bannedCombos":[],"feedback":[]}';
+const migrationFailure = runApp(importBaselineRaw);
+const migrationFailureState = migrationFailure.api.getState();
+const migrationFailureResult = migrationFailure.api.importBackupText(invalidLegacyImportRaw);
+assert.equal(migrationFailureResult.ok, false);
+assert.strictEqual(migrationFailure.api.getState(), migrationFailureState);
+assert.equal(migrationFailure.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(migrationFailure.storage.get(Smart.RECOVERY_KEY), invalidLegacyImportRaw, "Recovery created before migration must remain available after validation failure.");
+assert.equal(migrationFailure.elements.get("exportRecoveryBtn").hidden, false, "Recovery created before a failed migration must remain downloadable.");
+
+const primaryFailure = runApp(importBaselineRaw, {
+  failSetItem: (key) => key === "fitRoulette.v1"
+});
+const primaryFailureState = primaryFailure.api.getState();
+const primaryFailureCloset = primaryFailure.elements.get("closetList").innerHTML;
+const primaryFailureResult = primaryFailure.api.importBackupText(exactLegacyImportRaw);
+assert.equal(primaryFailureResult.ok, false);
+assert.strictEqual(primaryFailure.api.getState(), primaryFailureState);
+assert.equal(primaryFailure.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(primaryFailure.storage.get(Smart.RECOVERY_KEY), exactLegacyImportRaw, "Protected original must remain after primary write failure.");
+assert.equal(primaryFailure.elements.get("closetList").innerHTML, primaryFailureCloset);
+assert.equal(primaryFailure.elements.get("exportRecoveryBtn").hidden, false);
+assert(primaryFailure.elements.get("toast").textContent.includes("could not be replaced"));
+
+const repeatedImportRaw = JSON.stringify({ version: 3, wardrobe: [], history: [], bannedCombos: [], feedback: [], settings: { defaultOccasion: "work" } });
+const repeatedImport = runApp(importBaselineRaw);
+assert.equal(repeatedImport.api.importBackupText(exactLegacyImportRaw).ok, true);
+assert.equal(repeatedImport.api.importBackupText(repeatedImportRaw).ok, true);
+assert.equal(repeatedImport.storage.get(Smart.RECOVERY_KEY), exactLegacyImportRaw, "Repeated legacy imports must retain the first protected original.");
+
+const malformedImport = runApp(importBaselineRaw);
+const malformedImportState = malformedImport.api.getState();
+assert.equal(malformedImport.api.importBackupText("{ definitely not json").ok, false);
+assert.strictEqual(malformedImport.api.getState(), malformedImportState);
+assert.equal(malformedImport.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(malformedImport.storage.has(Smart.RECOVERY_KEY), false);
+assert.equal(malformedImport.confirmations.length, 0);
+
+const futureImport = runApp(importBaselineRaw, { initialRecovery: existingRecoveryRaw });
+const futureImportState = futureImport.api.getState();
+assert.equal(futureImport.api.importBackupText(JSON.stringify({ schemaVersion: 9, wardrobe: [] })).ok, false);
+assert.strictEqual(futureImport.api.getState(), futureImportState);
+assert.equal(futureImport.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(futureImport.storage.get(Smart.RECOVERY_KEY), existingRecoveryRaw);
+assert.equal(futureImport.confirmations.length, 0);
+
+const schemaFourImportState = Smart.createFreshState("2026-08-08T13:00:00.000Z");
+schemaFourImportState.settings.defaultOccasion = "date";
+const schemaFourImportRaw = JSON.stringify(schemaFourImportState);
+const schemaFourImport = runApp(importBaselineRaw);
+const schemaFourImportResult = schemaFourImport.api.importBackupText(schemaFourImportRaw);
+assert.equal(schemaFourImportResult.ok, true);
+assert.equal(schemaFourImportResult.legacy, false);
+assert.equal(schemaFourImport.storage.has(Smart.RECOVERY_KEY), false, "Schema-v4 import must not create an unnecessary legacy recovery.");
+assert.equal(JSON.parse(schemaFourImport.storage.get("fitRoulette.v1")).settings.defaultOccasion, "date");
 
 const fresh = runApp(null);
 assert.equal(fresh.api.getState().wardrobe.length, 0);
@@ -263,6 +408,9 @@ console.log(JSON.stringify({
   ok: true,
   migratedItems: migratedState.wardrobe.length,
   recoveryCreated: migratedApp.storage.has(Smart.RECOVERY_KEY),
+  legacyImportRecoveryCreated: importedLegacyResult.recoveryCreated,
+  legacyImportFailureCases: 5,
+  existingRecoveryPreserved: existingRecovery.storage.get(Smart.RECOVERY_KEY) === existingRecoveryRaw,
   swapEligible: swapReport.eligible.length,
   freshSetupShown: freshSetupWasShown
 }));
