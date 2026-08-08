@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./styles.css?v=1.4.0">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -24,6 +24,8 @@
         </div>
         <button id="quickAddBtn" class="icon-button" type="button" aria-label="Add item">+</button>
       </header>
+
+      <div id="dataSafetyNotice" class="safety-notice" role="alert" hidden></div>
 
       <main class="app-main">
         <section id="screen-generate" class="screen is-active" aria-labelledby="generateTitle">
@@ -86,6 +88,8 @@
 
           <article id="outfitResult" class="result-card empty-state"></article>
 
+          <div id="todayLoggedNotice" class="today-log-notice" hidden></div>
+
           <div id="resultActions" class="action-grid" hidden>
             <button id="logBtn" class="success-button" type="button">Looks Good, Log It</button>
             <button id="rerollBtn" class="secondary-button" type="button">Reroll</button>
@@ -119,6 +123,8 @@
             </label>
           </div>
 
+          <section id="freshSetup" class="setup-card" aria-labelledby="freshSetupTitle" hidden></section>
+          <section id="reviewQueue" class="review-queue" aria-labelledby="reviewQueueTitle" hidden></section>
           <div id="closetList" class="closet-list"></div>
         </section>
 
@@ -160,6 +166,7 @@
             </label>
             <p id="appVersion" class="small-meta"></p>
             <button id="exportBtn" class="secondary-button" type="button">Export JSON Backup</button>
+            <button id="exportRecoveryBtn" class="secondary-button" type="button" hidden>Download Protected Original</button>
             <button id="importBtn" class="secondary-button" type="button">Import JSON Backup</button>
             <input id="importFile" type="file" accept="application/json" hidden>
             <button id="clearBansBtn" class="secondary-button" type="button">Clear Banned Combos</button>
@@ -180,7 +187,7 @@
       <form id="itemForm" class="item-form" method="dialog" novalidate>
         <div class="dialog-header">
           <div>
-            <p class="eyebrow" id="itemDialogMode">Closet item</p>
+            <p class="eyebrow" id="itemDialogMode">Smart Closet</p>
             <h2 id="itemDialogTitle">Add Item</h2>
           </div>
           <button id="closeItemDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
@@ -188,43 +195,57 @@
 
         <input id="itemId" type="hidden">
         <p id="formError" class="form-error" role="alert" hidden></p>
+        <div id="itemReviewNotice" class="review-notice" hidden></div>
 
-        <section class="editor-section">
+        <section class="editor-section quick-add-section">
           <div class="section-heading">
-            <h3>Start Fast</h3>
-            <p class="small-meta">Pick a template or copy matching from something similar.</p>
+            <h3>Quick Add</h3>
+            <p class="small-meta">Choose a common garment type to fill sensible defaults.</p>
           </div>
-          <div id="templateChips" class="quick-row" aria-label="Item templates"></div>
-          <label class="field">
-            <span>Copy matching from</span>
-            <select id="copyMatchingSelect"></select>
-          </label>
-          <button id="copyMatchingBtn" class="secondary-button compact" type="button">Copy Matching Rules</button>
+          <div id="templateChips" class="quick-row" aria-label="Garment templates"></div>
         </section>
 
-        <label class="field">
+        <label class="field item-name-field">
           <span>Item name</span>
-          <input id="itemName" type="text" required autocomplete="off" placeholder="Navy Dress Pants">
+          <input id="itemName" type="text" required autocomplete="off" placeholder="Navy Chinos">
         </label>
 
-        <label class="field">
-          <span>Category</span>
-          <select id="itemCategory" required></select>
-        </label>
+        <div class="two-column">
+          <label class="field">
+            <span>Category</span>
+            <select id="itemCategory" required></select>
+          </label>
+          <label class="field">
+            <span>Subtype</span>
+            <select id="itemSubtype" required></select>
+          </label>
+        </div>
 
-        <label class="field">
-          <span>Primary color</span>
-          <input id="itemPrimaryColor" type="text" inputmode="text" autocomplete="off" placeholder="navy" list="tagSuggestions" required>
-        </label>
+        <div class="two-column">
+          <label class="field">
+            <span>Primary color</span>
+            <input id="itemPrimaryColor" type="text" inputmode="text" autocomplete="off" placeholder="Navy" list="colorSuggestions" required>
+          </label>
+          <label class="field">
+            <span>Secondary color <span class="optional-label">Optional</span></span>
+            <input id="itemSecondaryColor" type="text" inputmode="text" autocomplete="off" placeholder="White" list="colorSuggestions">
+          </label>
+        </div>
         <div id="primaryColorChips" class="quick-row" aria-label="Primary color shortcuts"></div>
 
-        <label class="field">
-          <span>Secondary colors</span>
-          <input id="itemSecondaryColors" type="text" inputmode="text" autocomplete="off" placeholder="white, tan" list="tagSuggestions">
-        </label>
+        <div class="two-column">
+          <label class="field">
+            <span>Pattern</span>
+            <select id="itemPattern"></select>
+          </label>
+          <label class="field">
+            <span>Formality</span>
+            <select id="itemFormality"></select>
+          </label>
+        </div>
 
         <fieldset class="fieldset">
-          <legend>Occasions</legend>
+          <legend>Occasion eligibility</legend>
           <div class="quick-row" aria-label="Occasion presets">
             <button class="mini-button" type="button" data-occasion-preset="office">Office</button>
             <button class="mini-button" type="button" data-occasion-preset="casual">Casual</button>
@@ -234,154 +255,103 @@
           <div id="itemOccasions" class="check-grid"></div>
         </fieldset>
 
-        <label class="toggle-row availability-toggle">
-          <input id="itemActive" type="checkbox">
-          <span>Available now</span>
-        </label>
+        <div class="two-column">
+          <label class="field">
+            <span>Status</span>
+            <select id="itemStatus">
+              <option value="available">Available</option>
+              <option value="unavailable">Unavailable</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Preference</span>
+            <select id="itemPreference">
+              <option value="avoid">Avoid</option>
+              <option value="neutral">Neutral</option>
+              <option value="like">Like</option>
+              <option value="favorite">Favorite</option>
+            </select>
+          </label>
+        </div>
 
         <details id="matchingDetails" class="details-block">
-          <summary>Matching</summary>
+          <summary>Fit and matching details</summary>
           <div class="details-content">
+            <div class="two-column">
+              <label class="field" id="sleeveLengthField">
+                <span>Sleeve length</span>
+                <select id="itemSleeveLength"></select>
+              </label>
+              <label class="field" id="bottomLengthField">
+                <span>Bottom length</span>
+                <select id="itemBottomLength"></select>
+              </label>
+            </div>
+
             <fieldset id="beltModeFieldset" class="fieldset" hidden>
               <legend>Belt</legend>
               <div class="segmented-control">
-                <label>
-                  <input type="radio" name="itemBeltMode" value="required">
-                  <span>Required</span>
-                </label>
-                <label>
-                  <input type="radio" name="itemBeltMode" value="optional">
-                  <span>Optional</span>
-                </label>
-                <label>
-                  <input type="radio" name="itemBeltMode" value="none">
-                  <span>No belt</span>
-                </label>
+                <label><input type="radio" name="itemBeltMode" value="required"><span>Required</span></label>
+                <label><input type="radio" name="itemBeltMode" value="optional"><span>Optional</span></label>
+                <label><input type="radio" name="itemBeltMode" value="none"><span>No belt</span></label>
               </div>
             </fieldset>
 
-            <label class="field range-field">
-              <span>Formality</span>
-              <input id="itemFormality" type="range" min="1" max="10" step="1" value="5">
-              <output id="formalityOutput" for="itemFormality">5</output>
-            </label>
-
-            <label class="field">
-              <span>Season</span>
-              <input id="itemSeason" type="text" autocomplete="off" placeholder="spring, summer">
-            </label>
-
-            <div>
-              <p class="field-label">Works well with</p>
-              <div id="worksMatchChips" class="quick-row" aria-label="Works well with matching chips"></div>
-            </div>
-
-            <div>
-              <p class="field-label">Avoid with</p>
-              <div id="avoidMatchChips" class="quick-row" aria-label="Avoid matching chips"></div>
-            </div>
-
-            <label class="field">
-              <span>Never pair with item</span>
-              <select id="avoidItemsSelect" multiple></select>
-            </label>
-          </div>
-        </details>
-
-        <details id="advancedTagsDetails" class="details-block">
-          <summary>Advanced tags</summary>
-          <div class="details-content">
-            <label class="field">
-              <span>Raw tags</span>
-              <input id="itemTags" type="text" inputmode="text" autocomplete="off" placeholder="polo, office, summer" list="tagSuggestions">
-            </label>
-            <div id="itemQuickTags" class="quick-row" aria-label="Quick tags"></div>
-
-            <label class="field">
-              <span>Works with tags</span>
-              <input id="itemWorksWithTags" type="text" inputmode="text" autocomplete="off" placeholder="navy, khaki, jeans" list="tagSuggestions">
-            </label>
-
-            <label class="field">
-              <span>Avoid with tags</span>
-              <input id="itemAvoidWithTags" type="text" inputmode="text" autocomplete="off" placeholder="cargo, athletic" list="tagSuggestions">
-            </label>
-
-            <label class="field">
-              <span>Avoid with items</span>
-              <input id="itemAvoidWithItems" type="text" autocomplete="off" placeholder="Black Dress Shoes">
-            </label>
-          </div>
-        </details>
-
-        <details class="details-block">
-          <summary>Extras</summary>
-          <div class="details-content">
-            <fieldset class="fieldset">
-              <legend>Weather suitability <span class="optional-label">Optional</span></legend>
-              <div class="two-column">
-                <label class="field">
-                  <span>Minimum temperature</span>
-                  <input id="itemMinTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="No minimum">
-                </label>
-                <label class="field">
-                  <span>Maximum temperature</span>
-                  <input id="itemMaxTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="No maximum">
-                </label>
-              </div>
+            <div class="two-column">
               <label class="field">
-                <span>Suitable conditions</span>
-                <div id="itemWeatherConditions" class="quick-row condition-checks"></div>
+                <span>Warmth</span>
+                <select id="itemWarmth"></select>
               </label>
-              <div class="two-column">
-                <label class="field">
-                  <span>Rain safety</span>
-                  <select id="itemRainSafe">
-                    <option value="">Not specified</option>
-                    <option value="yes">Rain-safe</option>
-                    <option value="no">Avoid in rain</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Warmth</span>
-                  <select id="itemWarmthLevel">
-                    <option value="">Not specified</option>
-                    <option value="1">Very light</option>
-                    <option value="2">Light</option>
-                    <option value="3">Medium</option>
-                    <option value="4">Warm</option>
-                    <option value="5">Very warm</option>
-                  </select>
-                </label>
-              </div>
-            </fieldset>
+              <label class="field">
+                <span>Rain policy</span>
+                <select id="itemRainPolicy"></select>
+              </label>
+            </div>
 
             <label class="field">
-              <span>Image URL or path</span>
-              <input id="itemImageUrl" type="text" autocomplete="off" placeholder="images/navy-pants.jpg">
+              <span>Prefer together</span>
+              <select id="preferItemsSelect" multiple></select>
             </label>
+            <label class="field">
+              <span>Never pair</span>
+              <select id="neverItemsSelect" multiple></select>
+            </label>
+            <p class="small-meta">Pair preferences work in both directions. Never pair is a hard exclusion.</p>
+          </div>
+        </details>
+
+        <details id="advancedDetails" class="details-block">
+          <summary>Advanced</summary>
+          <div class="details-content">
+            <label class="field">
+              <span>Labels</span>
+              <input id="itemLabels" type="text" inputmode="text" autocomplete="off" placeholder="work favorite, travel" list="labelSuggestions">
+            </label>
+            <p class="small-meta">Labels are only for search and organization. They do not affect matching.</p>
 
             <label class="field">
               <span>Notes</span>
               <textarea id="itemNotes" rows="3" placeholder="Fit, fabric, alterations"></textarea>
             </label>
-          </div>
-        </details>
 
-        <details id="advancedDeleteDetails" class="details-block danger-zone">
-          <summary>Advanced</summary>
-          <div class="details-content">
+            <label id="itemImageField" class="field" hidden>
+              <span>Stored image path</span>
+              <input id="itemImageUrl" type="text" autocomplete="off">
+            </label>
+
+            <div id="legacyMatchingNotice" class="legacy-notice" hidden></div>
             <button id="permanentDeleteBtn" class="danger-button" type="button">Permanently Delete Item</button>
           </div>
         </details>
 
         <div class="dialog-actions">
-          <button id="duplicateItemBtn" class="secondary-button" type="button">Duplicate</button>
-          <button id="archiveItemBtn" class="secondary-button" type="button">Archive</button>
-          <button id="saveGenerateBtn" class="secondary-button" type="button">Save + Generate</button>
+          <button id="addSimilarBtn" class="secondary-button" type="button">Add Similar</button>
+          <button id="saveGenerateBtn" class="secondary-button" type="button">Save + Build Around</button>
           <button class="primary-button" type="submit">Save Item</button>
         </div>
-        <datalist id="tagSuggestions"></datalist>
+        <datalist id="colorSuggestions"></datalist>
+        <datalist id="labelSuggestions"></datalist>
       </form>
     </dialog>
 
@@ -434,6 +404,7 @@
           </div>
           <button id="closeSwapDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
         </div>
+        <p id="swapSummary" class="small-meta"></p>
         <div id="swapChoices" class="swap-choices"></div>
       </div>
     </dialog>
@@ -460,6 +431,13 @@
       </form>
     </dialog>
 
-    <script src="./app.js" defer></script>
+    <script>
+      // Register before application initialization so an older cached bundle can upgrade safely.
+      if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
+        navigator.serviceWorker.register("./sw.js?v=1.4.0", { updateViaCache: "none" }).catch(() => {});
+      }
+    </script>
+    <script src="./smart-closet.js?v=1.4.0" defer></script>
+    <script src="./app.js?v=1.4.0" defer></script>
   </body>
 </html>

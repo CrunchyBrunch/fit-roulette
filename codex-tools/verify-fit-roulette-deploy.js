@@ -15,12 +15,17 @@ const html = read("index.html");
 const manifest = JSON.parse(read("manifest.json"));
 const sw = read("sw.js");
 const app = read("app.js");
+const readme = read("README.md");
+const changelog = read("CHANGELOG.md");
 
 assert(html.includes('href="./manifest.json"'), "Manifest link is not project-path relative.");
 assert(html.includes('<link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">'), "Apple touch icon metadata is incorrect.");
 assert(html.includes('href="./icons/favicon-32.png"'), "Favicon path is not project-path relative.");
-assert(html.includes('src="./app.js"'), "App script path is not project-path relative.");
-assert(html.includes('href="./styles.css"'), "Stylesheet path is not project-path relative.");
+assert(html.includes('src="./app.js?v=1.4.0"'), "Versioned app script path is not project-path relative.");
+assert(html.includes('navigator.serviceWorker.register("./sw.js?v=1.4.0", { updateViaCache: "none" })'), "Versioned early service-worker update bootstrap is missing.");
+assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.4.0"') < html.indexOf('src="./app.js?v=1.4.0"'), "Service-worker update bootstrap must run before the app bundle.");
+assert(app.includes('navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`, { updateViaCache: "none" })'), "App service-worker registration must bypass stale HTTP caches.");
+assert(html.includes('href="./styles.css?v=1.4.0"'), "Versioned stylesheet path is not project-path relative.");
 assert(html.includes('<meta name="apple-mobile-web-app-capable" content="yes">'), "Standalone Apple metadata is missing.");
 assert(html.includes('<meta name="apple-mobile-web-app-title" content="Fit Roulette">'), "Apple app title is missing.");
 assert(html.includes('<meta name="apple-mobile-web-app-status-bar-style" content="default">'), "Apple status bar metadata is missing.");
@@ -70,9 +75,18 @@ for (const asset of cachedAssets) {
 
 assert(sw.includes("caches.match(\"./index.html\")"), "Offline navigation fallback should use ./index.html.");
 assert(sw.includes('key.startsWith("fit-roulette-")'), "Service-worker activation should only remove old Fit Roulette caches.");
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.3.3"'), "Service-worker cache name is not synchronized to 1.3.3.");
-assert(app.includes('APP_VERSION = "1.3.3"'), "Visible app version is not 1.3.3.");
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.4.0"'), "Service-worker cache name is not synchronized to 1.4.0.");
+assert(sw.includes('ASSET_VERSION = "1.4.0"'), "Service-worker install asset version is not synchronized to 1.4.0.");
+assert(sw.includes('updateUrl.searchParams.set("v", ASSET_VERSION)'), "Service-worker installation does not bypass stale predecessor caches.");
+assert(sw.includes('fetch(updateUrl, { cache: "reload" })'), "Service-worker installation does not force fresh release assets.");
+assert(sw.includes("cache.put(canonicalUrl, response.clone())"), "Service-worker installation does not store fresh responses under canonical asset keys.");
+assert(sw.includes("cache.put(updateUrl, response)"), "Service-worker installation does not cache versioned HTML asset requests for offline use.");
+assert(![sw, app, html, readme].some((text) => text.includes("v1.4-dev-smart-closet")), "Development-only cache identifier remains in release-candidate assets or documentation.");
+assert(sw.includes('"./smart-closet.js"'), "Service worker does not cache the Smart Closet module.");
+assert(app.includes('APP_VERSION = "1.4.0"'), "Visible app version is not 1.4.0.");
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'), "localStorage key changed unexpectedly.");
+assert(readme.includes("Current release candidate: **1.4.0 - Smart Closet Foundation**"), "README release-candidate metadata is not synchronized.");
+assert(changelog.includes("Fit Roulette v1.4.0 &mdash; Smart Closet Foundation"), "v1.4.0 changelog entry is missing.");
 assert(fs.existsSync(path.join(root, ".nojekyll")), ".nojekyll is missing.");
 
 console.log(JSON.stringify({

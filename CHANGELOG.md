@@ -1,5 +1,24 @@
 # Changelog
 
+## Fit Roulette v1.4.0 &mdash; Smart Closet Foundation
+
+This locally prepared release candidate is not yet deployed or publicly available.
+
+- Added transactional schema-v4 migration with a one-time untouched recovery copy before legacy data is replaced.
+- Added structured garment categories, controlled subtypes, primary and secondary colors, patterns, sleeve and bottom lengths, five-level formality, occasions, warmth, and rain policy.
+- Added distinct Available, Unavailable, and Archived item states plus Avoid, Neutral, Like, and Favorite preferences.
+- Replaced tag-dependent defaults with explainable structured matching while preserving occasion eligibility, exact global bans, and conservative semantic compatibility.
+- Added canonical bidirectional Prefer together and Never pair item relationships.
+- Renamed Raw Tags to Labels for search and organization; Labels do not affect structured matching.
+- Added item-level legacy matching fallback and a nonblocking review queue for inferred, incomplete, ambiguous, or unfamiliar migrated settings.
+- Added Quick Add, a progressive mobile editor, and Add Similar with safe status, timestamp, history, and relationship resets.
+- Made logged history authoritative for wear recency and isolated Generate, Reroll, Swap, and viewed-fit resets from long-term wear history.
+- Expanded Swap to every eligible replacement and added concise explanations for status, occasion, and matching exclusions.
+- Added generalized fresh-install choices and a history-derived acknowledgment when today's outfit was manually logged.
+- Preserved supported older imports, history, exact bans, feedback, settings, custom values, labels, notes, images, timestamps, legacy matching fields, and unfamiliar recoverable data.
+
+This release candidate keeps the existing `fitRoulette.v1` localStorage key and uses internal data schema version 4.
+
 ## Fit Roulette v1.3.3 &mdash; Interaction Polish
 
 - Grouped Build Around selection by closet category so mobile item menus stay short and scannable.
