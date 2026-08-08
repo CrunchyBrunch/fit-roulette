@@ -1,5 +1,15 @@
 # Changelog
 
+## Fit Roulette v1.4.1 &mdash; Smart Closet Stabilization
+
+- Confirmed legacy JSON imports now store the exact untouched file text as the protected original before replacing primary closet storage.
+- Imports stop without changing primary or in-memory closet data when required recovery creation fails.
+- Existing protected originals are never overwritten by later imports and remain associated with the earlier recovery payload.
+- Migration, validation, and primary-storage failures preserve current closet state while retaining any protected original created for the attempted import.
+- Added focused regression coverage for legacy recovery ordering, exact raw preservation, repeated imports, failure paths, future schemas, and schema-v4 imports.
+
+This release keeps data schema version 4, storage key `fitRoulette.v1`, and recovery key `fitRoulette.v1.recovery.schema4`.
+
 ## Fit Roulette v1.4.0 &mdash; Smart Closet Foundation
 
 - Added transactional schema-v4 migration with a one-time untouched recovery copy before legacy data is replaced.

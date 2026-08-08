@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.4.1";
   const SmartCloset = window.FitRouletteSmartCloset;
   if (!SmartCloset) throw new Error("Smart Closet module failed to load.");
   const SCHEMA_VERSION = SmartCloset.SCHEMA_VERSION;
@@ -361,8 +361,8 @@
   }
 
   function preserveRecoveryPayload(payload) {
-    if (localStorage.getItem(RECOVERY_KEY) !== null) return false;
     try {
+      if (localStorage.getItem(RECOVERY_KEY) !== null) return false;
       localStorage.setItem(RECOVERY_KEY, payload);
       return true;
     } catch (error) {
@@ -2128,31 +2128,85 @@
 
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const rawText = String(reader.result);
-        const incoming = SmartCloset.migrateAndValidate(JSON.parse(rawText)).state;
-        SmartCloset.validateState(incoming);
-        const confirmed = window.confirm("Import this backup and replace current local data?");
-        if (!confirmed) return;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(incoming));
-        appState = incoming;
-        storageWriteLocked = false;
-        loadIssue = null;
-        currentOutfit = null;
-        resultState = "empty";
-        logInProgress = false;
-        rerollSession = createRerollSession();
-        initializeGenerateOccasion();
-        renderAll();
-        showToast("Backup imported.");
-      } catch (error) {
-        console.error(error);
-        showToast("Import failed. Check the JSON file.");
-      } finally {
-        event.target.value = "";
-      }
+      importBackupText(String(reader.result));
+      event.target.value = "";
     };
     reader.readAsText(file);
+  }
+
+  function importBackupText(rawText, confirmImport = () => window.confirm("Import this backup and replace current local data?")) {
+    let raw;
+    let sourceSchema;
+    try {
+      raw = JSON.parse(rawText);
+      sourceSchema = importSchemaVersion(raw);
+    } catch (error) {
+      console.error(error);
+      showToast("Import failed. Check the JSON file.");
+      return { ok: false, error };
+    }
+
+    if (!confirmImport()) return { ok: false, cancelled: true };
+
+    const legacy = sourceSchema < SCHEMA_VERSION;
+    let recoveryCreated = false;
+    if (legacy) {
+      try {
+        recoveryCreated = preserveRecoveryPayload(rawText);
+        if (recoveryCreated) $("#exportRecoveryBtn").hidden = false;
+      } catch (error) {
+        console.error(error);
+        showToast("Import stopped because a protected original could not be created.");
+        return { ok: false, error };
+      }
+    }
+
+    let incoming;
+    try {
+      incoming = SmartCloset.migrateAndValidate(raw).state;
+      SmartCloset.validateState(incoming);
+    } catch (error) {
+      console.error(error);
+      showToast("Import failed. Check the JSON file.");
+      return { ok: false, error };
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(incoming));
+    } catch (error) {
+      console.error(error);
+      showToast("Import failed. Current closet data could not be replaced.");
+      return { ok: false, error };
+    }
+
+    appState = incoming;
+    storageWriteLocked = false;
+    loadIssue = null;
+    currentOutfit = null;
+    resultState = "empty";
+    logInProgress = false;
+    rerollSession = createRerollSession();
+    initializeGenerateOccasion();
+    renderAll();
+    if (legacy && recoveryCreated) showToast("Backup imported. Protected original saved.");
+    else if (legacy) showToast("Backup imported. Existing protected original retained.");
+    else showToast("Backup imported.");
+    return { ok: true, legacy, recoveryCreated };
+  }
+
+  function importSchemaVersion(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw Object.assign(new Error("Backup root must be an object."), { code: "INVALID_ROOT" });
+    }
+    const declaredSchema = raw.schemaVersion ?? raw.version;
+    const schemaVersion = Number(declaredSchema ?? 1);
+    if (declaredSchema !== undefined && (!Number.isFinite(schemaVersion) || schemaVersion < 1)) {
+      throw Object.assign(new Error("Backup schema version must be a positive number."), { code: "INVALID_SCHEMA" });
+    }
+    if (schemaVersion > SCHEMA_VERSION) {
+      throw Object.assign(new Error(`Schema ${schemaVersion} is newer than this app supports.`), { code: "UNSUPPORTED_FUTURE_SCHEMA" });
+    }
+    return schemaVersion;
   }
 
   function resetDemoData() {
@@ -2878,6 +2932,7 @@
       clearChangedHighlights,
       getLoadIssue: () => loadIssue,
       isStorageWriteLocked: () => storageWriteLocked,
+      importBackupText,
       setCurrentOutfit(outfit) {
         currentOutfit = outfit;
         resultState = outfit?.error ? "error" : (outfit ? "outfit" : "empty");
