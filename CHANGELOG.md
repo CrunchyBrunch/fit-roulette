@@ -2,8 +2,6 @@
 
 ## Fit Roulette v1.4.0 &mdash; Smart Closet Foundation
 
-This locally prepared release candidate is not yet deployed or publicly available.
-
 - Added transactional schema-v4 migration with a one-time untouched recovery copy before legacy data is replaced.
 - Added structured garment categories, controlled subtypes, primary and secondary colors, patterns, sleeve and bottom lengths, five-level formality, occasions, warmth, and rain policy.
 - Added distinct Available, Unavailable, and Archived item states plus Avoid, Neutral, Like, and Favorite preferences.
@@ -17,7 +15,7 @@ This locally prepared release candidate is not yet deployed or publicly availabl
 - Added generalized fresh-install choices and a history-derived acknowledgment when today's outfit was manually logged.
 - Preserved supported older imports, history, exact bans, feedback, settings, custom values, labels, notes, images, timestamps, legacy matching fields, and unfamiliar recoverable data.
 
-This release candidate keeps the existing `fitRoulette.v1` localStorage key and uses internal data schema version 4.
+This release keeps the existing `fitRoulette.v1` localStorage key and uses internal data schema version 4.
 
 ## Fit Roulette v1.3.3 &mdash; Interaction Polish
 

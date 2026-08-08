@@ -2,9 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release candidate: **1.4.0 - Smart Closet Foundation**
-
-This candidate is prepared locally and is not published until it completes the approved push and deployment workflow.
+Current release: **1.4.0 - Smart Closet Foundation**
 
 ## Run Locally
 
@@ -118,9 +116,9 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
 - All app data stays local to the browser through `localStorage`.
 
-The v1.4.0 release candidate uses service-worker cache `fit-roulette-v1.4.0`, synchronized with the visible app version. The cache includes the complete Smart Closet application shell, including `smart-closet.js`.
+The v1.4.0 release uses service-worker cache `fit-roulette-v1.4.0`, synchronized with the visible app version. The cache includes the complete Smart Closet application shell, including `smart-closet.js`.
 
-## Verify Smart Closet Release Candidate
+## Verify Smart Closet Release
 
 With Node.js available, run:
 
