@@ -85,7 +85,7 @@ assert(![sw, app, html, readme].some((text) => text.includes("v1.4-dev-smart-clo
 assert(sw.includes('"./smart-closet.js"'), "Service worker does not cache the Smart Closet module.");
 assert(app.includes('APP_VERSION = "1.4.0"'), "Visible app version is not 1.4.0.");
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'), "localStorage key changed unexpectedly.");
-assert(readme.includes("Current release candidate: **1.4.0 - Smart Closet Foundation**"), "README release-candidate metadata is not synchronized.");
+assert(readme.includes("Current release: **1.4.0 - Smart Closet Foundation**"), "README release metadata is not synchronized.");
 assert(changelog.includes("Fit Roulette v1.4.0 &mdash; Smart Closet Foundation"), "v1.4.0 changelog entry is missing.");
 assert(fs.existsSync(path.join(root, ".nojekyll")), ".nojekyll is missing.");
 
