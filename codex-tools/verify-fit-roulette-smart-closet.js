@@ -222,6 +222,24 @@ assert.equal(Smart.relationshipType(related, "top", "bottom"), "prefer");
 const removed = Smart.setRelationship(related, "top", "bottom", "", NOW);
 assert.equal(removed.pairRelationships.length, 0);
 
+assert.equal(Smart.canWearTogether(top, { ...top, id: "other_top" }), false, "Two base tops occupy the same wearable slot.");
+assert.equal(Smart.canWearTogether(bottom, { ...bottom, id: "other_bottom" }), false, "Two bottoms occupy the same wearable slot.");
+assert.equal(Smart.canWearTogether(shoes, { ...shoes, id: "other_shoes" }), false, "Two pairs of shoes occupy the same wearable slot.");
+assert.equal(Smart.canWearTogether(top, layer), true, "A base top and a supported layer can be worn together.");
+assert.equal(Smart.canWearTogether(bottom, belt), true, "A bottom and belt can be worn together.");
+
+const impossibleStoredNever = [{ id: "impossible", type: "never", itemIds: Smart.canonicalPair("top", "other_top") }];
+const otherTop = { ...top, id: "other_top", name: "other top" };
+assert.equal(
+  Smart.semanticCompatibility([top, otherTop], "date", { ...baseOptions, pairRelationships: impossibleStoredNever }).valid,
+  true,
+  "Impossible stored relationships must remain data-safe without influencing matching."
+);
+
+const staleSolid = { ...top, secondaryColor: "Magenta", pattern: "solid" };
+assert.deepEqual(Smart.itemColors(staleSolid), [top.primaryColor], "Solid garments must ignore stale secondary color without rewriting stored data.");
+assert.deepEqual(Smart.itemColors({ ...staleSolid, pattern: "striped" }), [top.primaryColor, "Magenta"]);
+
 const roundTrip = migrate(JSON.parse(JSON.stringify(migrated)));
 assert.deepEqual(roundTrip, migrated, "Export/import shaped JSON must preserve schema-v4 meaning.");
 

@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.4.1";
+  const APP_VERSION = "1.4.2";
   const SmartCloset = window.FitRouletteSmartCloset;
   if (!SmartCloset) throw new Error("Smart Closet module failed to load.");
   const SCHEMA_VERSION = SmartCloset.SCHEMA_VERSION;
@@ -91,6 +91,7 @@
   const WEATHER_CONDITIONS = ["sunny", "cloudy", "rain", "snow", "windy"];
   const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = SmartCloset.COLOR_PALETTE;
+  const CUSTOM_COLOR_VALUE = "__custom__";
   const FEEDBACK_REASONS = [
     ["colors", "These colors do not work together"],
     ["top_pants", "Top and pants do not work together"],
@@ -114,6 +115,9 @@
   let logInProgress = false;
   let editingItemId = null;
   let addSimilarSourceId = null;
+  let itemSaveInProgress = false;
+  let itemEditorBaseline = "";
+  let itemEditorOriginalColors = { primary: "", secondary: "" };
   let rerollSession = createRerollSession();
   let closetFilters = {
     search: "",
@@ -210,11 +214,19 @@
       applyTemplate($("#itemSubtype").value);
     });
     $("#itemSubtype").addEventListener("change", () => applyTemplate($("#itemSubtype").value));
+    $("#itemPattern").addEventListener("change", updateSecondaryColorAvailability);
+    $("#itemPrimaryColor").addEventListener("change", () => updateColorControl("primary", true));
+    $("#itemSecondaryColor").addEventListener("change", () => updateColorControl("secondary", true));
+    $("#preferItemsGroup").addEventListener("change", () => renderRelationshipChoiceGroup("prefer"));
+    $("#neverItemsGroup").addEventListener("change", () => renderRelationshipChoiceGroup("never"));
+    $("#preferItemsChoices").addEventListener("change", handleRelationshipChoice);
+    $("#neverItemsChoices").addEventListener("change", handleRelationshipChoice);
+    $("#preferItemsLegacy").addEventListener("change", handleRelationshipChoice);
+    $("#neverItemsLegacy").addEventListener("change", handleRelationshipChoice);
     $("#saveGenerateBtn").addEventListener("click", () => saveItemFromEditor({ generateAfter: true }));
     $("#closeItemDialogBtn").addEventListener("click", closeItemDialog);
     $("#addSimilarBtn").addEventListener("click", addSimilarFromDialog);
     $("#permanentDeleteBtn").addEventListener("click", permanentlyDeleteFromDialog);
-    $("#itemPrimaryColor").addEventListener("input", updateSelectedColorChip);
     $("#itemName").addEventListener("input", updateEditorTitle);
   }
 
@@ -251,7 +263,7 @@
       return `<button class="mini-button" type="button" data-color="${escapeAttribute(SmartCloset.titleCase(color))}">${escapeHtml(SmartCloset.titleCase(color))}</button>`;
     }).join("");
 
-    $("#colorSuggestions").innerHTML = COLOR_OPTIONS.map((color) => `<option value="${escapeAttribute(SmartCloset.titleCase(color))}"></option>`).join("");
+    renderColorOptions();
     $("#itemPattern").innerHTML = SmartCloset.PATTERNS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
     $("#itemFormality").innerHTML = Object.entries(SmartCloset.FORMALITY_LABELS).map(([value, label]) => `<option value="${value}">${value}. ${escapeHtml(label)}</option>`).join("");
     $("#itemSleeveLength").innerHTML = SmartCloset.SLEEVE_LENGTHS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
@@ -722,6 +734,8 @@
     const changed = toArray(outfit.changedItemIds).includes(item.id);
     const locked = outfit.buildAroundId === item.id;
     const color = item.primaryColor ? `<span>${escapeHtml(item.primaryColor)}</span>` : "";
+    const bottom = outfit.items.find((candidate) => candidate.category === "bottom");
+    const removableOptionalBelt = item.category === "belt" && bottom?.beltMode === "optional" && !locked && !isLogged;
 
     return `
       <div class="result-item ${changed ? "is-changed" : ""}" data-result-item-id="${escapeAttribute(item.id)}">
@@ -730,11 +744,16 @@
           <h3>${escapeHtml(item.name)}</h3>
           ${color}
         </div>
-        ${isLogged ? "" : `
+        ${isLogged ? "" : (removableOptionalBelt ? `
+          <div class="result-item-actions">
+            <button class="text-button compact" type="button" data-result-action="remove-belt">Remove Belt</button>
+            <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}">Swap</button>
+          </div>
+        ` : `
           <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}" ${locked ? "disabled" : ""}>
             ${locked ? "Locked" : "Swap"}
           </button>
-        `}
+        `)}
       </div>
     `;
   }
@@ -748,16 +767,17 @@
       generateAndRender({ mode: "reroll" });
     } else if (button.dataset.resultAction === "swap") {
       openSwapDialog(button.dataset.itemId);
+    } else if (button.dataset.resultAction === "remove-belt") {
+      removeOptionalBelt();
     }
   }
 
   function renderCloset() {
     const list = $("#closetList");
-    const query = normalizeTag(closetFilters.search);
     const matchingItems = appState.wardrobe
       .filter((item) => closetFilters.showInactive || isAvailable(item))
       .filter((item) => closetFilters.category === "all" || item.category === closetFilters.category)
-      .filter((item) => !query || itemSignals(item).some((signal) => signal.includes(query)))
+      .filter((item) => matchesClosetSearch(item, closetFilters.search))
       .sort(sortItems);
 
     if (!matchingItems.length) {
@@ -966,6 +986,7 @@
     const item = options.addSimilar && source ? similarItem(source) : source || emptyItem();
     editingItemId = source && !options.addSimilar ? item.id : null;
     addSimilarSourceId = options.addSimilar && source ? source.id : null;
+    itemEditorOriginalColors = { primary: item.primaryColor || "", secondary: item.secondaryColor || "" };
 
     $("#itemDialogMode").textContent = editingItemId ? "Editing Smart Closet item" : (addSimilarSourceId ? "Add Similar" : "Quick Add");
     $("#itemId").value = editingItemId || "";
@@ -973,8 +994,8 @@
     updateEditorTitle();
     $("#itemCategory").value = item.category || "top";
     renderSubtypeOptions(item.subtype);
-    $("#itemPrimaryColor").value = item.primaryColor || "";
-    $("#itemSecondaryColor").value = item.secondaryColor || "";
+    setColorControl("primary", item.primaryColor || "");
+    setColorControl("secondary", item.secondaryColor || "");
     $("#itemPattern").value = item.pattern || "solid";
     $("#itemFormality").value = item.formality || 3;
     $("#itemSleeveLength").value = item.sleeveLength || "unspecified";
@@ -992,6 +1013,7 @@
     $("#itemNotes").value = item.notes || "";
     $("#formError").hidden = true;
     $("#formError").textContent = "";
+    itemSaveInProgress = false;
 
     $$("input[name='itemOccasion']").forEach((input) => {
       input.checked = item.occasions.includes(input.value);
@@ -1012,8 +1034,8 @@
       : "";
     renderPairRelationshipOptions(item.id, options.addSimilar === true);
     renderBeltModeControl();
+    updateSecondaryColorAvailability();
     updateSelectedColorChip();
-    $("#itemForm").scrollTop = 0;
 
     const dialog = $("#itemDialog");
     if (typeof dialog.showModal === "function") {
@@ -1021,6 +1043,8 @@
     } else {
       dialog.setAttribute("open", "");
     }
+    resetItemEditorScroll();
+    itemEditorBaseline = itemEditorSnapshot();
   }
 
   function updateEditorTitle() {
@@ -1028,10 +1052,16 @@
     $("#itemDialogTitle").textContent = name || "Add Item";
   }
 
-  function closeItemDialog() {
+  function closeItemDialog(options = {}) {
+    if (!options.force && itemEditorBaseline && itemEditorSnapshot() !== itemEditorBaseline) {
+      if (!window.confirm("Discard unsaved item changes?")) return false;
+    }
     closeDialog($("#itemDialog"));
     editingItemId = null;
     addSimilarSourceId = null;
+    itemEditorBaseline = "";
+    itemEditorOriginalColors = { primary: "", secondary: "" };
+    return true;
   }
 
   function saveItemFromForm(event) {
@@ -1040,57 +1070,86 @@
   }
 
   function saveItemFromEditor({ generateAfter }) {
+    const dialog = $("#itemDialog");
+    if (!dialog.open && !(typeof dialog.hasAttribute === "function" && dialog.hasAttribute("open"))) return false;
     if (storageWriteLocked) {
       showToast("Data is locked to protect the original closet.");
-      return;
+      return false;
     }
-    const item = collectItemFromForm();
-    const error = validateItem(item);
-    if (error) {
-      $("#formError").textContent = error;
-      $("#formError").hidden = false;
-      return;
-    }
+    if (itemSaveInProgress) return false;
+    itemSaveInProgress = true;
 
-    const now = new Date().toISOString();
-    let savedItemId = editingItemId;
-    if (editingItemId) {
-      const index = appState.wardrobe.findIndex((existing) => existing.id === editingItemId);
-      if (index !== -1) {
-        appState.wardrobe[index] = {
-          ...appState.wardrobe[index],
+    try {
+      const item = collectItemFromForm();
+      const issue = validateItem(item);
+      if (issue) {
+        showItemFormError(issue);
+        return false;
+      }
+
+      const now = new Date().toISOString();
+      const nextState = JSON.parse(JSON.stringify(appState));
+      let savedItemId = editingItemId;
+      let successMessage = "Item saved.";
+      if (editingItemId) {
+        const index = nextState.wardrobe.findIndex((existing) => existing.id === editingItemId);
+        if (index === -1) {
+          showItemFormError({ message: "This item no longer exists. Close the editor and try again.", selector: "#formError" });
+          return false;
+        }
+        nextState.wardrobe[index] = {
+          ...nextState.wardrobe[index],
           ...item,
           id: editingItemId,
           review: { status: "reviewed", reasons: [], reviewedAt: now },
           legacyFallback: false,
           updatedAt: now
         };
+      } else {
+        const savedItem = SmartCloset.createItem({
+          ...item,
+          id: uid("item"),
+          status: "available",
+          review: { status: "reviewed", reasons: [], reviewedAt: now },
+          legacyFallback: false,
+          legacyMatching: {},
+          lastWorn: null,
+          createdAt: now,
+          updatedAt: now
+        }, { now });
+        nextState.wardrobe.push(savedItem);
+        savedItemId = savedItem.id;
+        successMessage = "Item added.";
       }
-      showToast("Item saved.");
-    } else {
-      const savedItem = SmartCloset.createItem({
-        ...item,
-        id: uid("item"),
-        status: "available",
-        review: { status: "reviewed", reasons: [], reviewedAt: now },
-        legacyFallback: false,
-        legacyMatching: {},
-        lastWorn: null,
-        createdAt: now,
-        updatedAt: now
-      }, { now });
-      appState.wardrobe.push(savedItem);
-      savedItemId = savedItem.id;
-      showToast("Item added.");
-    }
 
-    syncPairRelationships(savedItemId, selectedOptions($("#preferItemsSelect")), selectedOptions($("#neverItemsSelect")), now);
-    invalidateGenerationState();
-    if (!saveState()) return;
-    closeItemDialog();
-    renderAll();
-    if (generateAfter && savedItemId) {
-      generateWithItem(savedItemId);
+      syncPairRelationships(nextState, savedItemId, selectedOptions($("#preferItemsSelect")), selectedOptions($("#neverItemsSelect")), now);
+      if (!persistEditorState(nextState)) {
+        showItemFormError({ message: "Item was not saved. Local storage may be full or unavailable.", selector: "#formError" });
+        return false;
+      }
+
+      appState = nextState;
+      invalidateGenerationState();
+      closeItemDialog({ force: true });
+      renderAll();
+      showToast(successMessage);
+      if (generateAfter && savedItemId) {
+        generateWithItem(savedItemId);
+      }
+      return true;
+    } finally {
+      itemSaveInProgress = false;
+    }
+  }
+
+  function persistEditorState(nextState) {
+    try {
+      SmartCloset.validateState(nextState);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
     }
   }
 
@@ -1101,8 +1160,8 @@
       name: $("#itemName").value.trim(),
       category,
       subtype: $("#itemSubtype").value,
-      primaryColor: $("#itemPrimaryColor").value.trim(),
-      secondaryColor: $("#itemSecondaryColor").value.trim(),
+      primaryColor: colorControlValue("primary"),
+      secondaryColor: $("#itemPattern").value === "solid" ? "" : colorControlValue("secondary"),
       pattern: $("#itemPattern").value,
       sleeveLength: ["top", "layer"].includes(category) ? $("#itemSleeveLength").value : "not_applicable",
       bottomLength: category === "bottom" ? $("#itemBottomLength").value : "not_applicable",
@@ -1120,15 +1179,17 @@
   }
 
   function validateItem(item) {
-    if (!item.name) return "Name is required.";
-    if (!item.category) return "Category is required.";
-    if (!item.subtype) return "Subtype is required.";
-    if (!item.primaryColor) return "Primary color is required.";
-    if (!item.occasions.length) return "Choose at least one occasion.";
+    if (!item.name) return { message: "Name is required.", selector: "#itemName" };
+    if (!item.category) return { message: "Category is required.", selector: "#itemCategory" };
+    if (!item.subtype) return { message: "Subtype is required.", selector: "#itemSubtype" };
+    if (!item.primaryColor) return { message: "Primary color is required. Choose a listed color or enter a custom color.", selector: "#itemPrimaryColor" };
+    if (!validColorValue(item.primaryColor, "primary")) return { message: "Primary color must be a clear name using letters, numbers, spaces, hyphens, slashes, apostrophes, or parentheses.", selector: "#itemPrimaryColorCustom" };
+    if (item.secondaryColor && !validColorValue(item.secondaryColor, "secondary")) return { message: "Secondary color must be a clear color name.", selector: "#itemSecondaryColorCustom" };
+    if (!item.occasions.length) return { message: "Choose at least one occasion.", selector: "#itemOccasions" };
     const preferred = selectedOptions($("#preferItemsSelect"));
     const never = selectedOptions($("#neverItemsSelect"));
-    if (preferred.some((id) => never.includes(id))) return "An item cannot be both preferred and never paired.";
-    return "";
+    if (preferred.some((id) => never.includes(id))) return { message: "An item cannot be both preferred and never paired.", selector: "#matchingDetails" };
+    return null;
   }
 
   function handleItemFormClick(event) {
@@ -1140,8 +1201,8 @@
 
     const colorButton = event.target.closest("[data-color]");
     if (colorButton) {
-      const selected = normalizeTag($("#itemPrimaryColor").value) === normalizeTag(colorButton.dataset.color);
-      $("#itemPrimaryColor").value = selected ? "" : colorButton.dataset.color;
+      const selected = normalizeTag(colorControlValue("primary")) === normalizeTag(colorButton.dataset.color);
+      setColorControl("primary", selected ? "" : colorButton.dataset.color);
       updateSelectedColorChip();
       return;
     }
@@ -1171,6 +1232,8 @@
     }
     applyOccasions(template.occasions || []);
     renderBeltModeControl();
+    updateSecondaryColorAvailability();
+    refreshPairRelationshipOptions();
     showToast(`${SmartCloset.titleCase(templateId)} defaults applied.`);
   }
 
@@ -1204,30 +1267,118 @@
     }, { now });
   }
 
-  function renderPairRelationshipOptions(itemId, clearSelections = false) {
+  function renderPairRelationshipOptions(itemId, clearSelections = false, selectionOverride = null) {
     const relationships = itemId && !clearSelections
       ? appState.pairRelationships.filter((record) => record.itemIds.includes(itemId))
       : [];
-    const selectedFor = (type) => new Set(relationships.filter((record) => record.type === type).flatMap((record) => record.itemIds).filter((id) => id !== itemId));
-    const render = (type) => {
+    const selectedFor = (type) => new Set(selectionOverride?.[type] || relationships
+      .filter((record) => record.type === type)
+      .flatMap((record) => record.itemIds)
+      .filter((id) => id !== itemId));
+
+    ["prefer", "never"].forEach((type) => {
       const selected = selectedFor(type);
-      return appState.wardrobe.filter((item) => item.id !== itemId).sort(sortItems).map((item) => {
-        return `<option value="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "selected" : ""}>${escapeHtml(item.name)} — ${escapeHtml(CATEGORIES[item.category])}</option>`;
+      const candidates = relationshipCandidates(itemId);
+      const optionItems = uniqueItems([
+        ...candidates,
+        ...[...selected].map(findItem).filter(Boolean)
+      ]).sort(sortItems);
+      $(`#${type}ItemsSelect`).innerHTML = optionItems.map((item) => {
+        return `<option value="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "selected" : ""}>${escapeHtml(item.name)}</option>`;
       }).join("");
-    };
-    $("#preferItemsSelect").innerHTML = render("prefer");
-    $("#neverItemsSelect").innerHTML = render("never");
+
+      const priorGroup = $(`#${type}ItemsGroup`).value;
+      const groups = CATEGORY_ORDER.map((category) => ({
+        category,
+        items: candidates.filter((item) => item.category === category)
+      })).filter((group) => group.items.length);
+      $(`#${type}ItemsGroup`).innerHTML = groups.length
+        ? groups.map((group) => `<option value="${group.category}">${escapeHtml(CATEGORIES[group.category])} (${group.items.length})</option>`).join("")
+        : `<option value="">No compatible groups</option>`;
+      if (groups.some((group) => group.category === priorGroup)) $(`#${type}ItemsGroup`).value = priorGroup;
+      renderRelationshipChoiceGroup(type);
+      renderLegacyRelationshipChoices(type, itemId);
+    });
   }
 
-  function syncPairRelationships(itemId, preferredIds, neverIds, now) {
-    appState.pairRelationships = appState.pairRelationships.filter((record) => !record.itemIds.includes(itemId));
-    const add = (otherId, type) => {
-      const itemIds = SmartCloset.canonicalPair(itemId, otherId);
-      if (itemIds.length !== 2) return;
-      appState.pairRelationships.push({ id: uid("pair"), type, itemIds, createdAt: now, updatedAt: now });
+  function relationshipCandidates(itemId = editingItemId) {
+    const draft = {
+      ...(itemId ? findItem(itemId) : emptyItem()),
+      id: itemId || "__draft_item__",
+      category: $("#itemCategory").value || "top"
     };
-    unique(preferredIds).forEach((id) => add(id, "prefer"));
-    unique(neverIds).forEach((id) => add(id, "never"));
+    return appState.wardrobe
+      .filter((item) => item.id !== itemId && SmartCloset.canWearTogether(draft, item))
+      .sort(sortItems);
+  }
+
+  function renderRelationshipChoiceGroup(type) {
+    const group = $(`#${type}ItemsGroup`).value;
+    const selected = new Set(selectedOptions($(`#${type}ItemsSelect`)));
+    const items = relationshipCandidates().filter((item) => item.category === group);
+    $(`#${type}ItemsChoices`).innerHTML = items.length ? items.map((item) => `
+      <label class="relationship-choice">
+        <input type="checkbox" data-relationship-type="${type}" data-relationship-item-id="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "checked" : ""}>
+        <span>${escapeHtml(item.name)}${isAvailable(item) ? "" : ` (${escapeHtml(SmartCloset.titleCase(item.status))})`}</span>
+      </label>
+    `).join("") : `<p class="small-meta">No compatible garments in this group.</p>`;
+  }
+
+  function renderLegacyRelationshipChoices(type, itemId = editingItemId) {
+    const selected = new Set(selectedOptions($(`#${type}ItemsSelect`)));
+    const compatibleIds = new Set(relationshipCandidates(itemId).map((item) => item.id));
+    const incompatible = [...selected].map(findItem).filter((item) => item && !compatibleIds.has(item.id));
+    const container = $(`#${type}ItemsLegacy`);
+    container.hidden = !incompatible.length;
+    container.innerHTML = incompatible.length ? `
+      <strong>Stored exceptions (not used for matching)</strong>
+      ${incompatible.map((item) => `
+        <label class="relationship-choice">
+          <input type="checkbox" data-relationship-type="${type}" data-relationship-item-id="${escapeAttribute(item.id)}" checked>
+          <span>${escapeHtml(item.name)} — incompatible wearable slot; clear to remove</span>
+        </label>
+      `).join("")}
+    ` : "";
+  }
+
+  function handleRelationshipChoice(event) {
+    const input = event.target.closest("[data-relationship-type][data-relationship-item-id]");
+    if (!input) return;
+    const type = input.dataset.relationshipType;
+    const otherType = type === "prefer" ? "never" : "prefer";
+    setRelationshipSelection(type, input.dataset.relationshipItemId, input.checked);
+    if (input.checked) setRelationshipSelection(otherType, input.dataset.relationshipItemId, false);
+    renderRelationshipChoiceGroup(type);
+    renderRelationshipChoiceGroup(otherType);
+    renderLegacyRelationshipChoices(type);
+    renderLegacyRelationshipChoices(otherType);
+  }
+
+  function setRelationshipSelection(type, itemId, selected) {
+    const option = Array.from($(`#${type}ItemsSelect`).options || []).find((entry) => entry.value === itemId);
+    if (option) option.selected = selected;
+  }
+
+  function refreshPairRelationshipOptions() {
+    renderPairRelationshipOptions(editingItemId, false, {
+      prefer: selectedOptions($("#preferItemsSelect")),
+      never: selectedOptions($("#neverItemsSelect"))
+    });
+  }
+
+  function syncPairRelationships(state, itemId, preferredIds, neverIds, now) {
+    const desired = new Map();
+    unique(preferredIds).forEach((otherId) => desired.set(SmartCloset.canonicalPair(itemId, otherId).join("|"), "prefer"));
+    unique(neverIds).forEach((otherId) => desired.set(SmartCloset.canonicalPair(itemId, otherId).join("|"), "never"));
+    const existingForItem = state.pairRelationships.filter((record) => record.itemIds.includes(itemId));
+    const untouched = state.pairRelationships.filter((record) => !record.itemIds.includes(itemId));
+    const updated = [];
+    desired.forEach((type, pairKey) => {
+      if (!pairKey.includes("|")) return;
+      const existing = existingForItem.find((record) => record.itemIds.join("|") === pairKey && record.type === type);
+      updated.push(existing || { id: uid("pair"), type, itemIds: pairKey.split("|"), createdAt: now, updatedAt: now });
+    });
+    state.pairRelationships = [...untouched, ...updated];
   }
 
   function renderBeltModeControl() {
@@ -1259,8 +1410,100 @@
     });
   }
 
+  function renderColorOptions() {
+    const canonicalOptions = COLOR_OPTIONS.map((color) => {
+      const value = SmartCloset.titleCase(color);
+      return `<option value="${escapeAttribute(value)}">${escapeHtml(value)}</option>`;
+    }).join("");
+    $("#itemPrimaryColor").innerHTML = `<option value="">Choose a color</option>${canonicalOptions}<option value="${CUSTOM_COLOR_VALUE}">Custom color…</option>`;
+    $("#itemSecondaryColor").innerHTML = `<option value="">No secondary color</option>${canonicalOptions}<option value="${CUSTOM_COLOR_VALUE}">Custom color…</option>`;
+  }
+
+  function setColorControl(kind, value) {
+    const select = $(`#item${capitalize(kind)}Color`);
+    const custom = $(`#item${capitalize(kind)}ColorCustom`);
+    const exact = String(value || "");
+    const canonical = COLOR_OPTIONS.find((color) => normalizeTag(color) === normalizeTag(exact));
+    if (!exact) {
+      select.value = "";
+      custom.value = "";
+    } else if (canonical) {
+      select.value = SmartCloset.titleCase(canonical);
+      custom.value = "";
+    } else {
+      select.value = CUSTOM_COLOR_VALUE;
+      custom.value = exact;
+    }
+    updateColorControl(kind, false);
+  }
+
+  function updateColorControl(kind, focusCustom = false) {
+    const select = $(`#item${capitalize(kind)}Color`);
+    const custom = $(`#item${capitalize(kind)}ColorCustom`);
+    custom.hidden = select.value !== CUSTOM_COLOR_VALUE;
+    custom.disabled = custom.hidden || (kind === "secondary" && $("#itemPattern").value === "solid");
+    if (focusCustom && !custom.hidden && typeof custom.focus === "function") custom.focus();
+    if (kind === "primary") updateSelectedColorChip();
+  }
+
+  function colorControlValue(kind) {
+    const select = $(`#item${capitalize(kind)}Color`);
+    if (select.value === CUSTOM_COLOR_VALUE) return $(`#item${capitalize(kind)}ColorCustom`).value.trim();
+    return select.value.trim();
+  }
+
+  function validColorValue(value, kind) {
+    const text = String(value || "").trim();
+    if (text && text === itemEditorOriginalColors[kind]) return true;
+    return Boolean(text && text.length <= 40 && /^[\p{L}\p{N}][\p{L}\p{N}\s/&'().-]*$/u.test(text));
+  }
+
+  function updateSecondaryColorAvailability() {
+    const solid = $("#itemPattern").value === "solid";
+    $("#itemSecondaryColor").disabled = solid;
+    $("#secondaryColorField").classList.toggle("is-disabled", solid);
+    $("#secondaryColorHint").hidden = !solid;
+    updateColorControl("secondary");
+  }
+
+  function showItemFormError(issue) {
+    const error = $("#formError");
+    error.textContent = issue.message;
+    error.hidden = false;
+    const field = $(issue.selector || "#formError") || error;
+    const details = typeof field.closest === "function" ? field.closest("details") : null;
+    if (details) details.open = true;
+    const reveal = () => {
+      if (typeof field.scrollIntoView === "function") field.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (field !== error && typeof field.focus === "function") field.focus({ preventScroll: true });
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
+    else reveal();
+  }
+
+  function resetItemEditorScroll() {
+    const form = $("#itemForm");
+    const dialog = $("#itemDialog");
+    const reset = () => {
+      form.scrollTop = 0;
+      dialog.scrollTop = 0;
+      if (typeof form.scrollTo === "function") form.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      if (typeof dialog.scrollTo === "function") dialog.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    };
+    reset();
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reset);
+  }
+
+  function itemEditorSnapshot() {
+    return JSON.stringify({
+      item: collectItemFromForm(),
+      prefer: selectedOptions($("#preferItemsSelect")).sort(),
+      never: selectedOptions($("#neverItemsSelect")).sort()
+    });
+  }
+
   function updateSelectedColorChip() {
-    const selected = normalizeTag($("#itemPrimaryColor").value);
+    const selected = normalizeTag(colorControlValue("primary"));
     $$("[data-color]").forEach((button) => {
       button.classList.toggle("is-selected", normalizeTag(button.dataset.color) === selected);
     });
@@ -1329,7 +1572,9 @@
           return null;
         }
         const replaced = currentOutfit.items.map((item) => item.id === currentItem.id ? replacement : item);
-        const reconciled = reconcileBeltForOutfit(replaced, occasionId, currentOutfit.buildAroundId);
+        const reconciled = reconcileBeltForOutfit(replaced, occasionId, currentOutfit.buildAroundId, {
+          dropOptionalBelt: currentOutfit.optionalBeltRemoved === true
+        });
         if (!reconciled || !isCompatibleOutfit(reconciled, occasionId, currentOutfit.buildAroundId)) {
           excluded.matching += 1;
           return null;
@@ -1363,10 +1608,15 @@
 
   function applySwapChoice(previousItemId, choice) {
     const previousItems = currentOutfit.items;
+    const nextBottom = choice.items.find((item) => item.category === "bottom");
+    const optionalBeltRemoved = currentOutfit.optionalBeltRemoved === true
+      && nextBottom?.beltMode === "optional"
+      && !choice.items.some((item) => item.category === "belt");
     currentOutfit = {
       ...currentOutfit,
       items: choice.items,
       score: choice.score,
+      optionalBeltRemoved,
       changedItemIds: changedItemIds(previousItems, choice.items),
       changeNote: describeDependentChanges(previousItems, choice.items)
     };
@@ -1385,7 +1635,7 @@
   function addSimilarFromDialog() {
     if (!editingItemId) return;
     const sourceId = editingItemId;
-    closeItemDialog();
+    if (!closeItemDialog()) return;
     openItemDialog(sourceId, { addSimilar: true });
   }
 
@@ -1400,7 +1650,7 @@
     appState.pairRelationships = appState.pairRelationships.filter((record) => !record.itemIds.includes(editingItemId));
     invalidateGenerationState();
     saveState();
-    closeItemDialog();
+    closeItemDialog({ force: true });
     renderAll();
     showToast("Item permanently deleted.");
   }
@@ -1658,6 +1908,7 @@
       if (buildAround && slotAcceptsItem(slot, buildAround)) {
         pool = [buildAround];
       }
+      if (!pool.length && slot.categories.includes("belt")) continue;
       if (!pool.length) return null;
       const item = pool[Math.floor(Math.random() * pool.length)];
       selected.push(item);
@@ -1668,9 +1919,7 @@
       selected.push(buildAround);
     }
 
-    return reconcileBeltForOutfit(uniqueItems(selected), occasion.id, buildAround?.id || "", {
-      dropOptionalBelt: Math.random() < 0.3
-    });
+    return reconcileBeltForOutfit(uniqueItems(selected), occasion.id, buildAround?.id || "");
   }
 
   function enumerateOutfits(occasion, buildAround, maxCombos) {
@@ -1697,12 +1946,6 @@
         const uniqueOutfit = uniqueItems(outfit);
         const reconciled = reconcileBeltForOutfit(uniqueOutfit, occasion.id, buildAround?.id || "");
         if (reconciled) results.push(reconciled);
-        const withoutOptionalBelt = reconcileBeltForOutfit(uniqueOutfit, occasion.id, buildAround?.id || "", {
-          dropOptionalBelt: true
-        });
-        if (withoutOptionalBelt && comboKey(withoutOptionalBelt.map((item) => item.id)) !== comboKey((reconciled || []).map((item) => item.id))) {
-          results.push(withoutOptionalBelt);
-        }
         return;
       }
 
@@ -1710,6 +1953,11 @@
       let pool = candidateItems(slot, occasion.id).filter((item) => !usedIds.has(item.id));
       if (buildAround && slotAcceptsItem(slot, buildAround)) {
         pool = [buildAround];
+      }
+
+      if (!pool.length && slot.categories.includes("belt")) {
+        walkSlots(index + 1, selected, usedIds, slots);
+        return;
       }
 
       for (const item of pool) {
@@ -1755,7 +2003,7 @@
     const bottoms = items.find((item) => item.category === "bottom");
     const belts = items.filter((item) => item.category === "belt");
     if (bottoms?.beltMode === "none" && belts.length) return false;
-    if (bottoms?.beltMode === "required" && occasionSupportsBelts(occasionId) && !belts.length) return false;
+    if (bottoms?.beltMode === "required" && !belts.length) return false;
 
     return SmartCloset.semanticCompatibility(items, occasionId, {
       settings: appState.settings,
@@ -1832,25 +2080,40 @@
       return reconciled.filter((item) => item.category !== "belt");
     }
 
-    if (bottoms.beltMode !== "required" || !occasionSupportsBelts(occasionId) || belts.length) {
-      return reconciled;
-    }
-
     const baseItems = reconciled.filter((item) => item.category !== "belt");
+    const compatibleExistingBelt = belts.find((belt) => isCompatibleOutfit([...baseItems, belt], occasionId, buildAroundId));
+    if (compatibleExistingBelt) return [...baseItems, compatibleExistingBelt];
+    if (belts.some((belt) => belt.id === buildAroundId)) return null;
+
     const validBelts = candidateItems({ categories: ["belt"] }, occasionId)
-      .filter((belt) => isCompatibleOutfit([...baseItems, belt], occasionId))
+      .filter((belt) => isCompatibleOutfit([...baseItems, belt], occasionId, buildAroundId))
       .sort((a, b) => scoreOutfit([...baseItems, b], occasionId) - scoreOutfit([...baseItems, a], occasionId));
 
-    if (!validBelts.length) return null;
+    if (!validBelts.length) return bottoms.beltMode === "required" ? null : baseItems;
     reconciled = [...baseItems, validBelts[0]];
     return uniqueItems(reconciled);
   }
 
-  function occasionSupportsBelts(occasionId) {
-    const occasion = OCCASIONS[occasionId];
-    if (!occasion) return false;
-    return [...occasion.slots, ...(occasion.optionalSlots || [])]
-      .some((slot) => slot.categories.includes("belt"));
+  function removeOptionalBelt() {
+    if (!currentOutfit || currentOutfit.error || resultState !== "outfit") return false;
+    const bottom = currentOutfit.items.find((item) => item.category === "bottom");
+    const belt = currentOutfit.items.find((item) => item.category === "belt");
+    if (!bottom || bottom.beltMode !== "optional" || !belt || currentOutfit.buildAroundId === belt.id) return false;
+    const previousItems = currentOutfit.items;
+    const nextItems = previousItems.filter((item) => item.category !== "belt");
+    currentOutfit = {
+      ...currentOutfit,
+      items: nextItems,
+      score: scoreOutfit(nextItems, currentOutfit.occasion, { buildAroundId: currentOutfit.buildAroundId }),
+      optionalBeltRemoved: true,
+      changedItemIds: [belt.id],
+      changeNote: "Optional belt removed."
+    };
+    trackCurrentOutfitInSession();
+    renderResult();
+    renderRerollSessionStatus();
+    showToast("Optional belt removed. Logging will record no belt.");
+    return true;
   }
 
   function weatherScore(item) {
@@ -2289,13 +2552,22 @@
       CATEGORIES[item.category] || item.category,
       item.subtype,
       item.primaryColor,
-      item.secondaryColor,
+      item.pattern === "solid" ? "" : item.secondaryColor,
       item.pattern,
       item.status,
+      String(item.formality),
       SmartCloset.FORMALITY_LABELS[item.formality],
       ...item.labels,
       ...item.occasions,
+      ...item.occasions.map((occasion) => OCCASIONS[occasion]?.label || ""),
     ].map(normalizeTag).filter(Boolean));
+  }
+
+  function matchesClosetSearch(item, query) {
+    const terms = normalizeTag(query).split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+    const signals = itemSignals(item);
+    return terms.every((term) => signals.some((signal) => signal.includes(term)));
   }
 
   function snapshotItem(item) {
@@ -2914,10 +3186,21 @@
       }),
       normalizeState,
       openItemDialog,
+      closeItemDialog,
+      saveItemFromEditor,
+      collectItemFromForm,
+      validateItem,
+      setColorControl,
+      colorControlValue,
+      updateSecondaryColorAvailability,
+      relationshipCandidates,
+      syncPairRelationships,
+      matchesClosetSearch,
       pickOutfit,
       isCompatibleOutfit,
       validSwapChoices,
       swapChoiceReport,
+      applySwapChoice,
       generationContextKey,
       candidateItems,
       scoreOutfit,
@@ -2929,6 +3212,9 @@
       sampleWardrobe,
       changedItemIds,
       describeDependentChanges,
+      reconcileBeltForOutfit,
+      removeOptionalBelt,
+      logCurrentOutfit,
       clearChangedHighlights,
       getLoadIssue: () => loadIssue,
       isStorageWriteLocked: () => storageWriteLocked,

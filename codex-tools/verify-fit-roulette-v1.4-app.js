@@ -33,18 +33,27 @@ class MockElement {
     this.dataset = {};
     this.classList = new MockClassList();
     this.listeners = new Map();
+    this.listenerAdds = new Map();
     this.selectedOptions = [];
+    this.options = [];
     this.files = [];
     this.style = {};
+    this.scrollTop = 0;
+    this.disabled = false;
+    this.attributes = new Map();
   }
-  addEventListener(type, callback) { this.listeners.set(type, callback); }
+  addEventListener(type, callback) {
+    this.listeners.set(type, callback);
+    this.listenerAdds.set(type, (this.listenerAdds.get(type) || 0) + 1);
+  }
   click() { this.listeners.get("click")?.({ target: this, preventDefault() {} }); }
   focus() { this.focused = true; }
   close() { this.open = false; }
   showModal() { this.open = true; }
   scrollIntoView() {}
-  setAttribute(name, value) { this[name] = value; }
-  removeAttribute(name) { delete this[name]; }
+  setAttribute(name, value) { this.attributes.set(name, value); if (name === "open") this.open = true; }
+  removeAttribute(name) { this.attributes.delete(name); if (name === "open") this.open = false; }
+  hasAttribute(name) { return this.attributes.has(name); }
   remove() {}
   closest(selector) {
     const dataMatch = selector.match(/^\[data-([a-z-]+)(?:='([^']+)')?\]$/);
@@ -349,6 +358,204 @@ function item(id, subtype, color, overrides = {}) {
   }, { now });
 }
 
+const fieldTopA = item("field_top_a", "polo", "Navy", { name: "Navy Weekend Polo", labels: ["travel"], occasions: ["casual", "date"] });
+const fieldTopB = item("field_top_b", "t-shirt", "White", { name: "White Tee", occasions: ["casual", "date"] });
+const fieldTopAlt = item("field_top_alt", "t-shirt", "Gray", { name: "Gray Tee", occasions: ["casual", "date"] });
+const fieldLayer = item("field_layer", "jacket", "Olive", { name: "Olive Jacket", occasions: ["casual", "date"] });
+const fieldBottom = item("field_bottom", "jeans", "Navy", { name: "Navy Jeans", beltMode: "optional", occasions: ["casual", "date"] });
+const fieldShoes = item("field_shoes", "dress shoes", "Brown", { name: "Formal Brown Shoes", occasions: ["casual", "date"] });
+const fieldBelt = item("field_belt", "casual belt", "Brown", { name: "Brown Belt", occasions: ["casual", "date"] });
+const validStoredPair = { id: "valid_stored_pair", type: "prefer", itemIds: Smart.canonicalPair(fieldTopA.id, fieldLayer.id), createdAt: now, updatedAt: now };
+const impossibleStoredPair = { id: "impossible_stored_pair", type: "never", itemIds: Smart.canonicalPair(fieldTopA.id, fieldTopB.id), createdAt: now, updatedAt: now };
+const fieldState = {
+  ...Smart.createFreshState(now),
+  setup: { completed: true, choice: "existing" },
+  wardrobe: [fieldTopA, fieldTopB, fieldTopAlt, fieldLayer, fieldBottom, fieldShoes, fieldBelt],
+  pairRelationships: [validStoredPair, impossibleStoredPair]
+};
+
+const editorApp = runApp(JSON.stringify(fieldState));
+editorApp.elements.get("itemForm").scrollTop = 640;
+editorApp.elements.get("itemDialog").scrollTop = 240;
+editorApp.api.openItemDialog(fieldTopA.id);
+assert.equal(editorApp.elements.get("itemForm").scrollTop, 0, "Each editor open must reset the scrolling form to the top.");
+assert.equal(editorApp.elements.get("itemDialog").scrollTop, 0, "Each editor open must reset the dialog to the top.");
+editorApp.elements.get("preferItemsSelect").selectedOptions = [{ value: fieldLayer.id }];
+editorApp.elements.get("neverItemsSelect").selectedOptions = [{ value: fieldTopB.id }];
+editorApp.elements.get("itemName").value = "Navy Weekend Polo Updated";
+const writesBeforeValidSave = editorApp.storageWriteAttempts.filter((entry) => entry.key === "fitRoulette.v1").length;
+assert.equal(editorApp.api.saveItemFromEditor({ generateAfter: false }), true);
+assert.equal(editorApp.elements.get("itemDialog").open, false, "A valid save must close the editor.");
+assert.equal(editorApp.storageWriteAttempts.filter((entry) => entry.key === "fitRoulette.v1").length - writesBeforeValidSave, 1, "A valid save must persist exactly once.");
+assert.equal(editorApp.api.getState().wardrobe.find((entry) => entry.id === fieldTopA.id).name, "Navy Weekend Polo Updated");
+const writesAfterClosedSave = editorApp.storageWriteAttempts.length;
+assert.equal(editorApp.api.saveItemFromEditor({ generateAfter: false }), false, "A stale submit after close must be ignored.");
+assert.equal(editorApp.storageWriteAttempts.length, writesAfterClosedSave);
+
+editorApp.elements.get("itemForm").scrollTop = 500;
+editorApp.api.openItemDialog(fieldTopA.id);
+assert.equal(editorApp.elements.get("itemForm").scrollTop, 0, "Repeated editor cycles must reset scroll without stale state.");
+editorApp.elements.get("itemName").value = "";
+const invalidWrites = editorApp.storageWriteAttempts.length;
+assert.equal(editorApp.api.saveItemFromEditor({ generateAfter: false }), false);
+assert.equal(editorApp.elements.get("itemDialog").open, true, "Invalid save must remain in the editor.");
+assert.equal(editorApp.elements.get("formError").hidden, false);
+assert(editorApp.elements.get("formError").textContent.includes("Name is required"));
+assert.equal(editorApp.elements.get("itemName").focused, true, "Validation must focus the blocking field.");
+assert.equal(editorApp.storageWriteAttempts.length, invalidWrites, "Invalid save must not attempt persistence.");
+assert.equal(editorApp.elements.get("itemForm").listenerAdds.get("submit"), 1, "Repeated opens must not accumulate submit handlers.");
+
+const failureApp = runApp(JSON.stringify(fieldState), { failSetItem: (key) => key === "fitRoulette.v1" });
+const failureStateBefore = JSON.stringify(failureApp.api.getState());
+failureApp.api.openItemDialog(fieldTopA.id);
+failureApp.elements.get("itemName").value = "Unsaved storage failure";
+failureApp.elements.get("preferItemsSelect").selectedOptions = [{ value: fieldLayer.id }];
+failureApp.elements.get("neverItemsSelect").selectedOptions = [{ value: fieldTopB.id }];
+assert.equal(failureApp.api.saveItemFromEditor({ generateAfter: false }), false);
+assert.equal(failureApp.elements.get("itemDialog").open, true, "Persistence failure must keep the editor open.");
+assert.equal(JSON.stringify(failureApp.api.getState()), failureStateBefore, "Persistence failure must not mutate in-memory closet state.");
+assert(failureApp.elements.get("formError").textContent.includes("not saved"));
+
+const guardedCloseApp = runApp(JSON.stringify(fieldState), { confirmResult: false });
+guardedCloseApp.api.openItemDialog(fieldTopA.id);
+guardedCloseApp.elements.get("itemNotes").value = "Unsaved note";
+assert.equal(guardedCloseApp.api.closeItemDialog(), false, "Declining discard confirmation must keep unsaved edits open.");
+assert.equal(guardedCloseApp.elements.get("itemDialog").open, true);
+
+editorApp.elements.get("itemCategory").value = "top";
+const topCandidateIds = editorApp.api.relationshipCandidates(fieldTopA.id).map((entry) => entry.id);
+assert(!topCandidateIds.includes(fieldTopA.id), "Current garment must be excluded from pair candidates.");
+assert(!topCandidateIds.includes(fieldTopB.id), "Same-slot base tops must be excluded from new pair candidates.");
+assert(topCandidateIds.includes(fieldLayer.id), "Base-top/layer relationships must remain selectable.");
+assert(topCandidateIds.includes(fieldBottom.id));
+editorApp.elements.get("itemCategory").value = "bottom";
+const bottomCandidateIds = editorApp.api.relationshipCandidates(fieldBottom.id).map((entry) => entry.id);
+assert(bottomCandidateIds.includes(fieldBelt.id), "Bottom/belt relationships must remain selectable.");
+
+const relationCopy = JSON.parse(JSON.stringify(fieldState));
+editorApp.api.syncPairRelationships(relationCopy, fieldTopA.id, [fieldLayer.id], [fieldTopB.id], now);
+assert(relationCopy.pairRelationships.some((record) => record.id === validStoredPair.id), "Existing valid relationships must survive unchanged edits.");
+assert(relationCopy.pairRelationships.some((record) => record.id === impossibleStoredPair.id), "Existing impossible relationships must not be silently destroyed.");
+editorApp.api.syncPairRelationships(relationCopy, fieldTopA.id, [fieldLayer.id], [], now);
+assert(!relationCopy.pairRelationships.some((record) => record.id === impossibleStoredPair.id), "Explicitly clearing a stored exception must remove it.");
+const contradictoryCopy = JSON.parse(JSON.stringify(fieldState));
+editorApp.api.syncPairRelationships(contradictoryCopy, fieldTopA.id, [fieldLayer.id], [fieldLayer.id], now);
+const contradictoryRecords = contradictoryCopy.pairRelationships.filter((record) => record.itemIds.includes(fieldTopA.id) && record.itemIds.includes(fieldLayer.id));
+assert.equal(contradictoryRecords.length, 1, "The relationship model must never store contradictory duplicate pairs.");
+
+const largeCandidateApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [fieldBottom, ...Array.from({ length: 120 }, (_, index) => item(`large_shoe_${index}`, "sneakers", "Gray", { occasions: ["casual"] }))]
+}));
+largeCandidateApp.elements.get("itemCategory").value = "bottom";
+assert.equal(largeCandidateApp.api.relationshipCandidates(fieldBottom.id).length, 120, "Grouped relationship candidates must not truncate large closets.");
+
+const inconsistentSolid = item("inconsistent_solid", "polo", "Cerulean", {
+  name: "Cerulean Polo", secondaryColor: "Cream", pattern: "solid", occasions: ["casual"]
+});
+const colorApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" }, wardrobe: [inconsistentSolid]
+}));
+assert.equal(colorApp.api.getState().wardrobe[0].secondaryColor, "Cream", "Loading must not bulk-rewrite an inconsistent schema-v4 garment.");
+colorApp.api.openItemDialog(inconsistentSolid.id);
+assert.equal(colorApp.elements.get("itemSecondaryColor").disabled, true, "Solid must disable Secondary Color visibly.");
+assert.equal(colorApp.api.collectItemFromForm().secondaryColor, "", "Solid must collect the canonical absent-secondary value.");
+assert.equal(colorApp.api.saveItemFromEditor({ generateAfter: false }), true);
+assert.equal(colorApp.api.getState().wardrobe[0].secondaryColor, "", "Reviewing and saving a solid garment must clear stale secondary color.");
+colorApp.api.openItemDialog(inconsistentSolid.id);
+colorApp.elements.get("itemPattern").value = "plaid";
+colorApp.api.updateSecondaryColorAvailability();
+assert.equal(colorApp.elements.get("itemSecondaryColor").disabled, false, "A multi-color pattern must enable Secondary Color.");
+colorApp.api.setColorControl("primary", "Cerulean");
+colorApp.api.setColorControl("secondary", "Cream");
+assert.equal(colorApp.api.saveItemFromEditor({ generateAfter: false }), true);
+assert.equal(colorApp.api.getState().wardrobe[0].primaryColor, "Cerulean", "Custom primary color casing must survive save.");
+assert.equal(colorApp.api.getState().wardrobe[0].secondaryColor, "Cream", "Canonical or custom secondary colors must survive save.");
+const colorRoundTrip = runApp(colorApp.storage.get("fitRoulette.v1"));
+assert.equal(colorRoundTrip.api.getState().wardrobe[0].primaryColor, "Cerulean");
+assert.equal(colorRoundTrip.api.getState().wardrobe[0].secondaryColor, "Cream");
+colorRoundTrip.api.openItemDialog(inconsistentSolid.id);
+colorRoundTrip.elements.get("itemPrimaryColor").value = "__custom__";
+colorRoundTrip.elements.get("itemPrimaryColorCustom").value = "";
+assert(colorRoundTrip.api.validateItem(colorRoundTrip.api.collectItemFromForm()).message.includes("Primary color is required"));
+
+assert(editorApp.api.matchesClosetSearch(fieldTopA, "navy polo"), "Multi-term search must match across structured fields.");
+assert(editorApp.api.matchesClosetSearch(fieldShoes, "formal brown shoes"), "Formality, color, and category must combine predictably.");
+assert(editorApp.api.matchesClosetSearch(inconsistentSolid, "cerulean polo"), "Custom colors must remain searchable.");
+assert(!editorApp.api.matchesClosetSearch(inconsistentSolid, "cream"), "Solid garments must not match stale secondary-color state.");
+assert(editorApp.api.matchesClosetSearch(fieldTopA, "travel"), "User labels must remain searchable.");
+const scoreBeforeSearch = editorApp.api.scoreOutfit([fieldTopA, fieldBottom, fieldShoes], "casual", { randomize: false });
+editorApp.api.matchesClosetSearch(fieldTopA, "navy polo");
+assert.equal(editorApp.api.scoreOutfit([fieldTopA, fieldBottom, fieldShoes], "casual", { randomize: false }), scoreBeforeSearch, "Closet search must not alter outfit scoring.");
+
+function beltTestState(bottom, belt, extraRelationships = [], extraWardrobe = []) {
+  return {
+    ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+    wardrobe: [
+      item("belt_test_top", "t-shirt", "White", { occasions: ["casual"] }),
+      item("belt_test_top_alt", "polo", "Gray", { occasions: ["casual"] }),
+      bottom,
+      item("belt_test_shoes", "sneakers", "White", { occasions: ["casual"] }),
+      ...(belt ? [belt] : []),
+      ...extraWardrobe
+    ],
+    pairRelationships: extraRelationships
+  };
+}
+
+const optionalBottom = item("optional_bottom", "jeans", "Navy", { beltMode: "optional", occasions: ["casual"] });
+const requiredBottom = item("required_bottom", "chinos", "Khaki", { beltMode: "required", occasions: ["casual"] });
+const noBeltBottom = item("no_belt_bottom", "athletic shorts", "Black", { beltMode: "none", occasions: ["casual"] });
+const availableBelt = item("available_belt", "casual belt", "Brown", { occasions: ["casual"] });
+
+const optionalBeltApp = runApp(JSON.stringify(beltTestState(optionalBottom, availableBelt)));
+const optionalOutfit = optionalBeltApp.api.pickOutfit("casual", "");
+assert(!optionalOutfit.error, optionalOutfit.error);
+assert(optionalOutfit.items.some((entry) => entry.category === "belt"), "Optional Belt must default to a compatible belt when available.");
+optionalBeltApp.api.setCurrentOutfit(optionalOutfit);
+const historyBeforeRemoval = optionalBeltApp.api.getState().history.length;
+const writesBeforeRemoval = optionalBeltApp.storageWriteAttempts.length;
+assert.equal(optionalBeltApp.api.removeOptionalBelt(), true);
+assert(!optionalBeltApp.api.getCurrentOutfit().items.some((entry) => entry.category === "belt"));
+assert.equal(optionalBeltApp.api.getState().history.length, historyBeforeRemoval, "Removing an unlogged belt must not write history.");
+assert.equal(optionalBeltApp.storageWriteAttempts.length, writesBeforeRemoval, "Removing an optional belt must remain in-memory until logging.");
+assert.equal(optionalBeltApp.api.lastItemWornDate(availableBelt), null, "Removed-but-unlogged belts must not gain recency.");
+const topToSwap = optionalBeltApp.api.getCurrentOutfit().items.find((entry) => entry.category === "top");
+assert(optionalBeltApp.api.swapChoiceReport(topToSwap).eligible.every((choice) => !choice.items.some((entry) => entry.category === "belt")), "Unrelated swaps must not restore a removed optional belt.");
+optionalBeltApp.api.logCurrentOutfit();
+assert(!optionalBeltApp.api.getState().history[0].itemIds.includes(availableBelt.id), "Logged history must exclude a removed belt.");
+assert.equal(optionalBeltApp.api.lastItemWornDate(availableBelt), null, "Logging after removal must not mark the belt used.");
+
+const requiredBeltApp = runApp(JSON.stringify(beltTestState(requiredBottom, availableBelt)));
+const requiredOutfit = requiredBeltApp.api.pickOutfit("casual", "");
+assert(!requiredOutfit.error, requiredOutfit.error);
+assert(requiredOutfit.items.some((entry) => entry.category === "belt"), "Required Belt must generate a compatible belt.");
+requiredBeltApp.api.setCurrentOutfit(requiredOutfit);
+assert.equal(requiredBeltApp.api.removeOptionalBelt(), false, "Required belts must not be removable through the optional-belt action.");
+
+const noBeltApp = runApp(JSON.stringify(beltTestState(noBeltBottom, availableBelt)));
+const noBeltOutfit = noBeltApp.api.pickOutfit("casual", "");
+assert(!noBeltOutfit.error, noBeltOutfit.error);
+assert(!noBeltOutfit.items.some((entry) => entry.category === "belt"), "No Belt must never generate a belt.");
+
+const incompatibleBeltPair = { id: "never_optional_belt", type: "never", itemIds: Smart.canonicalPair(optionalBottom.id, availableBelt.id), createdAt: now, updatedAt: now };
+const optionalNoCompatibleApp = runApp(JSON.stringify(beltTestState(optionalBottom, availableBelt, [incompatibleBeltPair])));
+const optionalWithoutCompatible = optionalNoCompatibleApp.api.pickOutfit("casual", "");
+assert(!optionalWithoutCompatible.error, "Optional Belt must not block generation when no compatible belt exists.");
+assert(!optionalWithoutCompatible.items.some((entry) => entry.category === "belt"));
+
+const incompatibleRequiredPair = { id: "never_required_belt", type: "never", itemIds: Smart.canonicalPair(requiredBottom.id, availableBelt.id), createdAt: now, updatedAt: now };
+const requiredNoCompatibleApp = runApp(JSON.stringify(beltTestState(requiredBottom, availableBelt, [incompatibleRequiredPair])));
+assert(requiredNoCompatibleApp.api.pickOutfit("casual", "").error, "Required Belt must not generate an outfit that violates its belt requirement.");
+
+const ineligibleBeltsApp = runApp(JSON.stringify(beltTestState(optionalBottom, null, [], [
+  item("unavailable_belt", "casual belt", "Brown", { occasions: ["casual"], status: "unavailable" }),
+  item("archived_belt", "casual belt", "Black", { occasions: ["casual"], status: "archived" })
+])));
+const ineligibleBeltsOutfit = ineligibleBeltsApp.api.pickOutfit("casual", "");
+assert(!ineligibleBeltsOutfit.error);
+assert(!ineligibleBeltsOutfit.items.some((entry) => entry.category === "belt"), "Archived and unavailable belts must remain ineligible.");
+
 const tops = [item("top", "t-shirt", "White")];
 const bottoms = [item("bottom", "jeans", "Navy")];
 const shoes = Array.from({ length: 10 }, (_, index) => item(`shoes_${index}`, "sneakers", index % 2 ? "White" : "Gray"));
@@ -411,6 +618,10 @@ console.log(JSON.stringify({
   legacyImportRecoveryCreated: importedLegacyResult.recoveryCreated,
   legacyImportFailureCases: 5,
   existingRecoveryPreserved: existingRecovery.storage.get(Smart.RECOVERY_KEY) === existingRecoveryRaw,
+  editorTransactionalSave: true,
+  groupedRelationshipCandidates: largeCandidateApp.api.relationshipCandidates(fieldBottom.id).length,
+  structuredSearch: true,
+  optionalBeltRemoval: true,
   swapEligible: swapReport.eligible.length,
   freshSetupShown: freshSetupWasShown
 }));

@@ -15,11 +15,13 @@ new vm.Script(app, { filename: "app.js" });
 new vm.Script(smart, { filename: "smart-closet.js" });
 new vm.Script(sw, { filename: "sw.js" });
 
-assert(html.indexOf('src="./smart-closet.js?v=1.4.1"') < html.indexOf('src="./app.js?v=1.4.1"'), "Smart Closet data module must load before the app.");
-assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.4.1"') < html.indexOf('src="./smart-closet.js?v=1.4.1"'), "Versioned service-worker update bootstrap must run before cached application bundles.");
+assert(html.indexOf('src="./smart-closet.js?v=1.4.2"') < html.indexOf('src="./app.js?v=1.4.2"'), "Smart Closet data module must load before the app.");
+assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.4.2"') < html.indexOf('src="./smart-closet.js?v=1.4.2"'), "Versioned service-worker update bootstrap must run before cached application bundles.");
 for (const id of [
   "freshSetup", "reviewQueue", "itemSubtype", "itemPattern", "itemFormality", "itemStatus", "itemPreference",
   "itemSleeveLength", "itemBottomLength", "itemWarmth", "itemRainPolicy", "preferItemsSelect", "neverItemsSelect",
+  "itemPrimaryColorCustom", "itemSecondaryColorCustom", "secondaryColorField", "preferItemsGroup", "neverItemsGroup",
+  "preferItemsChoices", "neverItemsChoices", "preferItemsLegacy", "neverItemsLegacy",
   "itemLabels", "addSimilarBtn", "todayLoggedNotice", "swapSummary", "dataSafetyNotice"
 ]) {
   assert(html.includes(`id="${id}"`), `Missing Smart Closet UI control: ${id}`);
@@ -35,8 +37,12 @@ assert(html.includes("Every chip") === false, "Implementation requirements shoul
 assert(smart.includes("const SCHEMA_VERSION = 4"));
 assert(smart.includes('RECOVERY_KEY = "fitRoulette.v1.recovery.schema4"'));
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'));
-assert(app.includes('APP_VERSION = "1.4.1"'), "Visible release version must be 1.4.1.");
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.4.1"'), "Final service-worker cache must match the 1.4.1 release.");
+assert(app.includes('APP_VERSION = "1.4.2"'), "Visible release version must be 1.4.2.");
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.4.2"'), "Final service-worker cache must match the 1.4.2 release.");
+assert(app.includes("SmartCloset.canWearTogether"), "Pair-rule candidates must use wearable-slot compatibility.");
+assert(app.includes('data-result-action="remove-belt"'), "Optional-belt removal control is missing.");
+assert(app.includes("Custom color…"), "Controlled colors must retain an explicit custom route.");
+assert(css.includes(".relationship-choice"), "Grouped relationship choices are missing responsive styles.");
 assert(app.includes("SmartCloset.semanticCompatibility"), "Generator must use centralized semantic compatibility.");
 assert(app.includes("appState.pairRelationships"), "Top-level pair relationships are not integrated.");
 assert(app.includes("legacyFallback: false"), "Per-item legacy retirement is not implemented.");
@@ -58,6 +64,6 @@ for (const asset of ["index.html", "styles.css", "smart-closet.js", "app.js", "m
 console.log(JSON.stringify({
   ok: true,
   schemaVersion: 4,
-  structuredControls: 18,
+  structuredControls: 27,
   appVersion: (app.match(/APP_VERSION = "([^"]+)"/) || [])[1]
 }));
