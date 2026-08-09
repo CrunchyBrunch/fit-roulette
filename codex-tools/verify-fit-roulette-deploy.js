@@ -21,12 +21,12 @@ const changelog = read("CHANGELOG.md");
 assert(html.includes('href="./manifest.json"'), "Manifest link is not project-path relative.");
 assert(html.includes('<link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">'), "Apple touch icon metadata is incorrect.");
 assert(html.includes('href="./icons/favicon-32.png"'), "Favicon path is not project-path relative.");
-assert(html.includes('src="./app.js?v=1.5.0"'), "Versioned app script path is not project-path relative.");
-assert(html.includes('src="./context-engine.js?v=1.5.0"'), "Versioned Context Engine path is missing.");
-assert(html.includes('navigator.serviceWorker.register("./sw.js?v=1.5.0", { updateViaCache: "none" })'), "Versioned early service-worker update bootstrap is missing.");
-assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.5.0"') < html.indexOf('src="./app.js?v=1.5.0"'), "Service-worker update bootstrap must run before the app bundle.");
+assert(html.includes('src="./app.js?v=1.5.1"'), "Versioned app script path is not project-path relative.");
+assert(html.includes('src="./context-engine.js?v=1.5.1"'), "Versioned Context Engine path is missing.");
+assert(html.includes('navigator.serviceWorker.register("./sw.js?v=1.5.1", { updateViaCache: "none" })'), "Versioned early service-worker update bootstrap is missing.");
+assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.5.1"') < html.indexOf('src="./app.js?v=1.5.1"'), "Service-worker update bootstrap must run before the app bundle.");
 assert(app.includes('navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`, { updateViaCache: "none" })'), "App service-worker registration must bypass stale HTTP caches.");
-assert(html.includes('href="./styles.css?v=1.5.0"'), "Versioned stylesheet path is not project-path relative.");
+assert(html.includes('href="./styles.css?v=1.5.1"'), "Versioned stylesheet path is not project-path relative.");
 assert(html.includes('<meta name="apple-mobile-web-app-capable" content="yes">'), "Standalone Apple metadata is missing.");
 assert(html.includes('<meta name="apple-mobile-web-app-title" content="Fit Roulette">'), "Apple app title is missing.");
 assert(html.includes('<meta name="apple-mobile-web-app-status-bar-style" content="default">'), "Apple status bar metadata is missing.");
@@ -76,8 +76,8 @@ for (const asset of cachedAssets) {
 
 assert(sw.includes("caches.match(\"./index.html\")"), "Offline navigation fallback should use ./index.html.");
 assert(sw.includes('key.startsWith("fit-roulette-")'), "Service-worker activation should only remove old Fit Roulette caches.");
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.5.0"'), "Service-worker cache name is not synchronized to 1.5.0.");
-assert(sw.includes('ASSET_VERSION = "1.5.0"'), "Service-worker install asset version is not synchronized to 1.5.0.");
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.5.1"'), "Service-worker cache name is not synchronized to 1.5.1.");
+assert(sw.includes('ASSET_VERSION = "1.5.1"'), "Service-worker install asset version is not synchronized to 1.5.1.");
 assert(sw.includes('updateUrl.searchParams.set("v", ASSET_VERSION)'), "Service-worker installation does not bypass stale predecessor caches.");
 assert(sw.includes('fetch(updateUrl, { cache: "reload" })'), "Service-worker installation does not force fresh release assets.");
 assert(sw.includes("cache.put(canonicalUrl, response.clone())"), "Service-worker installation does not store fresh responses under canonical asset keys.");
@@ -87,9 +87,10 @@ assert(sw.includes('"./smart-closet.js"'), "Service worker does not cache the Sm
 assert(sw.includes('"./context-engine.js"'), "Service worker does not cache the Context Engine module.");
 assert(sw.includes('url.origin !== self.location.origin'), "Service worker must ignore cross-origin weather traffic.");
 assert(sw.includes('url.searchParams.has("latitude")') && sw.includes('url.searchParams.has("longitude")'), "Service worker must never cache coordinate-bearing URLs.");
-assert(app.includes('APP_VERSION = "1.5.0"'), "Visible app version is not 1.5.0.");
+assert(app.includes('APP_VERSION = "1.5.1"'), "Visible app version is not 1.5.1.");
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'), "localStorage key changed unexpectedly.");
-assert(readme.includes("Current release: **1.5.0 - Context Engine**"), "README release metadata is not synchronized.");
+assert(readme.includes("Current release: **1.5.1 - Context and Daily-Use Field Fixes**"), "README release metadata is not synchronized.");
+assert(changelog.includes("Fit Roulette v1.5.1 &mdash; Context and Daily-Use Field Fixes"), "v1.5.1 changelog entry is missing.");
 assert(changelog.includes("Fit Roulette v1.5.0 &mdash; Context Engine"), "v1.5.0 changelog entry is missing.");
 assert(fs.existsSync(path.join(root, ".nojekyll")), ".nojekyll is missing.");
 

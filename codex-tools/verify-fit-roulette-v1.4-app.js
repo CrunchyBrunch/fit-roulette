@@ -56,7 +56,18 @@ class MockElement {
   removeAttribute(name) { this.attributes.delete(name); if (name === "open") this.open = false; }
   hasAttribute(name) { return this.attributes.has(name); }
   remove() {}
+  appendChild(child) {
+    this.options.push(child);
+    if (child.selected) this.selectedOptions.push(child);
+    child.remove = () => {
+      this.options = this.options.filter((option) => option !== child);
+      this.selectedOptions = this.selectedOptions.filter((option) => option !== child);
+    };
+    return child;
+  }
   closest(selector) {
+    if (selector === "[data-relationship-type][data-relationship-item-id]"
+      && this.dataset.relationshipType && this.dataset.relationshipItemId) return this;
     const dataMatch = selector.match(/^\[data-([a-z-]+)(?:='([^']+)')?\]$/);
     if (dataMatch) {
       const key = dataMatch[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
@@ -86,6 +97,7 @@ function runApp(savedValue, options = {}) {
   const storageWriteAttempts = [];
   const confirmations = [];
   const events = [];
+  const windowListeners = new Map();
   if (savedValue !== undefined && savedValue !== null) storage.set("fitRoulette.v1", savedValue);
   if (options.initialRecovery !== undefined && options.initialRecovery !== null) storage.set(Smart.RECOVERY_KEY, options.initialRecovery);
   if (options.initialLegacyRecovery !== undefined && options.initialLegacyRecovery !== null) storage.set(Smart.LEGACY_RECOVERY_KEY, options.initialLegacyRecovery);
@@ -136,7 +148,11 @@ function runApp(savedValue, options = {}) {
     __FIT_ROULETTE_TESTING__: true,
     FitRouletteContextEngine: ContextEngine,
     FitRouletteSmartCloset: Smart,
-    addEventListener() {},
+    addEventListener(type, callback) {
+      if (!windowListeners.has(type)) windowListeners.set(type, new Set());
+      windowListeners.get(type).add(callback);
+    },
+    removeEventListener(type, callback) { windowListeners.get(type)?.delete(callback); },
     confirm(message) {
       confirmations.push(message);
       events.push("confirm");
@@ -167,7 +183,7 @@ function runApp(savedValue, options = {}) {
   };
   vm.runInNewContext(appCode, context, { filename: "app.js" });
   domReady();
-  return { api: windowObject.__fitRouletteTest, elements, storage, storageWrites, storageWriteAttempts, confirmations, events, windowObject };
+  return { api: windowObject.__fitRouletteTest, elements, storage, storageWrites, storageWriteAttempts, confirmations, events, windowObject, windowListeners };
 }
 
 const legacyRaw = JSON.stringify({
@@ -809,6 +825,201 @@ assert(!neutralOutfit.error);
 assert.equal(neutralOutfit.context.source, "ignored");
 assert(!neutralOutfit.items.some((entry) => entry.category === "layer"), "Ignore Weather must restore weather-neutral generation.");
 
+const athleticSockMigration = Smart.migrateAndValidate({
+  version: 3,
+  wardrobe: [{ id: "legacy_athletic_socks", name: "Legacy Athletic Socks", category: "socks", colors: ["White"], tags: ["athletic socks"], occasions: ["athletic"], formality: 2, active: true }],
+  history: [], bannedCombos: [], feedback: [], settings: {}
+}, { now });
+assert.equal(athleticSockMigration.state.wardrobe[0].subtype, "athletic socks", "Specific athletic-sock inference must win over generic socks.");
+
+const dailyTop = item("daily_top", "polo", "Navy", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyBottom = item("daily_bottom", "chinos", "Khaki", { beltMode: "none", occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailySneakers = item("daily_sneakers", "sneakers", "White", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyRunning = item("daily_running", "athletic/running shoes", "Gray", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyBoots = item("daily_boots", "boots", "Brown", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyDressShoes = item("daily_dress_shoes", "dress shoes", "Brown", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailySandals = item("daily_sandals", "sandals", "Black", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyCustomShoes = Smart.createItem({ ...Smart.SUBTYPE_TEMPLATES.sneakers, id: "daily_custom_shoes", name: "Custom Shoes", subtype: "other", primaryColor: "Black", occasions: ["work", "friday", "casual", "date", "athletic", "gym"] }, { now });
+const dailyDressSocks = item("daily_dress_socks", "dress socks", "Navy", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyCasualSocks = item("daily_casual_socks", "casual socks", "Gray", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyAthleticSocks = item("daily_athletic_socks", "athletic socks", "White", { occasions: ["work", "friday", "casual", "date", "athletic", "gym"] });
+const dailyUnavailableSocks = item("daily_unavailable_socks", "athletic socks", "Black", { status: "unavailable", occasions: ["athletic"] });
+const dailyArchivedSocks = item("daily_archived_socks", "casual socks", "Red", { status: "archived", occasions: ["casual"] });
+const dailyState = {
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [dailyTop, dailyBottom, dailySneakers, dailyRunning, dailyBoots, dailyDressShoes, dailySandals, dailyCustomShoes, dailyDressSocks, dailyCasualSocks, dailyAthleticSocks, dailyUnavailableSocks, dailyArchivedSocks]
+};
+const dailyApp = runApp(JSON.stringify(dailyState));
+for (const occasion of ["work", "friday", "casual", "date", "athletic", "gym"]) {
+  const generated = dailyApp.api.pickOutfit(occasion, dailySneakers.id);
+  assert(!generated.error, `${occasion}: ${generated.error}`);
+  assert(generated.items.some((entry) => entry.category === "socks"), `${occasion} must reconcile socks for sneakers.`);
+  assert.equal(generated.items.filter((entry) => entry.category === "socks").length, 1, `${occasion} must never duplicate its reconciled sock.`);
+  assert(!generated.items.some((entry) => [dailyUnavailableSocks.id, dailyArchivedSocks.id].includes(entry.id)), `${occasion} must not use inactive socks.`);
+}
+const dressFit = dailyApp.api.pickOutfit("date", dailyDressShoes.id);
+assert(dressFit.items.some((entry) => entry.id === dailyDressSocks.id), "Dress shoes must prefer dress socks.");
+const sandalFit = dailyApp.api.pickOutfit("casual", dailySandals.id);
+assert(!sandalFit.items.some((entry) => entry.category === "socks"), "Sandals must be sockless by default.");
+for (const shoes of [dailyRunning, dailyBoots, dailyCustomShoes]) {
+  const resolution = dailyApp.api.reconcileSocksForOutfit([dailyTop, dailyBottom, shoes], "casual", shoes.id);
+  assert(resolution.items.some((entry) => entry.category === "socks"), `${shoes.subtype} must receive compatible socks.`);
+}
+
+const missingSockApp = runApp(JSON.stringify({ ...dailyState, wardrobe: [dailyTop, dailyBottom, dailySneakers] }));
+const missingSockFit = missingSockApp.api.pickOutfit("casual", dailySneakers.id);
+assert(!missingSockFit.error, "Missing compatible socks must not block generation.");
+assert.equal(missingSockFit.sockMessage, "No compatible socks are available for these shoes.");
+const alternateShoeApp = runApp(JSON.stringify({ ...dailyState, wardrobe: [dailyTop, dailyBottom, dailySneakers, dailySandals] }));
+const alternateFit = alternateShoeApp.api.pickOutfit("casual", "");
+assert(alternateFit.items.some((entry) => entry.id === dailySandals.id), "A complete sockless shoe alternative must outrank an incomplete sock-required fit.");
+
+const neverDressSock = { id: "never_dress_sock", type: "never", itemIds: Smart.canonicalPair(dailyDressShoes.id, dailyDressSocks.id), createdAt: now, updatedAt: now };
+const pairSockApp = runApp(JSON.stringify({ ...dailyState, pairRelationships: [neverDressSock] }));
+const pairSockFit = pairSockApp.api.pickOutfit("date", dailyDressShoes.id);
+assert(!pairSockFit.items.some((entry) => entry.id === dailyDressSocks.id), "Never Pair must exclude the otherwise preferred sock.");
+assert(pairSockFit.items.some((entry) => entry.category === "socks"), "A compatible alternate sock must remain available.");
+const preferredCasualSock = item("preferred_casual_socks", "casual socks", "Navy", { occasions: ["casual"] });
+const preferSockState = Smart.setRelationship({ ...dailyState, wardrobe: [...dailyState.wardrobe, preferredCasualSock] }, dailySneakers.id, preferredCasualSock.id, "prefer", now);
+const preferredSockFit = runApp(JSON.stringify(preferSockState)).api.pickOutfit("casual", dailySneakers.id);
+assert(preferredSockFit.items.some((entry) => entry.id === preferredCasualSock.id), "Prefer Together must influence selection among otherwise equivalent compatible socks.");
+
+const reviewedSock = item("reviewed_schema5_sock", "casual socks", "White", { name: "Reviewed Athletic Socks" });
+const reviewedSockState = Smart.migrateAndValidate({ ...Smart.createFreshState(now), wardrobe: [reviewedSock] }, { now }).state;
+assert.equal(reviewedSockState.wardrobe[0].subtype, "casual socks", "Schema-5 subtype metadata must not be silently re-inferred or rewritten.");
+
+dailyApp.api.setCurrentOutfit({ occasion: "casual", buildAroundId: "", items: [dailyTop, dailyBottom, dailySandals], score: 100, context: null });
+const sandalToSneaker = dailyApp.api.swapChoiceReport(dailySandals).eligible.find((choice) => choice.replacementId === dailySneakers.id);
+assert(sandalToSneaker?.items.some((entry) => entry.category === "socks"), "Swapping sandals to sneakers must add socks.");
+dailyApp.api.setCurrentOutfit({ occasion: "casual", buildAroundId: "", items: [dailyTop, dailyBottom, dailySneakers, dailyCasualSocks], automaticSockId: dailyCasualSocks.id, score: 100, context: null });
+const sneakerToSandal = dailyApp.api.swapChoiceReport(dailySneakers).eligible.find((choice) => choice.replacementId === dailySandals.id);
+assert(sneakerToSandal && !sneakerToSandal.items.some((entry) => entry.category === "socks"), "Swapping sneakers to sandals must remove the assembled sock.");
+
+const unorderedItems = [dailyBottom, dailySneakers, dailyCasualSocks, fieldLayer, dailyTop];
+const unorderedIds = unorderedItems.map((entry) => entry.id);
+const displayed = dailyApp.api.displayOutfitItems({ items: unorderedItems, automaticLayerId: fieldLayer.id });
+assert.deepEqual(displayed.map((entry) => entry.category), ["top", "layer", "bottom", "socks", "shoes"]);
+assert.deepEqual(unorderedItems.map((entry) => entry.id), unorderedIds, "Presentation ordering must not mutate generated state.");
+const futureA = { ...dailyTop, id: "future_a", name: "Future A", category: "future" };
+const futureB = { ...dailyTop, id: "future_b", name: "Future B", category: "future" };
+const accessory = { ...dailyTop, id: "accessory", name: "Accessory", category: "accessory" };
+const stableDisplay = dailyApp.api.displayOutfitItems({ items: [futureA, dailySneakers, accessory, dailyBottom, futureB, dailyTop], automaticLayerId: "" });
+assert.deepEqual(stableDisplay.map((entry) => entry.id), [dailyTop.id, dailyBottom.id, dailySneakers.id, accessory.id, futureA.id, futureB.id], "Unknown categories must retain deterministic input order after known categories.");
+dailyApp.api.setCurrentOutfit({ occasion: "casual", buildAroundId: "", items: unorderedItems, automaticLayerId: fieldLayer.id, score: 100, context: null });
+dailyApp.api.renderResult();
+const renderedOrder = [dailyTop.id, fieldLayer.id, dailyBottom.id, dailyCasualSocks.id, dailySneakers.id]
+  .map((id) => dailyApp.elements.get("outfitResult").innerHTML.indexOf(`data-result-item-id="${id}"`));
+assert(renderedOrder.every((position) => position >= 0) && renderedOrder.every((position, index) => index === 0 || position > renderedOrder[index - 1]), "Generated DOM reading order must match presentation order.");
+
+const sockRecencyApp = runApp(JSON.stringify(dailyState));
+const sockRecencyFit = sockRecencyApp.api.pickOutfit("casual", dailySneakers.id);
+const selectedSock = sockRecencyFit.items.find((entry) => entry.category === "socks");
+assert(selectedSock);
+assert.equal(sockRecencyApp.api.lastItemWornDate(selectedSock), null, "Generation alone must not credit sock recency.");
+sockRecencyApp.api.setCurrentOutfit(sockRecencyFit);
+sockRecencyApp.api.logCurrentOutfit();
+assert(sockRecencyApp.api.getState().history[0].itemIds.includes(selectedSock.id), "Logged history must include the selected sock.");
+assert(sockRecencyApp.api.lastItemWornDate(selectedSock), "Sock recency must update after actual logged wear.");
+
+const editorExitApp = runApp(JSON.stringify(fieldState));
+editorExitApp.api.openItemDialog();
+assert.equal(editorExitApp.api.isItemEditorDirty(), false);
+assert.equal(editorExitApp.api.requestEditorExit("close"), true, "Untouched Add must close silently.");
+editorExitApp.api.openItemDialog();
+editorExitApp.elements.get("itemName").value = "Dirty Draft";
+editorExitApp.api.updateBeforeUnloadGuard(true);
+assert.equal(editorExitApp.windowListeners.get("beforeunload")?.size, 1, "Dirty draft must register one unload guard.");
+const unloadEvent = { prevented: false, returnValue: null, preventDefault() { this.prevented = true; } };
+editorExitApp.windowListeners.get("beforeunload").values().next().value(unloadEvent);
+assert.equal(unloadEvent.prevented, true);
+assert.equal(unloadEvent.returnValue, "");
+let escapePrevented = false;
+editorExitApp.elements.get("itemDialog").listeners.get("cancel")({ preventDefault() { escapePrevented = true; } });
+assert.equal(escapePrevented, true);
+assert.equal(editorExitApp.elements.get("itemExitDialog").open, true);
+editorExitApp.elements.get("continueItemExitBtn").click();
+assert.equal(editorExitApp.elements.get("itemDialog").open, true, "Continue Editing must preserve the draft.");
+editorExitApp.elements.get("itemDialog").listeners.get("click")({ target: editorExitApp.elements.get("itemDialog") });
+assert.equal(editorExitApp.elements.get("itemExitDialog").open, true, "Dirty backdrop exit must use the same decision surface.");
+editorExitApp.elements.get("continueItemExitBtn").click();
+for (const listener of editorExitApp.windowListeners.get("popstate")) listener({});
+assert.equal(editorExitApp.elements.get("itemExitDialog").open, true, "Dirty browser navigation must use the centralized exit controller.");
+editorExitApp.elements.get("discardItemExitBtn").click();
+assert.equal(editorExitApp.elements.get("itemDialog").open, false, "Discard must close without saving.");
+assert.equal(editorExitApp.windowListeners.get("beforeunload")?.size || 0, 0, "Discard must remove the unload guard.");
+assert.equal(editorExitApp.elements.get("itemDialog").listenerAdds.get("cancel"), 1, "Repeated editor openings must not accumulate cancel handlers.");
+assert.equal(editorExitApp.elements.get("itemDialog").listenerAdds.get("click"), 1, "Repeated editor openings must not accumulate backdrop handlers.");
+
+const cloneApp = runApp(JSON.stringify(fieldState));
+cloneApp.api.openItemDialog(fieldTopA.id);
+cloneApp.elements.get("itemNotes").value = "Item-specific tailoring note";
+const cloneWritesBefore = cloneApp.storageWriteAttempts.filter((entry) => entry.key === "fitRoulette.v1").length;
+assert.equal(cloneApp.api.saveItemFromEditor({ addSimilarAfter: true }), true);
+const cloneWritesAfter = cloneApp.storageWriteAttempts.filter((entry) => entry.key === "fitRoulette.v1").length;
+assert.equal(cloneWritesAfter, cloneWritesBefore + 1, "Save and Add Similar must persist exactly once.");
+assert.equal(cloneApp.elements.get("itemDialog").open, true);
+assert.equal(cloneApp.elements.get("itemId").value, "");
+assert.equal(cloneApp.elements.get("itemName").value, "");
+assert.equal(cloneApp.elements.get("itemNotes").value, "");
+assert.equal(cloneApp.elements.get("itemImageUrl").value, "");
+assert.equal(cloneApp.elements.get("itemStatus").value, "available");
+assert.equal(cloneApp.api.isItemEditorDirty(), false, "The untouched similar draft must have a clean canonical baseline.");
+const cloneCountBeforeRepeatedClick = cloneApp.api.getState().wardrobe.length;
+assert.equal(cloneApp.api.saveItemFromEditor({ addSimilarAfter: true }), false, "A repeated click on the blank new draft must not duplicate the saved garment.");
+assert.equal(cloneApp.api.getState().wardrobe.length, cloneCountBeforeRepeatedClick);
+cloneApp.elements.get("itemName").value = "Independent Navy Polo Variant";
+assert.equal(cloneApp.api.saveItemFromEditor({ generateAfter: false }), true);
+const savedVariant = cloneApp.api.getState().wardrobe.find((entry) => entry.name === "Independent Navy Polo Variant");
+assert(savedVariant && savedVariant.id !== fieldTopA.id, "Each saved similar garment must receive an independent unique ID.");
+assert(!cloneApp.api.getState().pairRelationships.some((record) => record.itemIds.includes(savedVariant.id)), "A similar draft must not inherit source relationships.");
+const safeSimilar = cloneApp.api.similarItem({ ...fieldTopA, notes: "Do not copy", status: "archived", lastWorn: "2026-08-01" });
+assert.equal(safeSimilar.name, "");
+assert.equal(safeSimilar.notes, "");
+assert.equal(safeSimilar.status, "available");
+assert.equal(safeSimilar.lastWorn, null);
+
+const disclosureApp = runApp(JSON.stringify(fieldState));
+disclosureApp.api.openItemDialog(fieldTopA.id);
+assert.equal(disclosureApp.elements.get("preferDetails").open, false);
+assert.equal(disclosureApp.elements.get("neverDetails").open, false);
+assert.equal(disclosureApp.elements.get("preferItemsChoices").innerHTML, "", "Relationship candidates must remain lazy while collapsed.");
+disclosureApp.elements.get("preferDetails").open = true;
+disclosureApp.elements.get("preferDetails").listeners.get("toggle")();
+assert.notEqual(disclosureApp.elements.get("preferItemsChoices").innerHTML, "", "Opening a relationship disclosure must render its candidates.");
+const relationshipChoice = new MockElement();
+relationshipChoice.dataset.relationshipType = "prefer";
+relationshipChoice.dataset.relationshipItemId = fieldBottom.id;
+relationshipChoice.checked = true;
+disclosureApp.elements.get("preferItemsChoices").listeners.get("change")({ target: relationshipChoice });
+assert.equal(disclosureApp.elements.get("preferItemsCount").textContent, "1 selected", "Relationship counts must update immediately.");
+assert.equal(disclosureApp.elements.get("neverItemsCount").textContent, "0 selected");
+
+assert.equal(Smart.SUBTYPE_TEMPLATES.tank.category, "top");
+assert.deepEqual(Smart.SUBTYPE_TEMPLATES.tank.layerRoles, ["base"]);
+assert.equal(Smart.SUBTYPE_TEMPLATES.tank.warmth, "very_light");
+const tankBase = item("tank_base", "tank", "White", { occasions: ["casual"] });
+const tankBottom = item("tank_bottom", "athletic shorts", "Navy", { occasions: ["casual"], beltMode: "none", warmth: "very_light" });
+const tankSandals = item("tank_sandals", "sandals", "Brown", { occasions: ["casual"], warmth: "very_light" });
+const tankLayer = item("tank_layer", "coat", "Black", { occasions: ["casual"], warmth: "very_warm", layerRoles: ["outer"], rainProtection: "protected", windProtection: "protected" });
+const tankApp = runApp(JSON.stringify({ ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" }, wardrobe: [tankBase, tankBottom, tankSandals, tankLayer] }));
+tankApp.api.setContextSession({ mode: "manual", manualTemperatureC: 30, manualCondition: "clear", exposure: "outdoors", ignore: false });
+const warmTankFit = tankApp.api.pickOutfit("casual", tankBase.id);
+assert(!warmTankFit.error, warmTankFit.error);
+assert(warmTankFit.items.some((entry) => entry.id === tankBase.id));
+assert.equal(warmTankFit.automaticLayerId, "", "A tank must remain a visible standalone Base in warm weather.");
+tankApp.api.setContextSession({ mode: "manual", manualTemperatureC: -20, manualCondition: "snow", exposure: "outdoors", ignore: false });
+let coldTankFit = null;
+for (let attempt = 0; attempt < 8; attempt += 1) {
+  const candidate = tankApp.api.pickOutfit("casual", tankBase.id);
+  if (candidate.automaticLayerId === tankLayer.id) { coldTankFit = candidate; break; }
+}
+assert(coldTankFit, "The tank-plus-layer variant must remain available in the finite cold-weather reroll pool.");
+assert(!coldTankFit.error);
+assert(coldTankFit.items.some((entry) => entry.id === tankBase.id), "A tank must remain Base beneath a cold-weather automatic layer.");
+assert.equal(coldTankFit.automaticLayerId, tankLayer.id);
+assert.equal(coldTankFit.contextAssessment.sufficient, false);
+assert(ContextEngine.describeContext(coldTankFit.context, { unit: "f", layerName: tankLayer.name, shortfall: coldTankFit.contextAssessment.shortfall }).includes("One available layer does not fully meet"), "The single-layer limitation must be reported honestly.");
+
 async function verifyAsyncWeatherState() {
   const cached = ContextEngine.normalizeProviderResponse({ current: {
     temperature_2m: 12, apparent_temperature: 10, precipitation: 0, rain: 0, showers: 0,
@@ -862,6 +1073,79 @@ async function verifyAsyncWeatherState() {
   disableFailureApp.api.disableAutomaticWeather();
   assert.equal(disableFailureApp.api.getState().settings.weather.automatic, true, "Disable must roll back if the updated state cannot be persisted.");
   assert.deepEqual(disableFailureApp.api.getState().settings.weather.cached, cached);
+
+  let generationFetches = 0;
+  const generationWeatherApp = runApp(JSON.stringify(dailyState), {
+    permissions: { query: async () => ({ state: "granted" }) },
+    geolocation,
+    fetchImpl: async () => { generationFetches += 1; return { ok: true, json: async () => providerPayload }; }
+  });
+  generationWeatherApp.api.replaceState({
+    ...dailyState,
+    settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } }
+  });
+  generationWeatherApp.elements.get("occasionSelect").value = "casual";
+  const firstGeneration = generationWeatherApp.api.generateAndRender({ mode: "generate" });
+  const repeatedGeneration = generationWeatherApp.api.generateAndRender({ mode: "generate" });
+  assert.strictEqual(firstGeneration, repeatedGeneration, "Concurrent Generate clicks must share one generation-time resolution.");
+  await firstGeneration;
+  assert.equal(generationFetches, 1, "Eligible generation must await exactly one provider request.");
+  assert.equal(generationWeatherApp.api.getRerollSession().seen.length, 1, "Generating once should track exactly one generated result.");
+  assert.equal(generationWeatherApp.api.getCurrentOutfit().context.source, "current");
+  assert.equal(generationWeatherApp.api.getState().settings.weather.automatic, true);
+  assert(!/latitude|longitude|accuracy|coordinates/i.test(JSON.stringify(generationWeatherApp.api.getState())));
+  generationWeatherApp.api.logCurrentOutfit();
+  assert.equal(generationWeatherApp.api.getState().history[0].context.source, "current", "Logged context must match the resolved generation context.");
+  assert(generationWeatherApp.api.getState().history[0].itemIds.some((id) => id.includes("socks")), "Logging must record the reconciled sock.");
+
+  let freshCacheFetches = 0;
+  const freshCacheApp = runApp(JSON.stringify(dailyState), {
+    permissions: { query: async () => ({ state: "granted" }) }, geolocation,
+    fetchImpl: async () => { freshCacheFetches += 1; return { ok: true, json: async () => providerPayload }; }
+  });
+  freshCacheApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached, legacyManual: null } } });
+  freshCacheApp.elements.get("occasionSelect").value = "casual";
+  const freshGeneration = freshCacheApp.api.generateAndRender({ mode: "generate" });
+  const repeatedFreshGeneration = freshCacheApp.api.generateAndRender({ mode: "generate" });
+  assert.strictEqual(freshGeneration, repeatedFreshGeneration, "Fresh-cache Generate clicks must share the same generation flight.");
+  await freshGeneration;
+  assert.equal(freshCacheFetches, 0, "Fresh cached weather must not trigger a provider request.");
+  assert.equal(freshCacheApp.api.getRerollSession().seen.length, 1, "Fresh-cache double clicks must generate exactly one outfit.");
+
+  let promptFetches = 0;
+  const promptApp = runApp(JSON.stringify(dailyState), {
+    permissions: { query: async () => ({ state: "prompt" }) }, geolocation,
+    fetchImpl: async () => { promptFetches += 1; return { ok: true, json: async () => providerPayload }; }
+  });
+  promptApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } } });
+  promptApp.elements.get("occasionSelect").value = "casual";
+  await promptApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(promptFetches, 0, "Prompt permission must not be triggered by generation.");
+  assert.equal(promptApp.api.getState().settings.weather.automatic, true);
+  assert(promptApp.elements.get("weatherStatus").textContent.includes("Automatic weather remains enabled"));
+
+  let unsupportedFetches = 0;
+  const unsupportedApp = runApp(JSON.stringify(dailyState), {
+    permissions: null, geolocation,
+    fetchImpl: async () => { unsupportedFetches += 1; throw new Error("offline"); }
+  });
+  unsupportedApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } } });
+  unsupportedApp.elements.get("occasionSelect").value = "casual";
+  await unsupportedApp.api.generateAndRender({ mode: "generate" });
+  await unsupportedApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(unsupportedFetches, 1, "Permissions-API fallback must use a session attempt guard after failure.");
+  assert.equal(unsupportedApp.api.getState().settings.weather.automatic, true);
+
+  const stale = { ...cached, fetchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() };
+  const stalePromptApp = runApp(JSON.stringify(dailyState), { permissions: { query: async () => ({ state: "prompt" }) }, geolocation });
+  stalePromptApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: stale, legacyManual: null } } });
+  stalePromptApp.elements.get("occasionSelect").value = "casual";
+  stalePromptApp.api.setContextSession({ mode: "automatic", acceptStale: false });
+  await stalePromptApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(stalePromptApp.api.getCurrentOutfit().context.source, "none", "Unaccepted stale context must not influence generation.");
+  stalePromptApp.api.setContextSession({ mode: "automatic", acceptStale: true });
+  await stalePromptApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(stalePromptApp.api.getCurrentOutfit().context.source, "cached", "Accepted stale context may be used after refresh fallback.");
 }
 
 verifyAsyncWeatherState().then(() => {

@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.5.0">
+    <link rel="stylesheet" href="./styles.css?v=1.5.1">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -387,26 +387,30 @@
             </div>
 
             <div class="relationship-grid">
-              <section class="relationship-picker" aria-labelledby="preferItemsHeading">
-                <h4 id="preferItemsHeading">Prefer together</h4>
-                <label class="field compact-field">
-                  <span>Garment group</span>
-                  <select id="preferItemsGroup"></select>
-                </label>
-                <div id="preferItemsChoices" class="relationship-choice-list"></div>
-                <div id="preferItemsLegacy" class="relationship-legacy-list" hidden></div>
+              <details id="preferDetails" class="relationship-picker">
+                <summary><span>Prefer Together</span><span id="preferItemsCount" class="summary-count">0 selected</span></summary>
+                <div class="relationship-picker-content">
+                  <label class="field compact-field">
+                    <span>Garment group</span>
+                    <select id="preferItemsGroup"></select>
+                  </label>
+                  <div id="preferItemsChoices" class="relationship-choice-list"></div>
+                  <div id="preferItemsLegacy" class="relationship-legacy-list" hidden></div>
+                </div>
                 <select id="preferItemsSelect" multiple hidden aria-hidden="true" tabindex="-1"></select>
-              </section>
-              <section class="relationship-picker" aria-labelledby="neverItemsHeading">
-                <h4 id="neverItemsHeading">Never pair</h4>
-                <label class="field compact-field">
-                  <span>Garment group</span>
-                  <select id="neverItemsGroup"></select>
-                </label>
-                <div id="neverItemsChoices" class="relationship-choice-list"></div>
-                <div id="neverItemsLegacy" class="relationship-legacy-list" hidden></div>
+              </details>
+              <details id="neverDetails" class="relationship-picker">
+                <summary><span>Never Pair</span><span id="neverItemsCount" class="summary-count">0 selected</span></summary>
+                <div class="relationship-picker-content">
+                  <label class="field compact-field">
+                    <span>Garment group</span>
+                    <select id="neverItemsGroup"></select>
+                  </label>
+                  <div id="neverItemsChoices" class="relationship-choice-list"></div>
+                  <div id="neverItemsLegacy" class="relationship-legacy-list" hidden></div>
+                </div>
                 <select id="neverItemsSelect" multiple hidden aria-hidden="true" tabindex="-1"></select>
-              </section>
+              </details>
             </div>
             <p class="small-meta">Pair preferences work in both directions. Impossible same-slot pairs cannot be added; stored exceptions remain visible until you remove them.</p>
           </div>
@@ -438,11 +442,24 @@
 
         <div class="dialog-actions">
           <button id="addSimilarBtn" class="secondary-button" type="button">Add Similar</button>
+          <button id="saveAddSimilarBtn" class="secondary-button" type="button">Save and Add Similar</button>
           <button id="saveGenerateBtn" class="secondary-button" type="button">Save + Build Around</button>
           <button class="primary-button" type="submit">Save Item</button>
         </div>
         <datalist id="labelSuggestions"></datalist>
       </form>
+    </dialog>
+
+    <dialog id="itemExitDialog" class="decision-dialog" aria-labelledby="itemExitTitle" aria-describedby="itemExitDescription">
+      <div class="decision-dialog-content">
+        <h2 id="itemExitTitle">Save item changes?</h2>
+        <p id="itemExitDescription">This item has unsaved changes.</p>
+        <div class="decision-actions">
+          <button id="saveItemExitBtn" class="primary-button" type="button">Save</button>
+          <button id="discardItemExitBtn" class="danger-button" type="button">Discard</button>
+          <button id="continueItemExitBtn" class="secondary-button" type="button">Continue Editing</button>
+        </div>
+      </div>
     </dialog>
 
     <dialog id="manualLogDialog" class="item-dialog compact-dialog">
@@ -524,11 +541,11 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.5.0", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.5.1", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.5.0" defer></script>
-    <script src="./smart-closet.js?v=1.5.0" defer></script>
-    <script src="./app.js?v=1.5.0" defer></script>
+    <script src="./context-engine.js?v=1.5.1" defer></script>
+    <script src="./smart-closet.js?v=1.5.1" defer></script>
+    <script src="./app.js?v=1.5.1" defer></script>
   </body>
 </html>
