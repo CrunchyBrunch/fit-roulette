@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.5.0";
+  const APP_VERSION = "1.5.1";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -34,8 +34,7 @@
         { key: "top", label: "Top", categories: ["top"] },
         { key: "bottom", label: "Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] },
-        { key: "belt", label: "Belt", categories: ["belt"] },
-        { key: "socks", label: "Socks", categories: ["socks"] }
+        { key: "belt", label: "Belt", categories: ["belt"] }
       ]
     },
     friday: {
@@ -47,8 +46,7 @@
         { key: "top", label: "Top", categories: ["top"] },
         { key: "bottom", label: "Jeans/Bottom", categories: ["bottom"] },
         { key: "shoes", label: "Shoes", categories: ["shoes"] },
-        { key: "belt", label: "Belt", categories: ["belt"] },
-        { key: "socks", label: "Socks", categories: ["socks"] }
+        { key: "belt", label: "Belt", categories: ["belt"] }
       ]
     },
     casual: {
@@ -132,12 +130,18 @@
   let itemSaveInProgress = false;
   let itemEditorBaseline = "";
   let itemEditorOriginalColors = { primary: "", secondary: "" };
+  let pendingEditorExit = null;
+  let unloadGuardActive = false;
+  let relationshipRendered = { prefer: false, never: false };
   let rerollSession = createRerollSession();
   let contextSession = createContextSession();
   let weatherBusy = false;
+  let weatherRefreshPromise = null;
   let weatherMessage = "";
   let weatherSessionFetchedAt = "";
   let locationPermission = "unknown";
+  let automaticAttemptWithoutPermissionsApi = false;
+  let generationPromise = null;
   const weatherClient = ContextEngine.createWeatherClient({
     fetchImpl: typeof window.fetch === "function" ? window.fetch.bind(window) : null,
     geolocation: navigator.geolocation
@@ -242,6 +246,8 @@
 
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
+    $("#itemForm").addEventListener("input", updateEditorDirtyState);
+    $("#itemForm").addEventListener("change", updateEditorDirtyState);
     $("#itemCategory").addEventListener("change", () => {
       renderSubtypeOptions();
       applyTemplate($("#itemSubtype").value);
@@ -252,15 +258,28 @@
     $("#itemSecondaryColor").addEventListener("change", () => updateColorControl("secondary", true));
     $("#preferItemsGroup").addEventListener("change", () => renderRelationshipChoiceGroup("prefer"));
     $("#neverItemsGroup").addEventListener("change", () => renderRelationshipChoiceGroup("never"));
+    $("#preferDetails").addEventListener("toggle", () => handleRelationshipDisclosureToggle("prefer"));
+    $("#neverDetails").addEventListener("toggle", () => handleRelationshipDisclosureToggle("never"));
     $("#preferItemsChoices").addEventListener("change", handleRelationshipChoice);
     $("#neverItemsChoices").addEventListener("change", handleRelationshipChoice);
     $("#preferItemsLegacy").addEventListener("change", handleRelationshipChoice);
     $("#neverItemsLegacy").addEventListener("change", handleRelationshipChoice);
     $("#saveGenerateBtn").addEventListener("click", () => saveItemFromEditor({ generateAfter: true }));
-    $("#closeItemDialogBtn").addEventListener("click", closeItemDialog);
+    $("#saveAddSimilarBtn").addEventListener("click", () => saveItemFromEditor({ addSimilarAfter: true }));
+    $("#closeItemDialogBtn").addEventListener("click", () => requestEditorExit("close"));
     $("#addSimilarBtn").addEventListener("click", addSimilarFromDialog);
     $("#permanentDeleteBtn").addEventListener("click", permanentlyDeleteFromDialog);
     $("#itemName").addEventListener("input", updateEditorTitle);
+    $("#itemDialog").addEventListener("cancel", handleItemDialogCancel);
+    $("#itemDialog").addEventListener("click", handleItemDialogBackdrop);
+    $("#saveItemExitBtn").addEventListener("click", savePendingEditorExit);
+    $("#discardItemExitBtn").addEventListener("click", discardPendingEditorExit);
+    $("#continueItemExitBtn").addEventListener("click", continuePendingEditorExit);
+    $("#itemExitDialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      continuePendingEditorExit();
+    });
+    window.addEventListener("popstate", handleEditorNavigation);
   }
 
   function renderStaticOptions() {
@@ -772,9 +791,10 @@
       </div>
       <div class="chip-row">${buildChip}</div>
       <div class="result-list">
-        ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit, isLogged)).join("")}
+        ${displayOutfitItems(currentOutfit).map((item) => renderResultItem(item, currentOutfit, isLogged)).join("")}
       </div>
       ${renderContextExplanation(currentOutfit)}
+      ${currentOutfit.sockMessage ? `<p class="result-change-note" role="status">${escapeHtml(currentOutfit.sockMessage)}</p>` : ""}
       ${currentOutfit.changeNote ? `<p class="result-change-note" role="status">${escapeHtml(currentOutfit.changeNote)}</p>` : ""}
     `;
     actions.hidden = isLogged;
@@ -955,7 +975,7 @@
     }
 
     list.innerHTML = records.map((record) => {
-      const items = record.itemIds.map((id) => snapshotOrItem(record, id)).filter(Boolean);
+      const items = displayOutfitItems(record.itemIds.map((id) => snapshotOrItem(record, id)).filter(Boolean));
       return `
         <article class="history-card" data-log-id="${escapeAttribute(record.id)}">
           <div class="history-topline">
@@ -1157,8 +1177,39 @@
     await refreshWeather({ force: false, userInitiated: false });
   }
 
-  async function refreshWeather(options = {}) {
-    if (weatherBusy) return false;
+  function resolveAutomaticContextForGeneration() {
+    if (!appState.settings.weather.automatic || contextSession.mode !== "automatic" || contextSession.ignore) return null;
+    if (ContextEngine.weatherFreshness(appState.settings.weather.cached) === "fresh") return null;
+    return (async () => {
+      locationPermission = await ContextEngine.permissionState(navigator.permissions, navigator.geolocation);
+      if (locationPermission === "granted") {
+        await refreshWeather({ force: false, userInitiated: false, generationInitiated: true });
+        return;
+      }
+      if (locationPermission === "unsupported" && !automaticAttemptWithoutPermissionsApi) {
+        automaticAttemptWithoutPermissionsApi = true;
+        await refreshWeather({ force: false, userInitiated: false, generationInitiated: true });
+        return;
+      }
+      const label = locationPermission === "prompt"
+        ? "Location permission still needs an explicit Use Current Location action."
+        : (locationPermission === "denied"
+          ? "Location permission is unavailable."
+          : "Current location is unavailable in this browser.");
+      weatherMessage = `${label} Automatic weather remains enabled; using the available fallback.`;
+      renderWeatherControls();
+    })();
+  }
+
+  function refreshWeather(options = {}) {
+    if (weatherRefreshPromise) return weatherRefreshPromise;
+    weatherRefreshPromise = performWeatherRefresh(options)
+      .finally(() => { weatherRefreshPromise = null; });
+    return weatherRefreshPromise;
+  }
+
+  async function performWeatherRefresh(options = {}) {
+    if (options.userInitiated) automaticAttemptWithoutPermissionsApi = false;
     const previousWeather = { ...appState.settings.weather };
     const previousMode = contextSession.mode;
     const previousAcceptStale = contextSession.acceptStale;
@@ -1186,9 +1237,15 @@
         weatherSessionFetchedAt = previousSessionFetchedAt;
       }
       if (error?.code === "REQUEST_CANCELLED") return false;
-      if (error?.code === "RATE_LIMITED") return false;
+      if (error?.code === "RATE_LIMITED") {
+        weatherMessage = "Automatic weather was refreshed recently. Using the available context fallback.";
+        return false;
+      }
       if (error?.code === "LOCATION_DENIED") locationPermission = "denied";
       if (["LOCATION_UNAVAILABLE", "LOCATION_TIMEOUT"].includes(error?.code)) locationPermission = "unavailable";
+      if (!navigator.permissions && ["LOCATION_DENIED", "LOCATION_UNAVAILABLE", "LOCATION_TIMEOUT"].includes(error?.code)) {
+        automaticAttemptWithoutPermissionsApi = true;
+      }
       weatherMessage = `${error?.message || "Weather could not be refreshed."} Manual context remains available.`;
       if (options.userInitiated && !appState.settings.weather.cached) contextSession.mode = "manual";
       return false;
@@ -1209,6 +1266,7 @@
     contextSession.mode = "manual";
     contextSession.acceptStale = false;
     weatherSessionFetchedAt = "";
+    automaticAttemptWithoutPermissionsApi = false;
     weatherMessage = "Automatic weather disabled and cached context deleted. Closet data was not changed.";
     if (!saveState()) {
       appState.settings.weather = previousWeather;
@@ -1316,6 +1374,9 @@
     $("#permanentDeleteBtn").hidden = !editingItemId;
     $("#matchingDetails").open = Boolean(editingItemId);
     $("#advancedDetails").open = false;
+    $("#preferDetails").open = false;
+    $("#neverDetails").open = false;
+    relationshipRendered = { prefer: false, never: false };
     const reviewReasons = item.review?.reasons || [];
     $("#itemReviewNotice").hidden = item.review?.status !== "needs_review";
     $("#itemReviewNotice").innerHTML = reviewReasons.length
@@ -1339,6 +1400,8 @@
     }
     resetItemEditorScroll();
     itemEditorBaseline = itemEditorSnapshot();
+    updateEditorDirtyState();
+    if (options.addSimilar && typeof $("#itemName").focus === "function") $("#itemName").focus({ preventScroll: true });
   }
 
   function updateEditorTitle() {
@@ -1347,15 +1410,91 @@
   }
 
   function closeItemDialog(options = {}) {
-    if (!options.force && itemEditorBaseline && itemEditorSnapshot() !== itemEditorBaseline) {
-      if (!window.confirm("Discard unsaved item changes?")) return false;
-    }
+    if (!options.force) return requestEditorExit(options.reason || "close", options);
+    return finalizeEditorClose();
+  }
+
+  function finalizeEditorClose() {
+    closeDialog($("#itemExitDialog"));
     closeDialog($("#itemDialog"));
     editingItemId = null;
     addSimilarSourceId = null;
     itemEditorBaseline = "";
     itemEditorOriginalColors = { primary: "", secondary: "" };
+    pendingEditorExit = null;
+    updateBeforeUnloadGuard(false);
     return true;
+  }
+
+  function requestEditorExit(reason = "close", options = {}) {
+    const dialog = $("#itemDialog");
+    if (!dialog.open && !(typeof dialog.hasAttribute === "function" && dialog.hasAttribute("open"))) return true;
+    const continuation = typeof options.continuation === "function" ? options.continuation : null;
+    if (!isItemEditorDirty()) {
+      finalizeEditorClose();
+      continuation?.();
+      return true;
+    }
+    pendingEditorExit = { reason, continuation };
+    $("#itemExitDescription").textContent = reason === "navigation"
+      ? "Save or discard this item before leaving the editor."
+      : "This item has unsaved changes.";
+    openDialog($("#itemExitDialog"));
+    return false;
+  }
+
+  function savePendingEditorExit() {
+    const continuation = pendingEditorExit?.continuation || null;
+    closeDialog($("#itemExitDialog"));
+    pendingEditorExit = null;
+    saveItemFromEditor({ afterSave: continuation });
+  }
+
+  function discardPendingEditorExit() {
+    const continuation = pendingEditorExit?.continuation || null;
+    finalizeEditorClose();
+    continuation?.();
+  }
+
+  function continuePendingEditorExit() {
+    pendingEditorExit = null;
+    closeDialog($("#itemExitDialog"));
+    updateBeforeUnloadGuard(isItemEditorDirty());
+  }
+
+  function handleItemDialogCancel(event) {
+    event.preventDefault();
+    requestEditorExit("escape");
+  }
+
+  function handleItemDialogBackdrop(event) {
+    if (event.target === $("#itemDialog")) requestEditorExit("backdrop");
+  }
+
+  function handleEditorNavigation() {
+    if ($("#itemDialog").open) requestEditorExit("navigation");
+  }
+
+  function isItemEditorDirty() {
+    return Boolean(itemEditorBaseline && itemEditorSnapshot() !== itemEditorBaseline);
+  }
+
+  function updateEditorDirtyState() {
+    updateBeforeUnloadGuard(isItemEditorDirty());
+  }
+
+  function updateBeforeUnloadGuard(active) {
+    const shouldBeActive = active === true;
+    if (shouldBeActive === unloadGuardActive) return;
+    if (shouldBeActive) window.addEventListener("beforeunload", handleItemBeforeUnload);
+    else window.removeEventListener?.("beforeunload", handleItemBeforeUnload);
+    unloadGuardActive = shouldBeActive;
+  }
+
+  function handleItemBeforeUnload(event) {
+    if (!isItemEditorDirty()) return;
+    event.preventDefault();
+    event.returnValue = "";
   }
 
   function saveItemFromForm(event) {
@@ -1363,7 +1502,7 @@
     saveItemFromEditor({ generateAfter: false });
   }
 
-  function saveItemFromEditor({ generateAfter }) {
+  function saveItemFromEditor({ generateAfter = false, addSimilarAfter = false, afterSave = null } = {}) {
     const dialog = $("#itemDialog");
     if (!dialog.open && !(typeof dialog.hasAttribute === "function" && dialog.hasAttribute("open"))) return false;
     if (storageWriteLocked) {
@@ -1427,7 +1566,11 @@
       closeItemDialog({ force: true });
       renderAll();
       showToast(successMessage);
-      if (generateAfter && savedItemId) {
+      if (addSimilarAfter && savedItemId) {
+        openItemDialog(savedItemId, { addSimilar: true });
+      } else if (typeof afterSave === "function") {
+        afterSave(savedItemId);
+      } else if (generateAfter && savedItemId) {
         generateWithItem(savedItemId);
       }
       return true;
@@ -1490,7 +1633,7 @@
     }
     const preferred = selectedOptions($("#preferItemsSelect"));
     const never = selectedOptions($("#neverItemsSelect"));
-    if (preferred.some((id) => never.includes(id))) return { message: "An item cannot be both preferred and never paired.", selector: "#matchingDetails" };
+    if (preferred.some((id) => never.includes(id))) return { message: "An item cannot be both preferred and never paired.", selector: "#preferDetails" };
     return null;
   }
 
@@ -1547,8 +1690,8 @@
 
   function similarItem(source) {
     const now = new Date().toISOString();
-    return SmartCloset.createItem({
-      name: `${source.name} Similar`,
+    const similar = SmartCloset.createItem({
+      name: "",
       category: source.category,
       subtype: source.subtype,
       primaryColor: source.primaryColor,
@@ -1569,13 +1712,14 @@
       status: "available",
       lastWorn: null,
       imageUrl: "",
-      notes: source.notes,
+      notes: "",
       legacyFallback: false,
       legacyMatching: {},
       review: { status: "reviewed", reasons: [], reviewedAt: now },
       createdAt: now,
       updatedAt: now
     }, { now });
+    return { ...similar, name: "", notes: "", imageUrl: "", status: "available", lastWorn: null };
   }
 
   function renderPairRelationshipOptions(itemId, clearSelections = false, selectionOverride = null) {
@@ -1589,27 +1733,37 @@
 
     ["prefer", "never"].forEach((type) => {
       const selected = selectedFor(type);
-      const candidates = relationshipCandidates(itemId);
-      const optionItems = uniqueItems([
-        ...candidates,
-        ...[...selected].map(findItem).filter(Boolean)
-      ]).sort(sortItems);
+      const optionItems = [...selected].map(findItem).filter(Boolean).sort(sortItems);
       $(`#${type}ItemsSelect`).innerHTML = optionItems.map((item) => {
         return `<option value="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "selected" : ""}>${escapeHtml(item.name)}</option>`;
       }).join("");
-
-      const priorGroup = $(`#${type}ItemsGroup`).value;
-      const groups = CATEGORY_ORDER.map((category) => ({
-        category,
-        items: candidates.filter((item) => item.category === category)
-      })).filter((group) => group.items.length);
-      $(`#${type}ItemsGroup`).innerHTML = groups.length
-        ? groups.map((group) => `<option value="${group.category}">${escapeHtml(CATEGORIES[group.category])} (${group.items.length})</option>`).join("")
-        : `<option value="">No compatible groups</option>`;
-      if (groups.some((group) => group.category === priorGroup)) $(`#${type}ItemsGroup`).value = priorGroup;
-      renderRelationshipChoiceGroup(type);
-      renderLegacyRelationshipChoices(type, itemId);
+      $(`#${type}ItemsGroup`).innerHTML = `<option value="">Open to load compatible garments</option>`;
+      $(`#${type}ItemsChoices`).innerHTML = "";
+      $(`#${type}ItemsLegacy`).innerHTML = "";
+      $(`#${type}ItemsLegacy`).hidden = true;
+      relationshipRendered[type] = false;
+      updateRelationshipCount(type);
     });
+  }
+
+  function handleRelationshipDisclosureToggle(type) {
+    if ($(`#${type}Details`).open && !relationshipRendered[type]) renderRelationshipDisclosure(type);
+  }
+
+  function renderRelationshipDisclosure(type) {
+    const candidates = relationshipCandidates();
+    const priorGroup = $(`#${type}ItemsGroup`).value;
+    const groups = CATEGORY_ORDER.map((category) => ({
+      category,
+      items: candidates.filter((item) => item.category === category)
+    })).filter((group) => group.items.length);
+    $(`#${type}ItemsGroup`).innerHTML = groups.length
+      ? groups.map((group) => `<option value="${group.category}">${escapeHtml(CATEGORIES[group.category])} (${group.items.length})</option>`).join("")
+      : `<option value="">No compatible groups</option>`;
+    if (groups.some((group) => group.category === priorGroup)) $(`#${type}ItemsGroup`).value = priorGroup;
+    renderRelationshipChoiceGroup(type, candidates);
+    renderLegacyRelationshipChoices(type, editingItemId, candidates);
+    relationshipRendered[type] = true;
   }
 
   function relationshipCandidates(itemId = editingItemId) {
@@ -1624,10 +1778,11 @@
       .sort(sortItems);
   }
 
-  function renderRelationshipChoiceGroup(type) {
+  function renderRelationshipChoiceGroup(type, providedCandidates = null) {
+    if (!$(`#${type}Details`).open) return;
     const group = $(`#${type}ItemsGroup`).value;
     const selected = new Set(selectedOptions($(`#${type}ItemsSelect`)));
-    const items = relationshipCandidates().filter((item) => item.category === group);
+    const items = (providedCandidates || relationshipCandidates()).filter((item) => item.category === group);
     $(`#${type}ItemsChoices`).innerHTML = items.length ? items.map((item) => `
       <label class="relationship-choice">
         <input type="checkbox" data-relationship-type="${type}" data-relationship-item-id="${escapeAttribute(item.id)}" ${selected.has(item.id) ? "checked" : ""}>
@@ -1636,9 +1791,9 @@
     `).join("") : `<p class="small-meta">No compatible garments in this group.</p>`;
   }
 
-  function renderLegacyRelationshipChoices(type, itemId = editingItemId) {
+  function renderLegacyRelationshipChoices(type, itemId = editingItemId, providedCandidates = null) {
     const selected = new Set(selectedOptions($(`#${type}ItemsSelect`)));
-    const compatibleIds = new Set(relationshipCandidates(itemId).map((item) => item.id));
+    const compatibleIds = new Set((providedCandidates || relationshipCandidates(itemId)).map((item) => item.id));
     const incompatible = [...selected].map(findItem).filter((item) => item && !compatibleIds.has(item.id));
     const container = $(`#${type}ItemsLegacy`);
     container.hidden = !incompatible.length;
@@ -1664,17 +1819,37 @@
     renderRelationshipChoiceGroup(otherType);
     renderLegacyRelationshipChoices(type);
     renderLegacyRelationshipChoices(otherType);
+    updateRelationshipCount(type);
+    updateRelationshipCount(otherType);
+    updateEditorDirtyState();
   }
 
   function setRelationshipSelection(type, itemId, selected) {
-    const option = Array.from($(`#${type}ItemsSelect`).options || []).find((entry) => entry.value === itemId);
+    const select = $(`#${type}ItemsSelect`);
+    let option = Array.from(select.options || []).find((entry) => entry.value === itemId);
+    if (!option && selected) {
+      option = document.createElement("option");
+      option.value = itemId;
+      option.textContent = findItem(itemId)?.name || itemId;
+      option.selected = true;
+      if (typeof select.appendChild === "function") select.appendChild(option);
+    }
     if (option) option.selected = selected;
+    if (option && !selected && typeof option.remove === "function") option.remove();
+  }
+
+  function updateRelationshipCount(type) {
+    const count = selectedOptions($(`#${type}ItemsSelect`)).length;
+    $(`#${type}ItemsCount`).textContent = `${count} selected`;
   }
 
   function refreshPairRelationshipOptions() {
     renderPairRelationshipOptions(editingItemId, false, {
       prefer: selectedOptions($("#preferItemsSelect")),
       never: selectedOptions($("#neverItemsSelect"))
+    });
+    ["prefer", "never"].forEach((type) => {
+      if ($(`#${type}Details`).open) renderRelationshipDisclosure(type);
     });
   }
 
@@ -1795,8 +1970,11 @@
     error.textContent = issue.message;
     error.hidden = false;
     const field = $(issue.selector || "#formError") || error;
-    const details = typeof field.closest === "function" ? field.closest("details") : null;
-    if (details) details.open = true;
+    let details = typeof field.closest === "function" ? field.closest("details") : null;
+    while (details) {
+      details.open = true;
+      details = typeof details.parentElement?.closest === "function" ? details.parentElement.closest("details") : null;
+    }
     const reveal = () => {
       if (typeof field.scrollIntoView === "function") field.scrollIntoView({ behavior: "smooth", block: "center" });
       if (field !== error && typeof field.focus === "function") field.focus({ preventScroll: true });
@@ -1909,15 +2087,20 @@
         const reconciled = reconcileBeltForOutfit(replaced, occasionId, currentOutfit.buildAroundId, {
           dropOptionalBelt: currentOutfit.optionalBeltRemoved === true
         });
-        if (!reconciled || !isCompatibleOutfit(reconciled, occasionId, currentOutfit.buildAroundId)) {
+        const sockResolution = reconciled
+          ? reconcileSocksForOutfit(reconciled, occasionId, currentOutfit.buildAroundId)
+          : null;
+        if (!sockResolution || !isCompatibleOutfit(sockResolution.items, occasionId, currentOutfit.buildAroundId)) {
           excluded.matching += 1;
           return null;
         }
         return {
           replacementId: replacement.id,
-          items: sortOutfitItems(reconciled),
+          items: sortOutfitItems(sockResolution.items),
           automaticLayerId: currentOutfit.automaticLayerId === currentItem.id ? replacement.id : currentOutfit.automaticLayerId,
-          score: scoreOutfit(reconciled, occasionId, { buildAroundId: currentOutfit.buildAroundId, context: currentOutfit.context })
+          automaticSockId: sockResolution.automaticSockId,
+          sockMessage: sockResolution.message,
+          score: scoreOutfit(sockResolution.items, occasionId, { buildAroundId: currentOutfit.buildAroundId, context: currentOutfit.context }) + sockResolution.scorePenalty
         };
       })
       .filter(Boolean)
@@ -1952,6 +2135,8 @@
       items: choice.items,
       score: choice.score,
       automaticLayerId: choice.automaticLayerId || "",
+      automaticSockId: choice.automaticSockId || "",
+      sockMessage: choice.sockMessage || "",
       optionalBeltRemoved,
       changedItemIds: changedItemIds(previousItems, choice.items),
       changeNote: describeDependentChanges(previousItems, choice.items)
@@ -1971,8 +2156,9 @@
   function addSimilarFromDialog() {
     if (!editingItemId) return;
     const sourceId = editingItemId;
-    if (!closeItemDialog()) return;
-    openItemDialog(sourceId, { addSimilar: true });
+    requestEditorExit("add-similar", {
+      continuation: () => openItemDialog(sourceId, { addSimilar: true })
+    });
   }
 
   function permanentlyDeleteFromDialog() {
@@ -1995,6 +2181,25 @@
   // viewed-fit session, while Reroll continues the current context. Both clear
   // any prior logged/confirmation state and make the next result loggable once.
   function generateAndRender(options = {}) {
+    if (generationPromise) return generationPromise;
+    const resolution = resolveAutomaticContextForGeneration();
+    $("#generateBtn").disabled = true;
+    $("#rerollBtn").disabled = true;
+    generationPromise = Promise.resolve(resolution)
+      .catch((error) => {
+        weatherMessage = `${error?.message || "Weather could not be resolved."} Automatic weather remains enabled; using the available fallback.`;
+        renderWeatherControls();
+      })
+      .then(() => performGenerationAndRender(options))
+      .finally(() => {
+        generationPromise = null;
+        $("#generateBtn").disabled = false;
+        $("#rerollBtn").disabled = false;
+      });
+    return generationPromise;
+  }
+
+  function performGenerationAndRender(options = {}) {
     const mode = options.mode === "reroll" ? "reroll" : "generate";
     const occasionId = $("#occasionSelect").value;
     const buildAroundId = $("#buildAroundSelect").value;
@@ -2018,6 +2223,7 @@
     renderRerollSessionStatus();
     scrollResultIntoView();
     flashChangedRows();
+    return currentOutfit;
   }
 
   function beginResultTransition(mode) {
@@ -2094,7 +2300,10 @@
     enumerateOutfits(occasion, buildAround, 2200).forEach((outfit) => {
       addScoredCandidate(candidates, outfit, occasion.id, buildAround?.id || "");
     });
-    return [...candidates.values()].sort((a, b) => b.score - a.score);
+    const ranked = [...candidates.values()].sort((a, b) => b.score - a.score);
+    return ranked.some((candidate) => !candidate.sockMessage)
+      ? ranked.filter((candidate) => !candidate.sockMessage)
+      : ranked;
   }
 
   function chooseCandidate(ranked) {
@@ -2115,20 +2324,31 @@
     if (!outfit || !outfit.length) return;
     if (buildAroundId && !outfit.some((item) => item.id === buildAroundId)) return;
     if (!isCompatibleOutfit(outfit, occasionId, buildAroundId)) return;
+    const sockResolution = reconcileSocksForOutfit(outfit, occasionId, buildAroundId);
+    if (!sockResolution || !isCompatibleOutfit(sockResolution.items, occasionId, buildAroundId)) return;
     const context = currentEffectiveContext();
-    const variants = [{ items: sortOutfitItems(outfit), automaticLayerId: "" }];
-    if (ContextEngine.shouldConsiderLayer(outfit, context)) {
+    const variants = [{
+      items: sortOutfitItems(sockResolution.items),
+      automaticLayerId: "",
+      automaticSockId: sockResolution.automaticSockId,
+      sockMessage: sockResolution.message,
+      sockScorePenalty: sockResolution.scorePenalty
+    }];
+    if (ContextEngine.shouldConsiderLayer(sockResolution.items, context)) {
       const layerChoice = appState.wardrobe
         .filter((item) => isAutomaticLayerCandidate(item) && matchesOccasion(item, occasionId))
-        .filter((item) => !outfit.some((selected) => selected.id === item.id))
-        .map((layer) => sortOutfitItems([...outfit, layer]))
+        .filter((item) => !sockResolution.items.some((selected) => selected.id === item.id))
+        .map((layer) => sortOutfitItems([...sockResolution.items, layer]))
         .filter((items) => isCompatibleOutfit(items, occasionId, buildAroundId))
         .sort((a, b) => scoreOutfit(b, occasionId, { buildAroundId, context }) - scoreOutfit(a, occasionId, { buildAroundId, context }))[0];
       if (layerChoice) {
-        const automaticLayer = layerChoice.find((item) => !outfit.some((base) => base.id === item.id));
+        const automaticLayer = layerChoice.find((item) => !sockResolution.items.some((base) => base.id === item.id));
         variants.push({
           items: layerChoice,
-          automaticLayerId: automaticLayer?.id || ""
+          automaticLayerId: automaticLayer?.id || "",
+          automaticSockId: sockResolution.automaticSockId,
+          sockMessage: sockResolution.message,
+          sockScorePenalty: sockResolution.scorePenalty
         });
       }
     }
@@ -2145,11 +2365,13 @@
       buildAroundId,
       items: variant.items,
       automaticLayerId: variant.automaticLayerId,
+      automaticSockId: variant.automaticSockId || "",
+      sockMessage: variant.sockMessage || "",
       automaticLayerSuggested: Boolean(variant.automaticLayerId),
       automaticLayerRemoved: false,
       context: { ...context },
       contextAssessment: assessment,
-      score: scoreOutfit(variant.items, occasionId, { buildAroundId, context })
+      score: scoreOutfit(variant.items, occasionId, { buildAroundId, context }) + (variant.sockScorePenalty || 0)
     });
   }
 
@@ -2359,6 +2581,65 @@
     return appState.wardrobe.filter((item) => {
       return isAvailable(item) && slotAcceptsItem(slot, item) && matchesOccasion(item, occasionId);
     });
+  }
+
+  function footwearSockPolicy(shoes) {
+    const subtype = normalizeTag(shoes?.subtype);
+    if (subtype === "sandals") {
+      return { mode: "sockless", preferredSubtypes: [] };
+    }
+    if (subtype === "dress shoes") {
+      return { mode: "required", preferredSubtypes: ["dress socks"] };
+    }
+    if (["sneakers", "athletic/running shoes", "boots"].includes(subtype)) {
+      return {
+        mode: "required",
+        preferredSubtypes: subtype === "athletic/running shoes" ? ["athletic socks", "casual socks"] : ["casual socks", "athletic socks", "dress socks"]
+      };
+    }
+    return { mode: "required", preferredSubtypes: ["casual socks", "athletic socks", "dress socks", "no-show socks"] };
+  }
+
+  function reconcileSocksForOutfit(items, occasionId, buildAroundId = "") {
+    const unique = uniqueItems(items);
+    const shoes = unique.find((item) => item.category === "shoes");
+    if (!shoes) return { items: unique, automaticSockId: "", message: "", scorePenalty: 0 };
+    const policy = footwearSockPolicy(shoes);
+    const existingSocks = unique.filter((item) => item.category === "socks");
+    const baseItems = unique.filter((item) => item.category !== "socks");
+    const lockedSock = existingSocks.find((sock) => sock.id === buildAroundId);
+
+    if (policy.mode === "sockless") {
+      if (lockedSock) return null;
+      return { items: baseItems, automaticSockId: "", message: "", scorePenalty: 0 };
+    }
+
+    const compatibleExisting = existingSocks.find((sock) => isCompatibleOutfit([...baseItems, sock], occasionId, buildAroundId));
+    if (compatibleExisting) {
+      return { items: [...baseItems, compatibleExisting], automaticSockId: "", message: "", scorePenalty: 0 };
+    }
+    if (lockedSock) return null;
+
+    const preferredRank = new Map(policy.preferredSubtypes.map((subtype, index) => [subtype, index]));
+    const candidates = candidateItems({ categories: ["socks"] }, occasionId)
+      .filter((sock) => isCompatibleOutfit([...baseItems, sock], occasionId, buildAroundId))
+      .sort((a, b) => {
+        const rankA = preferredRank.has(a.subtype) ? preferredRank.get(a.subtype) : policy.preferredSubtypes.length + 1;
+        const rankB = preferredRank.has(b.subtype) ? preferredRank.get(b.subtype) : policy.preferredSubtypes.length + 1;
+        if (rankA !== rankB) return rankA - rankB;
+        return scoreOutfit([...baseItems, b], occasionId, { buildAroundId, randomize: false })
+          - scoreOutfit([...baseItems, a], occasionId, { buildAroundId, randomize: false });
+      });
+    const selected = candidates[0];
+    if (!selected) {
+      return {
+        items: baseItems,
+        automaticSockId: "",
+        message: "No compatible socks are available for these shoes.",
+        scorePenalty: -400
+      };
+    }
+    return { items: [...baseItems, selected], automaticSockId: selected.id, message: "", scorePenalty: 0 };
   }
 
   function isAutomaticLayerCandidate(item) {
@@ -3042,6 +3323,19 @@
     return [...items].sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
   }
 
+  function displayOutfitItems(outfitOrItems) {
+    const outfit = Array.isArray(outfitOrItems) ? { items: outfitOrItems, automaticLayerId: "" } : (outfitOrItems || { items: [] });
+    const ranks = { top: 0, layer: 2, bottom: 3, belt: 4, socks: 5, shoes: 6, accessory: 7 };
+    return (outfit.items || [])
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const rankA = a.item.id === outfit.automaticLayerId ? 1 : (ranks[a.item.category] ?? 8);
+        const rankB = b.item.id === outfit.automaticLayerId ? 1 : (ranks[b.item.category] ?? 8);
+        return rankA - rankB || a.index - b.index || String(a.item.id || "").localeCompare(String(b.item.id || ""));
+      })
+      .map((entry) => entry.item);
+  }
+
   function uniqueItems(items) {
     const seen = new Set();
     return items.filter((item) => {
@@ -3636,6 +3930,9 @@
       normalizeState,
       openItemDialog,
       closeItemDialog,
+      requestEditorExit,
+      isItemEditorDirty,
+      updateBeforeUnloadGuard,
       saveItemFromEditor,
       collectItemFromForm,
       validateItem,
@@ -3653,6 +3950,10 @@
       generationContextKey,
       candidateItems,
       scoreOutfit,
+      reconcileSocksForOutfit,
+      footwearSockPolicy,
+      displayOutfitItems,
+      renderResult,
       lastExactOutfitDate,
       lastTopBottomPairDate,
       lastItemWornDate,
@@ -3667,6 +3968,8 @@
       isAutomaticLayerCandidate,
       currentEffectiveContext,
       refreshWeather,
+      resolveAutomaticContextForGeneration,
+      generateAndRender,
       disableAutomaticWeather,
       protectedOriginals,
       preserveRecoveryPayload,
@@ -3691,6 +3994,8 @@
         rerollSession = createRerollSession();
         contextSession = createContextSession();
         weatherSessionFetchedAt = "";
+        automaticAttemptWithoutPermissionsApi = false;
+        generationPromise = null;
         initializeGenerateOccasion();
         renderAll();
       }

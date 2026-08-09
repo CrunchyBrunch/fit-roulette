@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.5.1 &mdash; Context and Daily-Use Field Fixes
+
+- Resolved automatic context exactly once before candidate construction, sharing eligible in-flight weather refreshes and retaining the saved opt-in plus visible fallback across permission, network, provider, timeout, and storage failures.
+- Added centralized footwear-aware sock reconciliation across every existing occasion, including dress-sock preference, sockless sandals, compatible alternate-shoe preference, nonblocking missing-sock explanations, and swap/reroll reconciliation.
+- Centralized dirty editor exits across Close, Escape, backdrop, navigation, and unload paths with Save, Discard, and Continue Editing outcomes and transactional single-save behavior.
+- Added deterministic presentation-only outfit ordering so Base, the single automatic layer, Bottom, Belt, Socks, Shoes, and Accessories match DOM reading order without mutating generation or history state.
+- Added native nested disclosure affordances and lazy independent Prefer Together/Never Pair rendering with live counts, plus a transactional Save and Add Similar workflow with safe item-specific resets.
+- Corrected dark-theme primary-button text contrast through centralized theme tokens and added automated WCAG AA assertions.
+- Corrected future legacy inference so Athletic Socks wins before generic Socks, while leaving existing schema-5 garments untouched.
+- Expanded deterministic regression coverage for context resolution, every footwear/sock policy, editor exit safety, disclosure behavior, stable ordering, history recency, variant resets, and warm/cold Tank behavior.
+
+This release uses app version `1.5.1`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.5.1`.
+
 ## Fit Roulette v1.5.0 &mdash; Context Engine
 
 - Added opt-in current conditions through a small Open-Meteo adapter with explicit location consent, bounded/deduplicated no-store requests, provider attribution, normalized coordinate-free caching, and manual/offline fallback.

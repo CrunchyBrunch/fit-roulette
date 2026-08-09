@@ -1,4 +1,12 @@
-# Fit Roulette v1.5.0 Context Engine
+# Fit Roulette v1.5.1 Context Engine
+
+## v1.5.1 Daily-Use Corrections
+
+Generation now resolves effective automatic context before candidate construction. Fresh cache is used immediately; stale, expired, or missing cache starts one shared refresh when the saved opt-in and current permission state allow it. Concurrent Generate actions await the same resolution and produce one outfit. Failures preserve the last valid cache and saved opt-in, identify the actual fallback, and never block generation. Prompt and denied states are not repeatedly invoked. Browsers without the Permissions API receive at most one best-effort automatic attempt per session after a failure; an explicit Use Current Location or retry action resets that guard. Browser permission UI remains browser-controlled.
+
+Sock selection is centralized after footwear evaluation. Sandals and explicitly sockless footwear omit socks; sneakers, running shoes, boots, and unknown/custom footwear expect a compatible available sock; dress shoes prefer dress socks. Existing availability, occasion, pair-rule, preference, matching, and recency scoring remain authoritative. Complete alternate shoes outrank a sock-required fit with no compatible sock, while the final incomplete fallback remains visible and usable. Shoe swaps reconcile the automatic sock again, and only logged socks receive wear recency.
+
+The editor uses one dirty-exit controller for in-app and feasible browser exits, with transactional Save, Discard, and Continue Editing outcomes. Prefer Together and Never Pair remain native nested disclosures, default collapsed, render candidates lazily, and preserve authoritative hidden selections. Save and Add Similar commits the current item once, then creates a clean unsaved variant draft with relationships and item-specific state reset. Result ordering is presentation-only and stable: Base, the single automatic layer, Bottom, Belt, Socks, Shoes, Accessories, then future categories. Dark primary buttons use theme-specific text tokens that meet WCAG AA.
 
 ## Technical Audit
 

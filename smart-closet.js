@@ -192,12 +192,13 @@
       "casual socks": ["socks"], "athletic socks": ["athletic socks"],
       jacket: ["jacket"], hoodie: ["hoodie"], flannel: ["flannel"], overshirt: ["overshirt"], coat: ["coat"]
     };
-    for (const subtype of candidates) {
-      if (subtype === "other") continue;
-      const matches = aliases[subtype] || [subtype];
-      if (matches.some((term) => signals.includes(term))) return subtype;
-    }
-    return "other";
+    const matches = candidates
+      .filter((subtype) => subtype !== "other")
+      .flatMap((subtype) => (aliases[subtype] || [subtype])
+        .filter((term) => signals.includes(term))
+        .map((term) => ({ subtype, specificity: normalizeToken(term).length })))
+      .sort((a, b) => b.specificity - a.specificity);
+    return matches[0]?.subtype || "other";
   }
 
   function normalizeSubtype(value, category, item, reasons) {

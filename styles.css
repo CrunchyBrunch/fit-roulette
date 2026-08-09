@@ -8,6 +8,7 @@
   --line: #d9dfdd;
   --accent: #18786f;
   --accent-strong: #0f5f58;
+  --primary-text: #ffffff;
   --success: #226b3b;
   --danger: #b63d4a;
   --blue: #315f9e;
@@ -27,6 +28,7 @@
   --line: #d9dfdd;
   --accent: #18786f;
   --accent-strong: #0f5f58;
+  --primary-text: #ffffff;
   --success: #226b3b;
   --danger: #b63d4a;
   --blue: #315f9e;
@@ -43,6 +45,7 @@
     --line: #30383d;
     --accent: #4fb2a7;
     --accent-strong: #72cbc0;
+    --primary-text: #101316;
     --success: #73c58e;
     --danger: #ef7b88;
     --blue: #81a9e6;
@@ -60,6 +63,7 @@
   --line: #30383d;
   --accent: #4fb2a7;
   --accent-strong: #72cbc0;
+  --primary-text: #101316;
   --success: #73c58e;
   --danger: #ef7b88;
   --blue: #81a9e6;
@@ -276,7 +280,21 @@ textarea:focus {
 
 .primary-button {
   background: var(--accent);
-  color: white;
+  color: var(--primary-text);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.success-button:focus-visible,
+.danger-button:focus-visible,
+.text-button:focus-visible,
+.icon-button:focus-visible,
+.tab-button:focus-visible,
+.mini-button:focus-visible,
+.swap-button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--accent-strong);
+  outline-offset: 2px;
 }
 
 .primary-button:active,
@@ -927,6 +945,44 @@ textarea:focus {
   cursor: pointer;
 }
 
+.inline-details > summary,
+.details-block > summary,
+.relationship-picker > summary {
+  list-style: none;
+  transition: background-color 160ms ease;
+}
+
+.inline-details > summary::-webkit-details-marker,
+.details-block > summary::-webkit-details-marker,
+.relationship-picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inline-details > summary::after,
+.details-block > summary::after,
+.relationship-picker > summary::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.inline-details[open] > summary::after,
+.details-block[open] > summary::after,
+.relationship-picker[open] > summary::after {
+  transform: rotate(225deg);
+}
+
+.inline-details > summary:hover,
+.details-block > summary:hover,
+.relationship-picker > summary:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .details-content {
   display: grid;
   gap: 10px;
@@ -1085,12 +1141,34 @@ textarea:focus {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 10px;
   background: var(--surface-soft);
 }
 
-.relationship-picker h4 {
-  margin: 0 0 8px;
+.relationship-picker > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.relationship-picker > summary > span:first-child {
+  min-width: 0;
+  margin-right: auto;
+}
+
+.summary-count {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.relationship-picker-content {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px;
 }
 
 .compact-field {
@@ -1227,6 +1305,39 @@ textarea:focus {
 
 .dialog-actions #saveGenerateBtn {
   grid-column: auto;
+}
+
+.decision-dialog {
+  width: min(calc(100% - 24px), 440px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.decision-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.decision-dialog-content {
+  padding: 18px;
+}
+
+.decision-dialog-content h2 {
+  margin-bottom: 6px;
+}
+
+.decision-dialog-content p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.decision-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .single-action {
