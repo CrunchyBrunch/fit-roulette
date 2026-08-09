@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.4.2 - Smart Closet Field Fixes**
+Current release: **1.5.0 - Context Engine**
 
 ## Run Locally
 
@@ -28,6 +28,8 @@ If Python is not available, any static file server works.
 2. Copy every file in this folder into the repository root:
    - `index.html`
    - `styles.css`
+   - `context-engine.js`
+   - `smart-closet.js`
    - `app.js`
    - `manifest.json`
    - `sw.js`
@@ -53,7 +55,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.4.2`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.5.0`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -65,20 +67,31 @@ You can confirm the deployed version from the app:
 2. Go to Data.
 3. Check the visible app version under the settings controls.
 
-The Data screen also stores two daily-use preferences:
+The Data screen stores daily-use preferences including:
 
 - `Default Occasion` chooses the initial Generate occasion without changing manual occasion selections during a session.
 - `After Logging` controls whether a logged outfit remains visible or is cleared.
+- `Temperature Unit` controls Fahrenheit/Celsius display without changing context scoring.
 
 Build Around uses a category selector followed by a short item selector. Reroll tracks combinations viewed only for the current in-memory generation context, prefers unseen fits first, and enables controlled repeats after the valid pool is exhausted. `Reset viewed fits` restarts that temporary session without changing outfit history.
+
+## Context And Weather
+
+Outfit context is optional. Generation remains functional with no location permission, no network connection, no cached weather, or an expired reading. Manual temperature, broad conditions, warmer/colder adjustment, rain expectation, indoor/outdoor exposure, and Ignore Weather are session controls; manual overrides are not saved as preferences.
+
+`Use Current Location` is the only action that can trigger a browser location prompt. If automatic weather was previously enabled and permission is already granted, Fit Roulette may refresh an older cache without prompting. It never watches location or performs background tracking. The app rounds coordinates before sending them directly to Open-Meteo and does not store coordinates, accuracy, location history, raw provider payloads, or coordinate-bearing request URLs. Closet contents, history, garment data, and identity are never sent to the provider.
+
+Fresh cached current conditions are at most 60 minutes old. A reading older than 60 minutes and no more than 6 hours old is labeled stale and requires explicit awareness before it affects a roll. Older readings are expired and cannot influence generation. Failed refreshes retain the last valid normalized cache. Provider readings are modeled current conditions, not live sensors or safety advice.
+
+[Weather data by Open-Meteo](https://open-meteo.com/) is used through the current-conditions endpoint for this free, noncommercial app. Open-Meteo's free service requires attribution and noncommercial use; commercialization requires a new provider and licensing review. Coordinates sent to Open-Meteo may be processed under its [privacy terms](https://open-meteo.com/en/terms).
 
 ## Export And Import Closet Data
 
 Fit Roulette stores your wardrobe, history, banned combos, optional rejection feedback, and settings in the browser's `localStorage`.
 
-The app uses the storage key `fitRoulette.v1`. This user-data key is independent from the visible app release version. Smart Closet uses internal schema version `4` without changing that key. Before a legacy payload is migrated, the app stores one untouched recovery copy at `fitRoulette.v1.recovery.schema4`, migrates and validates entirely in memory, and writes the primary key only after validation succeeds. Unsupported future schemas and malformed data are left untouched and open in a protected, read-only recovery state.
+The app uses the storage key `fitRoulette.v1`. This user-data key is independent from the visible app release version. Context Engine uses internal schema version `5` without changing that key. Before schema-4 primary data is replaced, the exact raw value is stored once at `fitRoulette.v1.recovery.schema5`. The earlier `fitRoulette.v1.recovery.schema4` protected original is never overwritten. Later confirmed schema 1-4 imports receive an additional protected-original key when the schema-5 slot already contains a different payload. Migration and validation happen in memory, and the primary key is written only after required recovery succeeds. Unsupported future schemas, malformed data, and prohibited location fields leave the primary untouched and open in a protected, read-only state.
 
-Schema-v4 garments use structured category, subtype, primary/secondary color, pattern, sleeve/bottom length, five-level formality, occasion eligibility, warmth, rain policy, status, preference, labels, review state, and per-item legacy fallback. Implementation enums deliberately stay small: sleeve length is Not applicable/Sleeveless/Short/Long/Other/Unspecified; bottom length is Not applicable/Short/Cropped/Full/Other/Unspecified; warmth is Unspecified through Very warm; rain policy is Unspecified/Avoid/Okay/Preferred. Unsupported colors remain valid custom values.
+Schema-v5 garments retain every schema-v4 field and add independent eligible layer roles (`Base`, `Mid`, `Outer`) plus structured rain and wind protection (`Unspecified`, `None`, `Light`, `Protective`). A garment may have more than one role, and eligible Top-category garments such as sweaters can serve as a Mid layer without changing category. Warmth remains the finite `Unspecified` through `Very warm` scale and is interpreted as a compositional contribution across the selected outfit. Category/subtype, style pair rules, layer role, warmth, and physical fit are separate concerns; physical bulk compatibility and ordered multi-layer sequences remain deferred. Unsupported colors and imported metadata remain preserved.
 
 To back up:
 
@@ -97,13 +110,13 @@ To restore:
 
 Import replaces the current local data on that device/browser.
 
-When a confirmed legacy backup is imported, v1.4.2 stores the exact untouched file text at `fitRoulette.v1.recovery.schema4` before replacing primary storage. If a protected original already exists, it is retained without modification. The import stops without changing the current closet if required recovery or primary storage cannot be written.
+When a confirmed schema 1-4 backup is imported, v1.5.0 stores the exact untouched file text in a schema-5 protected-original slot before replacing primary storage. Existing schema-4 and schema-5 protected originals remain byte-for-byte unchanged, and every retained original is listed separately in Data. Import stops without changing primary or in-memory closet state if required recovery, migration, validation, or primary storage fails. Schema-5 imports do not create an unnecessary legacy recovery.
 
 ## Add To iPhone Home Screen
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.4.2`.
+3. Open Data and confirm the app displays version `1.5.0`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.
@@ -116,9 +129,9 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `icons/icon-main.png` is the original custom artwork and is not overwritten by the icon-generation helper.
 - `icons/` contains the generated Apple touch, PWA, and favicon PNG assets.
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
-- All app data stays local to the browser through `localStorage`.
+- Closet and normalized context data stay local to the browser through `localStorage`; opt-in coordinates are sent directly to Open-Meteo and are never stored by Fit Roulette.
 
-The v1.4.2 release uses service-worker cache `fit-roulette-v1.4.2`, synchronized with the visible app version. The cache includes the complete Smart Closet application shell, including `smart-closet.js`.
+The v1.5.0 release uses service-worker cache `fit-roulette-v1.5.0`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js` and `smart-closet.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
 
 ## Verify Smart Closet Release
 
@@ -126,12 +139,13 @@ With Node.js available, run:
 
 ```powershell
 node codex-tools/verify-fit-roulette-smart-closet.js
-node codex-tools/verify-fit-roulette-v1.4-app.js
-node codex-tools/verify-fit-roulette-v1.4-static.js
+node codex-tools/verify-fit-roulette-context-engine.js
+node codex-tools/verify-fit-roulette-v1.5-app.js
+node codex-tools/verify-fit-roulette-v1.5-static.js
 node codex-tools/verify-fit-roulette-deploy.js
 ```
 
-The historical migration and static entry points route to the v1.4 checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code.
+The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Detailed architecture, audit findings, thresholds, privacy behavior, and deferred scope are in `CONTEXT_ENGINE.md`.
 
 Release notes are maintained in `CHANGELOG.md`.
 
@@ -143,5 +157,6 @@ Release notes are maintained in `CHANGELOG.md`.
 4. Update `CHANGELOG.md`.
 5. Review `git diff` and confirm only intended files changed.
 6. Commit the verified release.
-7. Push to `origin main` without force-pushing.
-8. Confirm the deployed GitHub Pages app displays the new version.
+7. Push the release branch without force-pushing and open a draft pull request.
+8. Do not mark ready, merge, or deploy until the product owner confirms a fresh external export of the released personal closet is retained.
+9. After authorization and passing remote checks, squash-merge, synchronize local `main`, and verify GitHub Pages deployed the exact merge commit.

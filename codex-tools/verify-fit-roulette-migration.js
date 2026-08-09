@@ -1,6 +1,6 @@
 if (process.env.FIT_ROULETTE_RUN_V133_HARNESS !== "1") {
   require("./verify-fit-roulette-smart-closet.js");
-  require("./verify-fit-roulette-v1.4-app.js");
+  require("./verify-fit-roulette-v1.5-app.js");
   process.exit(0);
 }
 

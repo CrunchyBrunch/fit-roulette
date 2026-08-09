@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const assert = require("assert");
+const ContextEngine = require("../context-engine.js");
 const Smart = require("../smart-closet.js");
 
 const root = path.resolve(__dirname, "..");
@@ -75,8 +76,9 @@ function runApp(savedValue, options = {}) {
     return element;
   });
   const screens = ["generate", "closet", "history", "settings"].map((screen) => new MockElement(`screen-${screen}`));
-  const occasionInputs = ["work", "friday", "casual", "date", "gym"].map((value) => Object.assign(new MockElement(), { value, name: "itemOccasion" }));
+  const occasionInputs = ["work", "friday", "casual", "date", "athletic", "gym"].map((value) => Object.assign(new MockElement(), { value, name: "itemOccasion" }));
   const beltInputs = ["required", "optional", "none"].map((value) => Object.assign(new MockElement(), { value, name: "itemBeltMode" }));
+  const layerRoleInputs = ["base", "mid", "outer"].map((value) => Object.assign(new MockElement(), { value, name: "itemLayerRole" }));
   const feedbackInputs = ["colors", "top_pants", "shoes", "belt_shoes", "too_formal", "too_casual", "weather", "exact", "other"].map((value) => Object.assign(new MockElement(), { value, name: "feedbackReason" }));
   let domReady;
   const storage = new Map();
@@ -86,6 +88,7 @@ function runApp(savedValue, options = {}) {
   const events = [];
   if (savedValue !== undefined && savedValue !== null) storage.set("fitRoulette.v1", savedValue);
   if (options.initialRecovery !== undefined && options.initialRecovery !== null) storage.set(Smart.RECOVERY_KEY, options.initialRecovery);
+  if (options.initialLegacyRecovery !== undefined && options.initialLegacyRecovery !== null) storage.set(Smart.LEGACY_RECOVERY_KEY, options.initialLegacyRecovery);
 
   const document = {
     documentElement: new MockElement("documentElement"),
@@ -106,6 +109,8 @@ function runApp(savedValue, options = {}) {
       if (selector === "input[name='itemOccasion']") return occasionInputs;
       if (selector === "input[name='itemOccasion']:checked") return occasionInputs.filter((input) => input.checked);
       if (selector === "input[name='itemBeltMode']") return beltInputs;
+      if (selector === "input[name='itemLayerRole']") return layerRoleInputs;
+      if (selector === "input[name='itemLayerRole']:checked") return layerRoleInputs.filter((input) => input.checked);
       if (selector === "input[name='feedbackReason']") return feedbackInputs;
       if (selector === "input[name='manualItem']:checked") return [];
       return [];
@@ -123,10 +128,13 @@ function runApp(savedValue, options = {}) {
       storageWrites.push({ key, value: stringValue });
       events.push(`write:${key}`);
     },
-    removeItem(key) { storage.delete(key); }
+    removeItem(key) { storage.delete(key); },
+    key(index) { return [...storage.keys()][index] ?? null; },
+    get length() { return storage.size; }
   };
   const windowObject = {
     __FIT_ROULETTE_TESTING__: true,
+    FitRouletteContextEngine: ContextEngine,
     FitRouletteSmartCloset: Smart,
     addEventListener() {},
     confirm(message) {
@@ -134,12 +142,13 @@ function runApp(savedValue, options = {}) {
       events.push("confirm");
       return options.confirmResult !== false;
     },
-    requestAnimationFrame(callback) { callback(); }
+    requestAnimationFrame(callback) { callback(); },
+    fetch: options.fetchImpl
   };
   const context = {
     console: { log: console.log, warn: console.warn, error() {} },
     document,
-    navigator: {},
+    navigator: { permissions: options.permissions || null, geolocation: options.geolocation || null },
     window: windowObject,
     localStorage,
     Blob,
@@ -175,9 +184,9 @@ const legacyRaw = JSON.stringify({
 
 const migratedApp = runApp(legacyRaw);
 const migratedState = migratedApp.api.getState();
-assert.equal(migratedState.schemaVersion, 4);
+assert.equal(migratedState.schemaVersion, 5);
 assert.equal(migratedApp.storage.get(Smart.RECOVERY_KEY), legacyRaw, "Recovery copy must be the untouched pre-migration payload.");
-assert.equal(JSON.parse(migratedApp.storage.get("fitRoulette.v1")).schemaVersion, 4);
+assert.equal(JSON.parse(migratedApp.storage.get("fitRoulette.v1")).schemaVersion, 5);
 assert.equal(migratedState.wardrobe.find((item) => item.id === "laundry_shoes").status, "unavailable");
 assert(migratedApp.elements.get("reviewQueue").innerHTML.includes("Review Smart Closet Settings"));
 assert(migratedApp.elements.get("buildAroundSelect").innerHTML.includes("Legacy Tee") || migratedApp.elements.get("buildAroundCategorySelect").innerHTML.includes("Tops"));
@@ -190,6 +199,35 @@ const aroundLayer = migratedApp.api.pickOutfit("casual", "legacy_layer");
 assert(!aroundLayer.error, aroundLayer.error);
 assert(aroundLayer.items.some((item) => item.id === "legacy_layer"), "Build Around must support layers.");
 assert.equal(migratedApp.api.getState().history.length, 0, "Viewing and reroll candidate construction must not write history.");
+
+const releasedSchemaFourRaw = JSON.stringify({
+  schemaVersion: 4,
+  version: 4,
+  wardrobe: [], history: [], bannedCombos: [], feedback: [], pairRelationships: [],
+  settings: { theme: "dark", afterLogging: "keep", defaultOccasion: "casual", weather: { enabled: true, temperature: 52, condition: "rain" } },
+  setup: { completed: true, choice: "existing" },
+  releaseMarker: "exact schema-four bytes"
+});
+const schemaFourLegacyRecovery = "{\"protectedBeforeSchema4\":true}";
+const automaticSchemaFour = runApp(releasedSchemaFourRaw, { initialLegacyRecovery: schemaFourLegacyRecovery });
+assert.equal(automaticSchemaFour.storage.get(Smart.RECOVERY_KEY), releasedSchemaFourRaw, "Automatic v4 to v5 migration must retain the exact raw schema-four primary first.");
+assert.equal(automaticSchemaFour.storage.get(Smart.LEGACY_RECOVERY_KEY), schemaFourLegacyRecovery, "Existing schema-four recovery must never be overwritten.");
+assert.deepEqual(
+  automaticSchemaFour.events.slice(0, 4),
+  [`attempt:${Smart.RECOVERY_KEY}`, `write:${Smart.RECOVERY_KEY}`, "attempt:fitRoulette.v1", "write:fitRoulette.v1"],
+  "Automatic schema-four recovery must be written before the migrated primary."
+);
+assert.equal(automaticSchemaFour.api.getState().settings.weather.legacyManual.temperature, 52, "The prior explicit manual-weather preference must remain preserved but inactive.");
+
+const automaticRecoveryFailure = runApp(releasedSchemaFourRaw, { failSetItem: (key) => key === Smart.RECOVERY_KEY });
+assert.equal(automaticRecoveryFailure.storage.get("fitRoulette.v1"), releasedSchemaFourRaw);
+assert.equal(automaticRecoveryFailure.api.isStorageWriteLocked(), true);
+assert(!automaticRecoveryFailure.storageWriteAttempts.some((entry) => entry.key === "fitRoulette.v1"), "Primary migration must not be attempted after recovery failure.");
+
+const preexistingSchemaFiveRecovery = "{\"protectedBeforeSchema5\":\"first\"}";
+const automaticExistingRecovery = runApp(releasedSchemaFourRaw, { initialRecovery: preexistingSchemaFiveRecovery });
+assert.equal(automaticExistingRecovery.storage.get(Smart.RECOVERY_KEY), preexistingSchemaFiveRecovery, "Existing schema-five recovery must never be overwritten.");
+assert.equal(automaticExistingRecovery.api.getState().schemaVersion, 5);
 
 const malformed = runApp("{ definitely not json");
 assert.equal(malformed.storage.get("fitRoulette.v1"), "{ definitely not json", "Malformed primary data must remain untouched.");
@@ -247,9 +285,9 @@ assert.deepEqual(
   "Recovery must be written after confirmation and before primary storage."
 );
 assert.equal(importedLegacy.storage.get(Smart.RECOVERY_KEY), exactLegacyImportRaw, "Legacy recovery must preserve the exact raw bytes represented by the input string.");
-assert.equal(JSON.parse(importedLegacy.storage.get("fitRoulette.v1")).schemaVersion, 4);
+assert.equal(JSON.parse(importedLegacy.storage.get("fitRoulette.v1")).schemaVersion, 5);
 assert.equal(importedLegacy.api.getState().wardrobe[0].primaryColor, "Cerulean");
-assert.equal(importedLegacy.elements.get("exportRecoveryBtn").hidden, false, "Protected-original control must enable immediately.");
+assert(importedLegacy.elements.get("recoveryDownloads").innerHTML.includes("before schema 5"), "Protected-original control must enable immediately.");
 
 const cancelledImport = runApp(importBaselineRaw, { confirmResult: false });
 const cancelledState = cancelledImport.api.getState();
@@ -277,11 +315,11 @@ const existingRecoveryRaw = "{\n  \"syntheticProtectedOriginal\": \"keep byte-fo
 const existingRecovery = runApp(importBaselineRaw, { initialRecovery: existingRecoveryRaw });
 const existingRecoveryResult = existingRecovery.api.importBackupText(exactLegacyImportRaw);
 assert.equal(existingRecoveryResult.ok, true);
-assert.equal(existingRecoveryResult.recoveryCreated, false);
+assert.equal(existingRecoveryResult.recoveryCreated, true, "A later confirmed legacy import must receive its own retained original.");
 assert.equal(existingRecovery.storage.get(Smart.RECOVERY_KEY), existingRecoveryRaw, "Existing recovery must never be overwritten.");
-assert.equal(existingRecovery.elements.get("exportRecoveryBtn").hidden, false);
-assert(existingRecovery.elements.get("toast").textContent.includes("Existing protected original retained"));
-assert(!existingRecovery.elements.get("toast").textContent.includes("Protected original saved"));
+assert(existingRecoveryResult.recoveryKey.startsWith(Smart.RECOVERY_PREFIX));
+assert.equal(existingRecovery.storage.get(existingRecoveryResult.recoveryKey), exactLegacyImportRaw);
+assert(existingRecovery.elements.get("recoveryDownloads").innerHTML.includes("retained legacy import"));
 
 const invalidLegacyImportRaw = '{"version":3,"wardrobe":{},"history":[],"bannedCombos":[],"feedback":[]}';
 const migrationFailure = runApp(importBaselineRaw);
@@ -291,7 +329,7 @@ assert.equal(migrationFailureResult.ok, false);
 assert.strictEqual(migrationFailure.api.getState(), migrationFailureState);
 assert.equal(migrationFailure.storage.get("fitRoulette.v1"), importBaselineRaw);
 assert.equal(migrationFailure.storage.get(Smart.RECOVERY_KEY), invalidLegacyImportRaw, "Recovery created before migration must remain available after validation failure.");
-assert.equal(migrationFailure.elements.get("exportRecoveryBtn").hidden, false, "Recovery created before a failed migration must remain downloadable.");
+assert(migrationFailure.elements.get("recoveryDownloads").innerHTML.includes("before schema 5"), "Recovery created before a failed migration must remain downloadable.");
 
 const primaryFailure = runApp(importBaselineRaw, {
   failSetItem: (key) => key === "fitRoulette.v1"
@@ -304,7 +342,7 @@ assert.strictEqual(primaryFailure.api.getState(), primaryFailureState);
 assert.equal(primaryFailure.storage.get("fitRoulette.v1"), importBaselineRaw);
 assert.equal(primaryFailure.storage.get(Smart.RECOVERY_KEY), exactLegacyImportRaw, "Protected original must remain after primary write failure.");
 assert.equal(primaryFailure.elements.get("closetList").innerHTML, primaryFailureCloset);
-assert.equal(primaryFailure.elements.get("exportRecoveryBtn").hidden, false);
+assert(primaryFailure.api.protectedOriginals().some((record) => record.key === Smart.RECOVERY_KEY));
 assert(primaryFailure.elements.get("toast").textContent.includes("could not be replaced"));
 
 const repeatedImportRaw = JSON.stringify({ version: 3, wardrobe: [], history: [], bannedCombos: [], feedback: [], settings: { defaultOccasion: "work" } });
@@ -329,15 +367,32 @@ assert.equal(futureImport.storage.get("fitRoulette.v1"), importBaselineRaw);
 assert.equal(futureImport.storage.get(Smart.RECOVERY_KEY), existingRecoveryRaw);
 assert.equal(futureImport.confirmations.length, 0);
 
-const schemaFourImportState = Smart.createFreshState("2026-08-08T13:00:00.000Z");
-schemaFourImportState.settings.defaultOccasion = "date";
-const schemaFourImportRaw = JSON.stringify(schemaFourImportState);
-const schemaFourImport = runApp(importBaselineRaw);
-const schemaFourImportResult = schemaFourImport.api.importBackupText(schemaFourImportRaw);
+const coordinateImport = runApp(importBaselineRaw);
+const coordinateImportState = coordinateImport.api.getState();
+const coordinateImportResult = coordinateImport.api.importBackupText(JSON.stringify({ schemaVersion: 4, wardrobe: [], settings: { weather: { latitude: 12.3, longitude: 45.6 } } }));
+assert.equal(coordinateImportResult.ok, false);
+assert.equal(coordinateImportResult.error.code, "PRIVACY_VIOLATION");
+assert.strictEqual(coordinateImport.api.getState(), coordinateImportState);
+assert.equal(coordinateImport.storage.get("fitRoulette.v1"), importBaselineRaw);
+assert.equal(coordinateImport.storage.has(Smart.RECOVERY_KEY), false, "Coordinate-bearing imports must be rejected before creating any recovery copy.");
+assert.equal(coordinateImport.confirmations.length, 0);
+
+const schemaFiveImportState = Smart.createFreshState("2026-08-08T13:00:00.000Z");
+schemaFiveImportState.settings.defaultOccasion = "date";
+const schemaFiveImportRaw = JSON.stringify(schemaFiveImportState);
+const schemaFiveImport = runApp(importBaselineRaw);
+const schemaFiveImportResult = schemaFiveImport.api.importBackupText(schemaFiveImportRaw);
+assert.equal(schemaFiveImportResult.ok, true);
+assert.equal(schemaFiveImportResult.legacy, false);
+assert.equal(schemaFiveImport.storage.has(Smart.RECOVERY_KEY), false, "Schema-v5 import must not create an unnecessary legacy recovery.");
+assert.equal(JSON.parse(schemaFiveImport.storage.get("fitRoulette.v1")).settings.defaultOccasion, "date");
+
+const schemaFourImport = runApp(importBaselineRaw, { initialLegacyRecovery: schemaFourLegacyRecovery });
+const schemaFourImportResult = schemaFourImport.api.importBackupText(releasedSchemaFourRaw);
 assert.equal(schemaFourImportResult.ok, true);
-assert.equal(schemaFourImportResult.legacy, false);
-assert.equal(schemaFourImport.storage.has(Smart.RECOVERY_KEY), false, "Schema-v4 import must not create an unnecessary legacy recovery.");
-assert.equal(JSON.parse(schemaFourImport.storage.get("fitRoulette.v1")).settings.defaultOccasion, "date");
+assert.equal(schemaFourImportResult.legacy, true);
+assert.equal(schemaFourImport.storage.get(schemaFourImportResult.recoveryKey), releasedSchemaFourRaw, "Confirmed schema-four import must be retained exactly before primary replacement.");
+assert.equal(schemaFourImport.storage.get(Smart.LEGACY_RECOVERY_KEY), schemaFourLegacyRecovery);
 
 const fresh = runApp(null);
 assert.equal(fresh.api.getState().wardrobe.length, 0);
@@ -349,6 +404,8 @@ const intentionallyEmpty = runApp(JSON.stringify({ version: 3, wardrobe: [], his
 assert.equal(intentionallyEmpty.api.getState().wardrobe.length, 0);
 assert.equal(intentionallyEmpty.api.getState().setup.completed, true);
 assert.equal(intentionallyEmpty.elements.get("freshSetup").hidden, true);
+assert(fresh.elements.get("occasionSelect").innerHTML.includes("Athletic"), "Athletic must be available for new generation contexts.");
+assert(!fresh.elements.get("occasionSelect").innerHTML.includes("Gym / Errands"), "Legacy Gym / Errands must not be offered as a new generation context.");
 
 const now = "2026-08-07T12:00:00.000Z";
 function item(id, subtype, color, overrides = {}) {
@@ -357,6 +414,34 @@ function item(id, subtype, color, overrides = {}) {
     review: { status: "reviewed", reasons: [], reviewedAt: now }, legacyFallback: false, legacyMatching: {}, ...overrides
   }, { now });
 }
+
+const legacyGymItem = item("legacy_gym_item", "athletic top", "Black", {
+  occasions: ["gym"], review: { status: "needs_review", reasons: ["Legacy Gym / Errands is ambiguous."], reviewedAt: "" }
+});
+const legacyOccasionApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" }, wardrobe: [legacyGymItem]
+}));
+assert(legacyOccasionApp.elements.get("occasionSelect").innerHTML.includes("legacy closet only"), "Legacy generation context must remain readable when the closet still contains ambiguous data.");
+legacyOccasionApp.api.openItemDialog(legacyGymItem.id);
+assert(legacyOccasionApp.elements.get("itemOccasions").innerHTML.includes("Legacy Gym / Errands"), "Stored ambiguous occasion must remain visible for explicit correction.");
+assert(legacyOccasionApp.api.collectItemFromForm().occasions.includes("gym"), "Opening an existing item must not silently discard its legacy occasion.");
+legacyOccasionApp.api.closeItemDialog({ force: true });
+
+const fridayJeans = item("friday_jeans", "jeans", "Navy", { occasions: ["friday", "casual"] });
+const fridayAuditApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" }, wardrobe: [
+    item("friday_top", "button-down", "Blue", { occasions: ["work", "friday"] }),
+    fridayJeans,
+    item("friday_shoes", "dress shoes", "Brown", { occasions: ["work", "friday"] }),
+    item("friday_belt", "dress belt", "Brown", { occasions: ["work", "friday"] }),
+    item("friday_socks", "dress socks", "Navy", { occasions: ["work", "friday"] })
+  ]
+}));
+assert(!fridayAuditApp.api.pickOutfit("friday", fridayJeans.id).error, "Friday Jeans must remain functional for legacy and current data.");
+assert(fridayAuditApp.api.pickOutfit("work", fridayJeans.id).error, "Work plus Build Around Jeans is not equivalent when the jeans exclude Work.");
+legacyOccasionApp.api.openItemDialog();
+assert(!legacyOccasionApp.elements.get("itemOccasions").innerHTML.includes("Legacy Gym / Errands"), "Legacy Gym / Errands must not be offered for a new assignment.");
+legacyOccasionApp.api.closeItemDialog({ force: true });
 
 const fieldTopA = item("field_top_a", "polo", "Navy", { name: "Navy Weekend Polo", labels: ["travel"], occasions: ["casual", "date"] });
 const fieldTopB = item("field_top_b", "t-shirt", "White", { name: "White Tee", occasions: ["casual", "date"] });
@@ -611,17 +696,192 @@ const manualTodayState = {
 fresh.api.replaceState(manualTodayState);
 assert(fresh.elements.get("todayLoggedNotice").innerHTML.includes("Today's fit is logged"));
 
-console.log(JSON.stringify({
-  ok: true,
-  migratedItems: migratedState.wardrobe.length,
-  recoveryCreated: migratedApp.storage.has(Smart.RECOVERY_KEY),
-  legacyImportRecoveryCreated: importedLegacyResult.recoveryCreated,
-  legacyImportFailureCases: 5,
-  existingRecoveryPreserved: existingRecovery.storage.get(Smart.RECOVERY_KEY) === existingRecoveryRaw,
-  editorTransactionalSave: true,
-  groupedRelationshipCandidates: largeCandidateApp.api.relationshipCandidates(fieldBottom.id).length,
-  structuredSearch: true,
-  optionalBeltRemoval: true,
-  swapEligible: swapReport.eligible.length,
-  freshSetupShown: freshSetupWasShown
+const contextTop = item("context_top", "t-shirt", "White", { occasions: ["casual"], warmth: "light" });
+const contextTopAlt = item("context_top_alt", "polo", "Navy", { occasions: ["casual"], warmth: "light" });
+const contextBottom = item("context_bottom", "jeans", "Navy", { occasions: ["casual"], warmth: "light", beltMode: "optional" });
+const contextShoes = item("context_shoes", "boots", "Brown", { occasions: ["casual"], warmth: "medium" });
+const contextBelt = item("context_belt", "casual belt", "Brown", { occasions: ["casual"] });
+const contextLayer = item("context_layer", "coat", "Black", {
+  occasions: ["casual"], warmth: "very_warm", layerRoles: ["outer"], rainProtection: "protected", windProtection: "protected"
+});
+const baseRoleOnlyLayer = item("base_role_only_layer", "hoodie", "Gray", {
+  occasions: ["casual"], layerRoles: ["base"], rainProtection: "none", windProtection: "none"
+});
+const contextApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [contextTop, contextTopAlt, contextBottom, contextShoes, contextBelt, contextLayer, baseRoleOnlyLayer]
 }));
+contextApp.api.setContextSession({
+  mode: "manual", manualTemperatureC: 4.4, manualCondition: "clear", adjustment: "same",
+  exposure: "outdoors", rainExpected: false, ignore: false
+});
+let coldOutfit = null;
+for (let attempt = 0; attempt < 8; attempt += 1) {
+  const candidate = contextApp.api.pickOutfit("casual", "");
+  assert(candidate.items.filter((entry) => entry.category === "layer").length <= 1, "Generation must never add more than one automatic layer.");
+  if (candidate.automaticLayerId === contextLayer.id) {
+    coldOutfit = candidate;
+    break;
+  }
+}
+assert(coldOutfit, "The valid cold-weather layer must appear in the finite reroll pool.");
+assert(!coldOutfit.error, coldOutfit.error);
+assert.equal(coldOutfit.items.filter((entry) => entry.category === "layer").length, 1);
+assert.equal(coldOutfit.automaticLayerId, contextLayer.id, "Only a valid Mid/Outer garment may be added automatically.");
+assert(!coldOutfit.items.some((entry) => entry.id === baseRoleOnlyLayer.id), "A Base-only garment must not be used as the optional layer.");
+assert(coldOutfit.items.some((entry) => entry.category === "belt"), "Optional belt behavior must survive a generated layer.");
+contextApp.api.setCurrentOutfit(coldOutfit);
+const bansBeforeLayerRemoval = contextApp.api.getState().bannedCombos.length;
+assert.equal(contextApp.api.removeAutomaticLayer(), true);
+assert(!contextApp.api.getCurrentOutfit().items.some((entry) => entry.category === "layer"));
+assert.equal(contextApp.api.getState().bannedCombos.length, bansBeforeLayerRemoval, "Removing a layer must not create a ban.");
+assert.equal(contextApp.api.lastItemWornDate(contextLayer), null, "Removed layers must receive no recency credit.");
+assert.equal(contextApp.api.getRerollSession().automaticLayerSuppressed, true);
+for (let attempt = 0; attempt < 3; attempt += 1) {
+  const rerolledAfterRemoval = contextApp.api.pickOutfit("casual", "");
+  assert.equal(rerolledAfterRemoval.automaticLayerId, "", "Reroll must not silently restore a layer removed in the current generation session.");
+}
+const remainingTop = contextApp.api.getCurrentOutfit().items.find((entry) => entry.category === "top");
+assert(contextApp.api.swapChoiceReport(remainingTop).eligible.every((choice) => !choice.items.some((entry) => entry.category === "layer")), "Unrelated swaps must not restore a removed layer.");
+contextApp.api.logCurrentOutfit();
+const layerlessLog = contextApp.api.getState().history[0];
+assert(!layerlessLog.itemIds.includes(contextLayer.id), "Logged history must record only the garments actually worn.");
+assert.equal(layerlessLog.context.automaticLayerSuggested, true);
+assert.equal(layerlessLog.context.automaticLayerRemoved, true);
+assert.equal(contextApp.api.lastItemWornDate(contextLayer), null);
+assert(!JSON.stringify(layerlessLog).match(/latitude|longitude|providerUrl/i), "History context must not contain coordinates or provider URLs.");
+
+const midRoleTop = item("mid_role_top", "sweater", "Gray", {
+  occasions: ["casual"], warmth: "very_warm", layerRoles: ["mid"], rainProtection: "none", windProtection: "light"
+});
+const roleLayerApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [contextTop, contextBottom, contextShoes, midRoleTop, baseRoleOnlyLayer]
+}));
+roleLayerApp.api.setContextSession({
+  mode: "manual", manualTemperatureC: 4.4, manualCondition: "clear", adjustment: "same",
+  exposure: "outdoors", rainExpected: false, ignore: false
+});
+assert(!roleLayerApp.api.candidateItems({ key: "top", categories: ["top"] }, "casual").some((entry) => entry.id === midRoleTop.id), "A Mid-only top must not fill the Base slot.");
+let roleLayerOutfit = null;
+for (let attempt = 0; attempt < 8; attempt += 1) {
+  const candidate = roleLayerApp.api.pickOutfit("casual", "");
+  if (candidate.automaticLayerId === midRoleTop.id) {
+    roleLayerOutfit = candidate;
+    break;
+  }
+}
+assert(roleLayerOutfit, "A Mid-role top must appear in the finite reroll pool as an automatic layer.");
+assert(!roleLayerOutfit.error, roleLayerOutfit.error);
+assert.equal(roleLayerOutfit.automaticLayerId, midRoleTop.id, "Layer role, not garment category, must permit a Mid-role sweater as the automatic layer.");
+assert.equal(roleLayerOutfit.items.filter((entry) => entry.category === "top").length, 2);
+roleLayerApp.api.getState().wardrobe.push(contextLayer);
+roleLayerApp.api.setCurrentOutfit(roleLayerOutfit);
+const roleLayerSwaps = roleLayerApp.api.swapChoiceReport(midRoleTop);
+assert(roleLayerSwaps.eligible.some((choice) => choice.replacementId === contextLayer.id), "An automatic layer may swap across garment categories when the replacement has a valid role.");
+assert(roleLayerSwaps.eligible.every((choice) => {
+  const replacement = choice.items.find((entry) => entry.id === choice.replacementId);
+  return roleLayerApp.api.isAutomaticLayerCandidate(replacement);
+}), "Automatic-layer swap choices must expose only available Mid/Outer garments.");
+
+const blockedRoleState = Smart.setRelationship({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [contextTop, contextBottom, contextShoes, midRoleTop]
+}, contextTop.id, midRoleTop.id, "never", now);
+const blockedRoleApp = runApp(JSON.stringify(blockedRoleState));
+blockedRoleApp.api.setContextSession({ mode: "manual", manualTemperatureC: -20, manualCondition: "snow", exposure: "outdoors", ignore: false });
+const blockedRoleOutfit = blockedRoleApp.api.pickOutfit("casual", "");
+assert(!blockedRoleOutfit.error, "No suitable compatible layer must not block base outfit generation.");
+assert.equal(blockedRoleOutfit.automaticLayerId, "", "A Never pair rule must exclude a role-based automatic layer.");
+assert(blockedRoleOutfit.contextAssessment.shortfall > 1 && blockedRoleOutfit.contextAssessment.sufficient === false, "Severe conditions must report the remaining single-layer limitation honestly.");
+
+const warmApp = runApp(JSON.stringify({
+  ...Smart.createFreshState(now), setup: { completed: true, choice: "existing" },
+  wardrobe: [contextTop, contextBottom, contextShoes, contextLayer]
+}));
+warmApp.api.setContextSession({ mode: "manual", manualTemperatureC: 27, manualCondition: "clear", exposure: "outdoors", ignore: false });
+const warmOutfit = warmApp.api.pickOutfit("casual", "");
+assert(!warmOutfit.error);
+assert(!warmOutfit.items.some((entry) => entry.category === "layer"), "Warm conditions should not add an automatic layer.");
+warmApp.api.setContextSession({ ignore: true });
+const neutralOutfit = warmApp.api.pickOutfit("casual", "");
+assert(!neutralOutfit.error);
+assert.equal(neutralOutfit.context.source, "ignored");
+assert(!neutralOutfit.items.some((entry) => entry.category === "layer"), "Ignore Weather must restore weather-neutral generation.");
+
+async function verifyAsyncWeatherState() {
+  const cached = ContextEngine.normalizeProviderResponse({ current: {
+    temperature_2m: 12, apparent_temperature: 10, precipitation: 0, rain: 0, showers: 0,
+    snowfall: 0, weather_code: 2, wind_speed_10m: 12, is_day: 1, time: "2026-08-08T12:00"
+  } }, { fetchedAt: new Date().toISOString() });
+  const weatherState = Smart.createFreshState(now);
+  weatherState.setup = { completed: true, choice: "existing" };
+  weatherState.settings.weather.cached = cached;
+  const geolocation = { getCurrentPosition(success) { success({ coords: { latitude: 12.34567, longitude: 45.67891 } }); } };
+  const providerPayload = { current: {
+    temperature_2m: 14, apparent_temperature: 13, precipitation: 0.2, rain: 0.2, showers: 0,
+    snowfall: 0, weather_code: 61, wind_speed_10m: 18, is_day: 1, time: "2026-08-08T13:00"
+  } };
+
+  const offlineApp = runApp(JSON.stringify(weatherState), {
+    geolocation,
+    fetchImpl: async () => { throw new Error("offline"); }
+  });
+  assert.equal(offlineApp.api.currentEffectiveContext().source, "cached", "Fresh provider data loaded from storage must be labeled cached.");
+  assert.equal(await offlineApp.api.refreshWeather({ force: true, userInitiated: true }), false);
+  assert.deepEqual(offlineApp.api.getState().settings.weather.cached, cached, "A failed refresh must preserve the last valid cached context.");
+
+  const storageFailureApp = runApp(JSON.stringify(weatherState), {
+    geolocation,
+    fetchImpl: async () => ({ ok: true, json: async () => providerPayload }),
+    failSetItem: (key) => key === "fitRoulette.v1"
+  });
+  assert.equal(await storageFailureApp.api.refreshWeather({ force: true, userInitiated: true }), false);
+  assert.deepEqual(storageFailureApp.api.getState().settings.weather.cached, cached, "A weather storage failure must roll back the in-memory cache.");
+
+  const weatherApp = runApp(JSON.stringify(weatherState), {
+    geolocation,
+    fetchImpl: async () => ({ ok: true, json: async () => providerPayload })
+  });
+  assert.equal(await weatherApp.api.refreshWeather({ force: true, userInitiated: true }), true);
+  assert.equal(weatherApp.api.getState().settings.weather.automatic, true);
+  assert.equal(weatherApp.api.getState().settings.weather.cached.condition, "rain");
+  assert.equal(weatherApp.api.currentEffectiveContext().source, "current", "A successful in-session refresh must be labeled current.");
+  assert(!/latitude|longitude|accuracy|coordinates/i.test(JSON.stringify(weatherApp.api.getState().settings.weather.cached)));
+  const reloadedWeatherApp = runApp(weatherApp.storage.get("fitRoulette.v1"));
+  assert.equal(reloadedWeatherApp.api.currentEffectiveContext().source, "cached", "Reload must not represent persisted provider data as newly fetched.");
+  weatherApp.api.disableAutomaticWeather();
+  assert.equal(weatherApp.api.getState().settings.weather.automatic, false);
+  assert.equal(weatherApp.api.getState().settings.weather.cached, null);
+
+  const disableFailureState = JSON.parse(JSON.stringify(weatherState));
+  disableFailureState.settings.weather.automatic = true;
+  const disableFailureApp = runApp(JSON.stringify(disableFailureState), {
+    failSetItem: (key) => key === "fitRoulette.v1"
+  });
+  disableFailureApp.api.disableAutomaticWeather();
+  assert.equal(disableFailureApp.api.getState().settings.weather.automatic, true, "Disable must roll back if the updated state cannot be persisted.");
+  assert.deepEqual(disableFailureApp.api.getState().settings.weather.cached, cached);
+}
+
+verifyAsyncWeatherState().then(() => {
+  console.log(JSON.stringify({
+    ok: true,
+    migratedItems: migratedState.wardrobe.length,
+    recoveryCreated: migratedApp.storage.has(Smart.RECOVERY_KEY),
+    legacyImportRecoveryCreated: importedLegacyResult.recoveryCreated,
+    legacyImportFailureCases: 5,
+    existingRecoveryPreserved: existingRecovery.storage.get(Smart.RECOVERY_KEY) === existingRecoveryRaw,
+    editorTransactionalSave: true,
+    groupedRelationshipCandidates: largeCandidateApp.api.relationshipCandidates(fieldBottom.id).length,
+    structuredSearch: true,
+    optionalBeltRemoval: true,
+    optionalLayerRemoval: true,
+    weatherFailureRollback: true,
+    swapEligible: swapReport.eligible.length,
+    freshSetupShown: freshSetupWasShown
+  }));
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

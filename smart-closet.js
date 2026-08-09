@@ -1,12 +1,16 @@
 (function (root, factory) {
-  const api = factory();
+  const contextEngine = root?.FitRouletteContextEngine
+    || (typeof require === "function" ? require("./context-engine.js") : null);
+  const api = factory(contextEngine);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.FitRouletteSmartCloset = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (ContextEngine) {
   "use strict";
 
-  const SCHEMA_VERSION = 4;
-  const RECOVERY_KEY = "fitRoulette.v1.recovery.schema4";
+  const SCHEMA_VERSION = 5;
+  const RECOVERY_KEY = "fitRoulette.v1.recovery.schema5";
+  const LEGACY_RECOVERY_KEY = "fitRoulette.v1.recovery.schema4";
+  const RECOVERY_PREFIX = "fitRoulette.v1.recovery.schema5.import.";
 
   const CATEGORIES = {
     top: "Top",
@@ -20,7 +24,7 @@
 
   const CATEGORY_ORDER = ["top", "bottom", "shoes", "layer", "belt", "socks", "accessory"];
   const CATEGORY_ALIASES = { pants: "bottom", outerwear: "layer" };
-  const OCCASIONS = ["work", "friday", "casual", "date", "gym"];
+  const OCCASIONS = ["work", "friday", "casual", "date", "athletic", "gym"];
   const STATUSES = ["available", "unavailable", "archived"];
   const PREFERENCES = ["avoid", "neutral", "like", "favorite"];
   const PATTERNS = ["solid", "striped", "plaid", "graphic", "multicolored", "other"];
@@ -28,6 +32,8 @@
   const BOTTOM_LENGTHS = ["not_applicable", "short", "cropped", "full", "other", "unspecified"];
   const WARMTH_LEVELS = ["unspecified", "very_light", "light", "medium", "warm", "very_warm"];
   const RAIN_POLICIES = ["unspecified", "avoid", "okay", "preferred"];
+  const LAYER_ROLES = ["base", "mid", "outer"];
+  const PROTECTION_LEVELS = ["unspecified", "none", "light", "protected"];
   const REVIEW_STATUSES = ["reviewed", "needs_review"];
   const RELATIONSHIP_TYPES = ["prefer", "never"];
 
@@ -56,35 +62,35 @@
   };
 
   const SUBTYPE_TEMPLATES = {
-    polo: template("top", "polo", 3, ["work", "friday", "casual", "date"], { sleeveLength: "short" }),
-    "t-shirt": template("top", "t-shirt", 2, ["friday", "casual", "gym"], { sleeveLength: "short" }),
-    "button-down": template("top", "button-down", 4, ["work", "friday", "casual", "date"], { sleeveLength: "long" }),
-    sweater: template("top", "sweater", 3, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "warm" }),
-    tank: template("top", "tank", 1, ["casual", "gym"], { sleeveLength: "sleeveless", warmth: "very_light" }),
-    "athletic top": template("top", "athletic top", 1, ["casual", "gym"], { sleeveLength: "short", warmth: "very_light" }),
+    polo: template("top", "polo", 3, ["work", "friday", "casual", "date"], { sleeveLength: "short", warmth: "light", layerRoles: ["base"] }),
+    "t-shirt": template("top", "t-shirt", 2, ["friday", "casual", "athletic"], { sleeveLength: "short", warmth: "very_light", layerRoles: ["base"] }),
+    "button-down": template("top", "button-down", 4, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "light", layerRoles: ["base"] }),
+    sweater: template("top", "sweater", 3, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "warm", layerRoles: ["base", "mid"], windProtection: "light" }),
+    tank: template("top", "tank", 1, ["casual", "athletic"], { sleeveLength: "sleeveless", warmth: "very_light", layerRoles: ["base"] }),
+    "athletic top": template("top", "athletic top", 1, ["casual", "athletic"], { sleeveLength: "short", warmth: "very_light", layerRoles: ["base"] }),
     jeans: template("bottom", "jeans", 2, ["friday", "casual", "date"], { bottomLength: "full", beltMode: "optional" }),
     "dress pants": template("bottom", "dress pants", 4, ["work", "friday", "date"], { bottomLength: "full", beltMode: "optional" }),
     chinos: template("bottom", "chinos", 3, ["work", "friday", "casual", "date"], { bottomLength: "full", beltMode: "optional" }),
-    cargos: template("bottom", "cargos", 2, ["casual", "gym"], { bottomLength: "full", beltMode: "optional" }),
-    "athletic shorts": template("bottom", "athletic shorts", 1, ["casual", "gym"], { bottomLength: "short", beltMode: "none" }),
+    cargos: template("bottom", "cargos", 2, ["casual"], { bottomLength: "full", beltMode: "optional" }),
+    "athletic shorts": template("bottom", "athletic shorts", 1, ["casual", "athletic"], { bottomLength: "short", beltMode: "none", warmth: "very_light" }),
     "casual shorts": template("bottom", "casual shorts", 2, ["casual", "date"], { bottomLength: "short", beltMode: "optional" }),
-    "drawstring bottoms": template("bottom", "drawstring bottoms", 1, ["casual", "gym"], { bottomLength: "full", beltMode: "none" }),
-    "athletic pants": template("bottom", "athletic pants", 1, ["casual", "gym"], { bottomLength: "full", beltMode: "none" }),
+    "drawstring bottoms": template("bottom", "drawstring bottoms", 1, ["casual", "athletic"], { bottomLength: "full", beltMode: "none" }),
+    "athletic pants": template("bottom", "athletic pants", 1, ["casual", "athletic"], { bottomLength: "full", beltMode: "none" }),
     "dress shoes": template("shoes", "dress shoes", 5, ["work", "friday", "date"], { rainPolicy: "avoid" }),
-    sneakers: template("shoes", "sneakers", 2, ["friday", "casual", "gym"]),
-    "athletic/running shoes": template("shoes", "athletic/running shoes", 1, ["casual", "gym"], { rainPolicy: "okay" }),
+    sneakers: template("shoes", "sneakers", 2, ["friday", "casual", "athletic"]),
+    "athletic/running shoes": template("shoes", "athletic/running shoes", 1, ["casual", "athletic"], { rainPolicy: "okay" }),
     boots: template("shoes", "boots", 3, ["friday", "casual", "date"], { warmth: "medium", rainPolicy: "okay" }),
     sandals: template("shoes", "sandals", 1, ["casual"], { warmth: "very_light", rainPolicy: "okay" }),
-    jacket: template("layer", "jacket", 3, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "medium" }),
-    hoodie: template("layer", "hoodie", 2, ["friday", "casual", "gym"], { sleeveLength: "long", warmth: "warm" }),
-    flannel: template("layer", "flannel", 2, ["friday", "casual", "date"], { sleeveLength: "long", warmth: "light", pattern: "plaid" }),
-    overshirt: template("layer", "overshirt", 3, ["friday", "casual", "date"], { sleeveLength: "long", warmth: "light" }),
-    coat: template("layer", "coat", 4, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "very_warm" }),
+    jacket: template("layer", "jacket", 3, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "medium", layerRoles: ["outer"], rainProtection: "light", windProtection: "light" }),
+    hoodie: template("layer", "hoodie", 2, ["friday", "casual", "athletic"], { sleeveLength: "long", warmth: "warm", layerRoles: ["mid", "outer"], rainProtection: "none", windProtection: "light" }),
+    flannel: template("layer", "flannel", 2, ["friday", "casual", "date"], { sleeveLength: "long", warmth: "light", pattern: "plaid", layerRoles: ["mid"], rainProtection: "none", windProtection: "none" }),
+    overshirt: template("layer", "overshirt", 3, ["friday", "casual", "date"], { sleeveLength: "long", warmth: "light", layerRoles: ["mid", "outer"], rainProtection: "none", windProtection: "light" }),
+    coat: template("layer", "coat", 4, ["work", "friday", "casual", "date"], { sleeveLength: "long", warmth: "very_warm", layerRoles: ["outer"], rainProtection: "light", windProtection: "protected" }),
     "dress belt": template("belt", "dress belt", 4, ["work", "friday", "date"]),
     "casual belt": template("belt", "casual belt", 2, ["friday", "casual", "date"]),
     "dress socks": template("socks", "dress socks", 4, ["work", "friday", "date"]),
     "casual socks": template("socks", "casual socks", 2, ["friday", "casual", "date"]),
-    "athletic socks": template("socks", "athletic socks", 1, ["casual", "gym"])
+    "athletic socks": template("socks", "athletic socks", 1, ["casual", "athletic"])
   };
 
   function template(category, subtype, formality, occasions, overrides) {
@@ -98,6 +104,9 @@
       bottomLength: category === "bottom" ? "unspecified" : "not_applicable",
       warmth: "unspecified",
       rainPolicy: "unspecified",
+      layerRoles: category === "top" ? ["base"] : [],
+      rainProtection: ["top", "layer"].includes(category) ? "unspecified" : "none",
+      windProtection: ["top", "layer"].includes(category) ? "unspecified" : "none",
       beltMode: category === "bottom" ? "optional" : "",
       ...(overrides || {})
     };
@@ -132,7 +141,8 @@
     const token = normalizeToken(value).replace(/[^a-z0-9]+/g, "");
     const aliases = {
       work: "work", office: "work", workoffice: "work", friday: "friday", fridayjeans: "friday",
-      casual: "casual", date: "date", gym: "gym", errands: "gym", gymerrands: "gym"
+      casual: "casual", date: "date", athletic: "athletic", exercise: "athletic", training: "athletic",
+      gym: "gym", errands: "casual", gymerrands: "gym"
     };
     return aliases[token] || "";
   }
@@ -218,6 +228,35 @@
     return fallback;
   }
 
+  function normalizeLayerRoles(value, category, subtype, defaults, schemaVersion, reasons, unrecognizedStructured) {
+    if (!["top", "layer"].includes(category)) return [];
+    const provided = Array.isArray(value) ? value.map(normalizeToken) : [];
+    const invalid = provided.filter((role) => !LAYER_ROLES.includes(role));
+    if (invalid.length || (value !== undefined && !Array.isArray(value))) {
+      unrecognizedStructured.layerRoles = deepClone(value);
+      reasons.push("Confirm layer roles; an unfamiliar saved value was preserved.");
+    }
+    const valid = [...new Set(provided.filter((role) => LAYER_ROLES.includes(role)))];
+    let roles = valid.length ? valid : [...(defaults.layerRoles || [])];
+    if (!roles.length) reasons.push("Choose at least one eligible layer role if this garment participates in layering.");
+    if (schemaVersion < 5 && (category === "layer" || subtype === "sweater" || subtype === "other")) {
+      reasons.push("Confirm whether this garment works as a Base, Mid, or Outer layer.");
+    }
+    return roles;
+  }
+
+  function normalizeProtection(value, category, fallback, field, schemaVersion, reasons, unrecognizedStructured) {
+    if (!["top", "layer"].includes(category)) return "none";
+    if (PROTECTION_LEVELS.includes(value)) return value;
+    if (value !== undefined) {
+      unrecognizedStructured[field] = deepClone(value);
+      reasons.push(`Confirm ${field === "rainProtection" ? "rain" : "wind"} protection; an unfamiliar saved value was preserved.`);
+    } else if (schemaVersion < 5 && category === "layer") {
+      reasons.push(`Confirm this layer's ${field === "rainProtection" ? "rain" : "wind"} protection.`);
+    }
+    return PROTECTION_LEVELS.includes(fallback) ? fallback : "unspecified";
+  }
+
   function migrateItem(rawItem, schemaVersion, now) {
     if (!rawItem || typeof rawItem !== "object" || Array.isArray(rawItem)) {
       return { unresolved: deepClone(rawItem), reason: "Wardrobe record is not an object." };
@@ -243,13 +282,16 @@
       unrecognizedStructured.extraColors = legacyColors.slice(2);
     }
     const rawOccasions = uniqueStrings(item.occasions);
-    const occasions = rawOccasions.map(normalizeOccasion).filter(Boolean);
+    const occasions = [...new Set(rawOccasions.map(normalizeOccasion).filter(Boolean))];
     const unrecognizedOccasions = rawOccasions.filter((value) => !normalizeOccasion(value));
     if (unrecognizedOccasions.length) {
       reasons.push("Confirm unfamiliar occasion values; they remain preserved for review.");
       unrecognizedStructured.occasions = unrecognizedOccasions;
     }
     if (!occasions.length) reasons.push("Choose at least one eligible occasion.");
+    if (schemaVersion < 5 && occasions.includes("gym")) {
+      reasons.push("Legacy Gym / Errands is ambiguous; choose Athletic for exercise or Casual for errands.");
+    }
     const templateDefaults = SUBTYPE_TEMPLATES[subtype] || template(category, subtype, 3, ["casual"]);
     const legacyMatching = item.legacyMatching && typeof item.legacyMatching === "object" ? deepClone(item.legacyMatching) : {
       tags: uniqueStrings(item.tags),
@@ -271,6 +313,9 @@
     if (item.bottomLength !== undefined && !BOTTOM_LENGTHS.includes(item.bottomLength)) unrecognizedStructured.bottomLength = deepClone(item.bottomLength);
     if (item.warmth !== undefined && !WARMTH_LEVELS.includes(item.warmth)) unrecognizedStructured.warmth = deepClone(item.warmth);
     if (item.rainPolicy !== undefined && !RAIN_POLICIES.includes(item.rainPolicy)) unrecognizedStructured.rainPolicy = deepClone(item.rainPolicy);
+    if (item.layerRoles !== undefined && !Array.isArray(item.layerRoles)) unrecognizedStructured.layerRoles = deepClone(item.layerRoles);
+    if (item.rainProtection !== undefined && !PROTECTION_LEVELS.includes(item.rainProtection)) unrecognizedStructured.rainProtection = deepClone(item.rainProtection);
+    if (item.windProtection !== undefined && !PROTECTION_LEVELS.includes(item.windProtection)) unrecognizedStructured.windProtection = deepClone(item.windProtection);
     if (item.beltMode !== undefined && category === "bottom" && !["required", "optional", "none"].includes(item.beltMode)) unrecognizedStructured.beltMode = deepClone(item.beltMode);
     const rawFormality = Number(item.formality);
     const maximumFormality = schemaVersion < 4 ? 10 : 5;
@@ -301,13 +346,16 @@
       occasions: occasions.length ? occasions : [...templateDefaults.occasions],
       warmth: enumOr(item.warmth, WARMTH_LEVELS, legacyWarmth(item.warmthLevel) || templateDefaults.warmth, reasons, item.warmth !== undefined ? "Confirm warmth; an unfamiliar saved value was preserved." : ""),
       rainPolicy: enumOr(item.rainPolicy, RAIN_POLICIES, legacyRainPolicy(item.rainSafe) || templateDefaults.rainPolicy, reasons, item.rainPolicy !== undefined ? "Confirm rain policy; an unfamiliar saved value was preserved." : ""),
+      layerRoles: normalizeLayerRoles(item.layerRoles, category, subtype, templateDefaults, schemaVersion, reasons, unrecognizedStructured),
+      rainProtection: normalizeProtection(item.rainProtection, category, templateDefaults.rainProtection, "rainProtection", schemaVersion, reasons, unrecognizedStructured),
+      windProtection: normalizeProtection(item.windProtection, category, templateDefaults.windProtection, "windProtection", schemaVersion, reasons, unrecognizedStructured),
       status: normalizeStatus(item, schemaVersion, reasons),
       preference: enumOr(item.preference, PREFERENCES, "neutral", reasons),
       labels: uniqueStrings(item.labels || item.tags),
       review: {
         ...deepClone(existingReview),
         status: reasons.length ? "needs_review" : (explicitReviewStatus || "reviewed"),
-        reasons: uniqueStrings(existingReview.reasons || reasons),
+        reasons: uniqueStrings([...(Array.isArray(existingReview.reasons) ? existingReview.reasons : []), ...reasons]),
         reviewedAt: stringOr(existingReview.reviewedAt, "")
       },
       legacyFallback: explicitLegacyFallback === null ? Boolean(migrated && hasLegacyMatcher) : explicitLegacyFallback,
@@ -345,7 +393,8 @@
       itemIds,
       itemSnapshots: Array.isArray(record.itemSnapshots) ? deepClone(record.itemSnapshots) : [],
       source: record.source === "manual" ? "manual" : "generated",
-      note: stringOr(record.note, "")
+      note: stringOr(record.note, ""),
+      context: ContextEngine?.normalizeHistoryContext(record.context) || null
     };
   }
 
@@ -378,16 +427,28 @@
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" && !Array.isArray(settings) ? deepClone(settings) : {};
     const weather = source.weather && typeof source.weather === "object" ? source.weather : {};
+    const { weather: ignoredWeather, ...retained } = source;
+    const legacyTemperature = nullableNumber(weather.temperature, -30, 130);
+    const legacyCondition = ["sunny", "cloudy", "rain", "snow", "windy"].includes(weather.condition) ? weather.condition : "sunny";
     return {
-      ...source,
+      ...retained,
       theme: ["system", "light", "dark"].includes(source.theme) ? source.theme : "system",
       afterLogging: ["confirm_keep", "keep", "clear"].includes(source.afterLogging) ? source.afterLogging : "confirm_keep",
       defaultOccasion: normalizeOccasion(source.defaultOccasion) || "work",
       weather: {
-        ...weather,
-        enabled: weather.enabled === true,
-        temperature: nullableNumber(weather.temperature, -30, 130),
-        condition: ["sunny", "cloudy", "rain", "snow", "windy"].includes(weather.condition) ? weather.condition : "sunny"
+        automatic: weather.automatic === true,
+        unit: ["f", "c"].includes(weather.unit) ? weather.unit : "f",
+        cached: ContextEngine?.normalizeCachedWeather(weather.cached) || null,
+        legacyManual: weather.legacyManual && typeof weather.legacyManual === "object"
+          ? {
+            enabled: weather.legacyManual.enabled === true,
+            temperature: nullableNumber(weather.legacyManual.temperature, -30, 130),
+            condition: ["sunny", "cloudy", "rain", "snow", "windy"].includes(weather.legacyManual.condition)
+              ? weather.legacyManual.condition : "sunny"
+          }
+          : (weather.enabled === true || legacyTemperature !== null
+            ? { enabled: weather.enabled === true, temperature: legacyTemperature, condition: legacyCondition }
+            : null)
       }
     };
   }
@@ -445,6 +506,7 @@
 
   function migrateAndValidate(raw, options) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw migrationError("INVALID_ROOT", "Backup root must be an object.");
+    assertNoSensitiveLocation(raw);
     const now = stringOr(options?.now, new Date().toISOString());
     const source = deepClone(raw);
     const declaredSchema = source.schemaVersion ?? source.version;
@@ -549,7 +611,8 @@
   }
 
   function validateState(state) {
-    if (state.schemaVersion !== SCHEMA_VERSION) throw migrationError("INVALID_SCHEMA", "Schema version is not 4.");
+    assertNoSensitiveLocation(state);
+    if (state.schemaVersion !== SCHEMA_VERSION) throw migrationError("INVALID_SCHEMA", "Schema version is not 5.");
     for (const key of ["wardrobe", "history", "bannedCombos", "feedback", "pairRelationships"]) {
       if (!Array.isArray(state[key])) throw migrationError("INVALID_COLLECTION", `${key} must be an array.`);
     }
@@ -564,8 +627,15 @@
         throw migrationError("INVALID_ITEM_ENUM", `Invalid structured fields for item: ${item.id}`);
       }
       if (!SLEEVE_LENGTHS.includes(item.sleeveLength) || !BOTTOM_LENGTHS.includes(item.bottomLength)
-        || !WARMTH_LEVELS.includes(item.warmth) || !RAIN_POLICIES.includes(item.rainPolicy)) {
+        || !WARMTH_LEVELS.includes(item.warmth) || !RAIN_POLICIES.includes(item.rainPolicy)
+        || !Array.isArray(item.layerRoles) || !item.layerRoles.every((role) => LAYER_ROLES.includes(role))
+        || new Set(item.layerRoles).size !== item.layerRoles.length
+        || !PROTECTION_LEVELS.includes(item.rainProtection) || !PROTECTION_LEVELS.includes(item.windProtection)) {
         throw migrationError("INVALID_ITEM_ENUM", `Invalid matching details for item: ${item.id}`);
+      }
+      if (!["top", "layer"].includes(item.category)
+        && (item.layerRoles.length || item.rainProtection !== "none" || item.windProtection !== "none")) {
+        throw migrationError("INVALID_LAYER_DEFAULT", `Non-layer garment has unsafe layer properties: ${item.id}`);
       }
       if (!Number.isInteger(item.formality) || item.formality < 1 || item.formality > 5) {
         throw migrationError("INVALID_FORMALITY", `Invalid formality for item: ${item.id}`);
@@ -579,6 +649,13 @@
       if (!item.review || !REVIEW_STATUSES.includes(item.review.status) || !Array.isArray(item.review.reasons)
         || typeof item.legacyFallback !== "boolean" || !item.legacyMatching || typeof item.legacyMatching !== "object") {
         throw migrationError("INVALID_REVIEW_STATE", `Invalid review or legacy fallback state for item: ${item.id}`);
+      }
+    });
+    const normalizedCached = ContextEngine?.normalizeCachedWeather(state.settings?.weather?.cached);
+    if (state.settings?.weather?.cached && !normalizedCached) throw migrationError("INVALID_WEATHER_CACHE", "Cached weather context is invalid.");
+    state.history.forEach((record) => {
+      if (record.context !== null && !ContextEngine?.normalizeHistoryContext(record.context)) {
+        throw migrationError("INVALID_HISTORY_CONTEXT", `Invalid history context: ${record.id}`);
       }
     });
     const relationshipKeys = new Set();
@@ -605,7 +682,7 @@
     return migrateAndValidate({
       schemaVersion: SCHEMA_VERSION,
       wardrobe: [], history: [], bannedCombos: [], feedback: [], pairRelationships: [],
-      settings: { theme: "system", afterLogging: "confirm_keep", defaultOccasion: "work", weather: { enabled: false, temperature: null, condition: "sunny" } },
+      settings: { theme: "system", afterLogging: "confirm_keep", defaultOccasion: "work", weather: { automatic: false, unit: "f", cached: null, legacyManual: null } },
       setup: { completed: false, choice: "" },
       createdAt: timestamp
     }, { now: timestamp }).state;
@@ -617,6 +694,7 @@
       category: "top", subtype: "other", primaryColor: "", secondaryColor: "", pattern: "solid",
       sleeveLength: "unspecified", bottomLength: "not_applicable", formality: 3, occasions: ["casual"],
       warmth: "unspecified", rainPolicy: "unspecified", status: "available", preference: "neutral", labels: [],
+      layerRoles: ["base"], rainProtection: "unspecified", windProtection: "unspecified",
       review: { status: "reviewed", reasons: [], reviewedAt: now }, legacyFallback: false, legacyMatching: {},
       createdAt: now, updatedAt: now, ...deepClone(raw || {})
     }, SCHEMA_VERSION, now);
@@ -639,7 +717,15 @@
     const categoryA = normalizeCategory(itemA.category);
     const categoryB = normalizeCategory(itemB.category);
     if (!CATEGORIES[categoryA] || !CATEGORIES[categoryB]) return false;
-    return categoryA !== categoryB;
+    if (categoryA !== categoryB) return true;
+    if (categoryA !== "top") return false;
+    const rolesA = Array.isArray(itemA.layerRoles) ? itemA.layerRoles : [];
+    const rolesB = Array.isArray(itemB.layerRoles) ? itemB.layerRoles : [];
+    const aCanBase = rolesA.includes("base");
+    const bCanBase = rolesB.includes("base");
+    const aCanLayer = rolesA.some((role) => ["mid", "outer"].includes(role));
+    const bCanLayer = rolesB.some((role) => ["mid", "outer"].includes(role));
+    return (aCanBase && bCanLayer) || (bCanBase && aCanLayer);
   }
 
   function setRelationship(state, itemA, itemB, type, now) {
@@ -659,10 +745,6 @@
     const result = { valid: true, score: 0, reasons: [], hardReason: "" };
     if (!items.every((item) => item.occasions.includes(occasionId))) return hardFailure(result, "One or more items exclude this occasion.");
     if (!items.every((item) => item.status === "available")) return hardFailure(result, "One or more items are not available.");
-    if (settings.weather?.enabled && ["rain", "snow"].includes(settings.weather.condition)) {
-      const rainConflict = items.find((item) => item.rainPolicy === "avoid");
-      if (rainConflict) return hardFailure(result, `${rainConflict.name} is set to avoid rain or snow.`);
-    }
     for (let i = 0; i < items.length; i += 1) {
       for (let j = i + 1; j < items.length; j += 1) {
         if (!canWearTogether(items[i], items[j])) continue;
@@ -760,7 +842,7 @@
     const top = items.find((item) => item.category === "top");
     const bottom = items.find((item) => item.category === "bottom");
     if (!top || !bottom) return 0;
-    if (["casual", "gym"].includes(occasionId) && ["sleeveless", "short"].includes(top.sleeveLength) && bottom.bottomLength === "short") return 3;
+    if (["casual", "athletic", "gym"].includes(occasionId) && ["sleeveless", "short"].includes(top.sleeveLength) && bottom.bottomLength === "short") return 3;
     if (top.sleeveLength === "long" && bottom.bottomLength === "short") {
       reasons.push("Combines long sleeves with short bottoms.");
       return -3;
@@ -798,9 +880,13 @@
   }
 
   function layerCompatibility(items, reasons) {
-    const layer = items.find((item) => item.category === "layer");
+    const tops = items.filter((item) => item.category === "top");
+    const roleBasedTop = tops.length > 1
+      ? tops.slice(1).find((item) => (item.layerRoles || []).some((role) => ["mid", "outer"].includes(role)))
+      : null;
+    const layer = items.find((item) => item.category === "layer") || roleBasedTop;
     if (!layer) return 0;
-    const base = items.filter((item) => item.category !== "layer");
+    const base = items.filter((item) => item.id !== layer.id);
     const spread = base.length ? Math.max(...base.map((item) => Math.abs(item.formality - layer.formality))) : 0;
     if (spread <= 1) return 8;
     if (spread === 2) return -5;
@@ -850,6 +936,24 @@
     return Math.max(min, Math.min(max, Math.round(number)));
   }
 
+  function assertNoSensitiveLocation(value, path = "root", seen = new Set()) {
+    if (!value || typeof value !== "object") {
+      if (typeof value === "string" && /[?&](latitude|longitude)=/i.test(value)) {
+        throw migrationError("PRIVACY_VIOLATION", `Coordinate-bearing URL found at ${path}.`);
+      }
+      return true;
+    }
+    if (seen.has(value)) return true;
+    seen.add(value);
+    for (const [key, child] of Object.entries(value)) {
+      if (["latitude", "longitude", "accuracy", "coordinates", "locationhistory", "providerurl", "weatherurl"].includes(normalizeToken(key).replace(/[^a-z]/g, ""))) {
+        throw migrationError("PRIVACY_VIOLATION", `Sensitive location field found at ${path}.${key}.`);
+      }
+      assertNoSensitiveLocation(child, `${path}.${key}`, seen);
+    }
+    return true;
+  }
+
   function stableToken(seed, value) {
     const text = `${seed}|${value || "record"}`;
     let hash = 2166136261;
@@ -873,6 +977,8 @@
   return {
     SCHEMA_VERSION,
     RECOVERY_KEY,
+    LEGACY_RECOVERY_KEY,
+    RECOVERY_PREFIX,
     CATEGORIES,
     CATEGORY_ORDER,
     COLOR_PALETTE,
@@ -884,6 +990,8 @@
     BOTTOM_LENGTHS,
     WARMTH_LEVELS,
     RAIN_POLICIES,
+    LAYER_ROLES,
+    PROTECTION_LEVELS,
     STATUSES,
     PREFERENCES,
     migrateAndValidate,
@@ -900,6 +1008,7 @@
     normalizeCategory,
     normalizeToken,
     uniqueStrings,
-    titleCase
+    titleCase,
+    assertNoSensitiveLocation
   };
 });

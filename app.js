@@ -2,11 +2,15 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.4.2";
+  const APP_VERSION = "1.5.0";
+  const ContextEngine = window.FitRouletteContextEngine;
+  if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
   if (!SmartCloset) throw new Error("Smart Closet module failed to load.");
   const SCHEMA_VERSION = SmartCloset.SCHEMA_VERSION;
   const RECOVERY_KEY = SmartCloset.RECOVERY_KEY;
+  const LEGACY_RECOVERY_KEY = SmartCloset.LEGACY_RECOVERY_KEY;
+  const RECOVERY_PREFIX = SmartCloset.RECOVERY_PREFIX;
 
   const CATEGORIES = SmartCloset.CATEGORIES;
 
@@ -74,7 +78,18 @@
     },
     gym: {
       id: "gym",
-      label: "Gym/Errands",
+      label: "Legacy Gym / Errands",
+      targetFormality: 1,
+      formalityGap: 6,
+      slots: [
+        { key: "top", label: "Top", categories: ["top"] },
+        { key: "bottom", label: "Bottom/Shorts", categories: ["bottom"] },
+        { key: "shoes", label: "Shoes", categories: ["shoes"] }
+      ]
+    },
+    athletic: {
+      id: "athletic",
+      label: "Athletic",
       targetFormality: 1,
       formalityGap: 6,
       slots: [
@@ -85,10 +100,9 @@
     }
   };
 
-  const OCCASION_ORDER = ["work", "friday", "casual", "date", "gym"];
+  const OCCASION_ORDER = ["work", "friday", "casual", "date", "athletic"];
   const THEME_VALUES = ["system", "light", "dark"];
   const AFTER_LOGGING_VALUES = ["confirm_keep", "keep", "clear"];
-  const WEATHER_CONDITIONS = ["sunny", "cloudy", "rain", "snow", "windy"];
   const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = SmartCloset.COLOR_PALETTE;
   const CUSTOM_COLOR_VALUE = "__custom__";
@@ -119,6 +133,15 @@
   let itemEditorBaseline = "";
   let itemEditorOriginalColors = { primary: "", secondary: "" };
   let rerollSession = createRerollSession();
+  let contextSession = createContextSession();
+  let weatherBusy = false;
+  let weatherMessage = "";
+  let weatherSessionFetchedAt = "";
+  let locationPermission = "unknown";
+  const weatherClient = ContextEngine.createWeatherClient({
+    fetchImpl: typeof window.fetch === "function" ? window.fetch.bind(window) : null,
+    geolocation: navigator.geolocation
+  });
   let closetFilters = {
     search: "",
     category: "all",
@@ -137,6 +160,7 @@
     bindEvents();
     renderAll();
     registerServiceWorker();
+    initializeAutomaticWeather();
   }
 
   function bindEvents() {
@@ -169,9 +193,18 @@
     $("#feedbackForm").addEventListener("change", updateFeedbackOtherVisibility);
     $("#dismissFeedbackBtn").addEventListener("click", finishBanFeedback);
     $("#skipFeedbackBtn").addEventListener("click", finishBanFeedback);
-    $("#useWeather").addEventListener("change", saveWeatherSettings);
-    $("#weatherTemperature").addEventListener("change", saveWeatherSettings);
-    $("#weatherCondition").addEventListener("change", saveWeatherSettings);
+    $("#useCurrentLocationBtn").addEventListener("click", () => refreshWeather({ force: true, userInitiated: true }));
+    $("#refreshWeatherBtn").addEventListener("click", () => refreshWeather({ force: true, userInitiated: true }));
+    $("#disableWeatherBtn").addEventListener("click", disableAutomaticWeather);
+    $("#contextMode").addEventListener("change", handleContextControlChange);
+    $("#acceptStaleWeather").addEventListener("change", handleContextControlChange);
+    $("#manualTemperature").addEventListener("input", handleContextControlChange);
+    $("#manualCondition").addEventListener("change", handleContextControlChange);
+    $("#temperatureUnit").addEventListener("change", changeTemperatureUnit);
+    $("#feelsAdjustment").addEventListener("change", handleContextControlChange);
+    $("#contextExposure").addEventListener("change", handleContextControlChange);
+    $("#expectRain").addEventListener("change", handleContextControlChange);
+    $("#ignoreWeather").addEventListener("change", handleContextControlChange);
     $("#occasionSelect").addEventListener("change", handleGenerationContextChange);
     $("#buildAroundCategorySelect").addEventListener("change", handleBuildAroundCategoryChange);
     $("#buildAroundSelect").addEventListener("change", handleGenerationContextChange);
@@ -198,7 +231,7 @@
     $("#historyList").addEventListener("click", handleHistoryAction);
 
     $("#exportBtn").addEventListener("click", exportBackup);
-    $("#exportRecoveryBtn").addEventListener("click", exportRecoveryPayload);
+    $("#recoveryDownloads").addEventListener("click", handleRecoveryDownload);
     $("#importBtn").addEventListener("click", () => $("#importFile").click());
     $("#importFile").addEventListener("change", importBackup);
     $("#resetDemoBtn").addEventListener("click", resetDemoData);
@@ -231,10 +264,7 @@
   }
 
   function renderStaticOptions() {
-    $("#occasionSelect").innerHTML = OCCASION_ORDER.map((id) => {
-      const occasion = OCCASIONS[id];
-      return `<option value="${occasion.id}">${escapeHtml(occasion.label)}</option>`;
-    }).join("");
+    renderGenerateOccasionOptions();
 
     const categoryOptions = CATEGORY_ORDER.map((id) => {
       return `<option value="${id}">${escapeHtml(CATEGORIES[id])}</option>`;
@@ -244,15 +274,7 @@
     $("#closetCategory").innerHTML = `<option value="all">All categories</option>${categoryOptions}`;
     renderSubtypeOptions();
 
-    $("#itemOccasions").innerHTML = OCCASION_ORDER.map((id) => {
-      const occasion = OCCASIONS[id];
-      return `
-        <label class="check-pill">
-          <input type="checkbox" name="itemOccasion" value="${occasion.id}">
-          <span>${escapeHtml(occasion.label)}</span>
-        </label>
-      `;
-    }).join("");
+    renderItemOccasionOptions(false);
 
     const quickTemplates = ["polo", "t-shirt", "button-down", "sweater", "jeans", "dress pants", "chinos", "cargos", "athletic shorts", "sneakers", "athletic/running shoes", "dress shoes", "boots", "jacket", "hoodie"];
     $("#templateChips").innerHTML = quickTemplates.map((id) => {
@@ -270,14 +292,15 @@
     $("#itemBottomLength").innerHTML = SmartCloset.BOTTOM_LENGTHS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
     $("#itemWarmth").innerHTML = SmartCloset.WARMTH_LEVELS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
     $("#itemRainPolicy").innerHTML = SmartCloset.RAIN_POLICIES.map((value) => `<option value="${value}">${escapeHtml(value === "avoid" ? "Avoid rain / snow" : SmartCloset.titleCase(value))}</option>`).join("");
+    const protectionOptions = SmartCloset.PROTECTION_LEVELS.map((value) => `<option value="${value}">${escapeHtml(value === "protected" ? "Protective" : SmartCloset.titleCase(value))}</option>`).join("");
+    $("#itemRainProtection").innerHTML = protectionOptions;
+    $("#itemWindProtection").innerHTML = protectionOptions;
 
     $("#manualLogOccasion").innerHTML = OCCASION_ORDER.map((id) => {
       return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
     }).join("");
 
-    $("#defaultOccasionSelect").innerHTML = OCCASION_ORDER.map((id) => {
-      return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
-    }).join("");
+    renderDefaultOccasionOptions();
 
     $("#feedbackChoices").innerHTML = FEEDBACK_REASONS.map(([value, label]) => {
       return `
@@ -290,6 +313,7 @@
   }
 
   function renderAll() {
+    renderGenerateOccasionOptions();
     renderBuildAroundOptions();
     renderLabelSuggestions();
     renderDataSafetyNotice();
@@ -311,10 +335,46 @@
     $("#itemSubtype").value = values.includes(selectedValue) ? selectedValue : values[0];
     $("#sleeveLengthField").hidden = !["top", "layer"].includes(category);
     $("#bottomLengthField").hidden = category !== "bottom";
+    renderLayerControls();
+  }
+
+  function renderItemOccasionOptions(includeLegacy) {
+    const ids = includeLegacy ? [...OCCASION_ORDER, "gym"] : OCCASION_ORDER;
+    $("#itemOccasions").innerHTML = ids.map((id) => {
+      const occasion = OCCASIONS[id];
+      return `
+        <label class="check-pill ${id === "gym" ? "legacy-occasion" : ""}">
+          <input type="checkbox" name="itemOccasion" value="${occasion.id}">
+          <span>${escapeHtml(occasion.label)}${id === "gym" ? " (stored; choose Athletic or Casual when known)" : ""}</span>
+        </label>
+      `;
+    }).join("");
+  }
+
+  function renderDefaultOccasionOptions() {
+    const includeLegacy = appState.settings.defaultOccasion === "gym";
+    const ids = includeLegacy ? [...OCCASION_ORDER, "gym"] : OCCASION_ORDER;
+    $("#defaultOccasionSelect").innerHTML = ids.map((id) => `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`).join("");
+  }
+
+  function renderGenerateOccasionOptions() {
+    const select = $("#occasionSelect");
+    const previous = select.value;
+    const includeLegacy = appState.wardrobe.some((item) => item.occasions.includes("gym"))
+      || appState.history.some((record) => record.occasion === "gym")
+      || appState.settings.defaultOccasion === "gym";
+    const ids = includeLegacy ? [...OCCASION_ORDER, "gym"] : OCCASION_ORDER;
+    select.innerHTML = ids.map((id) => {
+      const occasion = OCCASIONS[id];
+      const suffix = id === "gym" ? " (legacy closet only)" : "";
+      return `<option value="${occasion.id}">${escapeHtml(occasion.label + suffix)}</option>`;
+    }).join("");
+    select.value = ids.includes(previous) ? previous : (ids.includes(appState.settings.defaultOccasion) ? appState.settings.defaultOccasion : "work");
   }
 
   function initializeGenerateOccasion() {
-    $("#occasionSelect").value = validOccasion(appState.settings.defaultOccasion);
+    const saved = validOccasion(appState.settings.defaultOccasion);
+    $("#occasionSelect").value = OCCASION_ORDER.includes(saved) || (saved === "gym" && $("#occasionSelect").innerHTML.includes('value="gym"')) ? saved : "work";
   }
 
   function setActiveScreen(screenName) {
@@ -340,12 +400,18 @@
       raw = JSON.parse(saved);
     } catch (error) {
       try {
-        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved);
+        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved).created;
       } catch (recoveryError) {
         console.error(recoveryError);
         return loadFailureState(recoveryError, "Saved closet data is malformed and a recovery copy could not be created. The original data remains untouched.");
       }
       return loadFailureState(error, "Saved closet data is malformed. The original data is untouched and editing is locked until a valid backup is imported.");
+    }
+
+    try {
+      SmartCloset.assertNoSensitiveLocation(raw);
+    } catch (error) {
+      return loadFailureState(error, "Saved data contains a prohibited location field. The primary value remains untouched and editing is locked.");
     }
 
     const incomingVersion = Number(raw?.schemaVersion ?? raw?.version ?? 1);
@@ -358,7 +424,7 @@
 
     try {
       if (!Number.isFinite(incomingVersion) || incomingVersion < SCHEMA_VERSION) {
-        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved);
+        migrationInfo.recoveryCreated = preserveRecoveryPayload(saved).created;
       }
       const result = SmartCloset.migrateAndValidate(raw);
       if (result.migrated) {
@@ -372,11 +438,18 @@
     }
   }
 
-  function preserveRecoveryPayload(payload) {
+  function preserveRecoveryPayload(payload, options = {}) {
     try {
-      if (localStorage.getItem(RECOVERY_KEY) !== null) return false;
-      localStorage.setItem(RECOVERY_KEY, payload);
-      return true;
+      const existing = localStorage.getItem(RECOVERY_KEY);
+      if (existing === payload) return { created: false, key: RECOVERY_KEY, retained: true };
+      if (existing === null) {
+        localStorage.setItem(RECOVERY_KEY, payload);
+        return { created: true, key: RECOVERY_KEY, retained: true };
+      }
+      if (options.allowAdditional !== true) return { created: false, key: RECOVERY_KEY, retained: false };
+      const key = `${RECOVERY_PREFIX}${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+      localStorage.setItem(key, payload);
+      return { created: true, key, retained: true };
     } catch (error) {
       console.error(error);
       throw Object.assign(new Error("Could not create the required recovery copy."), { code: "RECOVERY_WRITE_FAILED" });
@@ -425,9 +498,10 @@
       afterLogging,
       defaultOccasion,
       weather: {
-        enabled: weather.enabled === true,
-        temperature: nullableNumber(weather.temperature, -30, 130),
-        condition: WEATHER_CONDITIONS.includes(weather.condition) ? weather.condition : "sunny"
+        automatic: weather.automatic === true,
+        unit: ContextEngine.UNITS.includes(weather.unit) ? weather.unit : "f",
+        cached: ContextEngine.normalizeCachedWeather(weather.cached),
+        legacyManual: weather.legacyManual && typeof weather.legacyManual === "object" ? weather.legacyManual : null
       }
     };
   }
@@ -447,7 +521,8 @@
       itemIds,
       itemSnapshots: Array.isArray(record.itemSnapshots) ? record.itemSnapshots : [],
       source: record.source === "manual" ? "manual" : "generated",
-      note: stringOr(record.note, "")
+      note: stringOr(record.note, ""),
+      context: ContextEngine.normalizeHistoryContext(record.context)
     };
   }
 
@@ -699,6 +774,7 @@
       <div class="result-list">
         ${currentOutfit.items.map((item) => renderResultItem(item, currentOutfit, isLogged)).join("")}
       </div>
+      ${renderContextExplanation(currentOutfit)}
       ${currentOutfit.changeNote ? `<p class="result-change-note" role="status">${escapeHtml(currentOutfit.changeNote)}</p>` : ""}
     `;
     actions.hidden = isLogged;
@@ -736,6 +812,10 @@
     const color = item.primaryColor ? `<span>${escapeHtml(item.primaryColor)}</span>` : "";
     const bottom = outfit.items.find((candidate) => candidate.category === "bottom");
     const removableOptionalBelt = item.category === "belt" && bottom?.beltMode === "optional" && !locked && !isLogged;
+    const removableAutomaticLayer = item.id === outfit.automaticLayerId && !locked && !isLogged;
+    const removableAction = removableAutomaticLayer
+      ? `<button class="text-button compact" type="button" data-result-action="remove-layer">Remove Layer</button>`
+      : (removableOptionalBelt ? `<button class="text-button compact" type="button" data-result-action="remove-belt">Remove Belt</button>` : "");
 
     return `
       <div class="result-item ${changed ? "is-changed" : ""}" data-result-item-id="${escapeAttribute(item.id)}">
@@ -744,9 +824,9 @@
           <h3>${escapeHtml(item.name)}</h3>
           ${color}
         </div>
-        ${isLogged ? "" : (removableOptionalBelt ? `
+        ${isLogged ? "" : (removableAction ? `
           <div class="result-item-actions">
-            <button class="text-button compact" type="button" data-result-action="remove-belt">Remove Belt</button>
+            ${removableAction}
             <button class="swap-button" type="button" data-result-action="swap" data-item-id="${escapeAttribute(item.id)}">Swap</button>
           </div>
         ` : `
@@ -769,7 +849,24 @@
       openSwapDialog(button.dataset.itemId);
     } else if (button.dataset.resultAction === "remove-belt") {
       removeOptionalBelt();
+    } else if (button.dataset.resultAction === "remove-layer") {
+      removeAutomaticLayer();
     }
+  }
+
+  function renderContextExplanation(outfit) {
+    if (!outfit?.context || outfit.context.source === "none") return "";
+    const layer = outfit.automaticLayerId ? outfit.items.find((item) => item.id === outfit.automaticLayerId) : null;
+    const assessment = ContextEngine.scoreOutfitContext(outfit.items, outfit.context);
+    const explanation = ContextEngine.describeContext(outfit.context, {
+      unit: appState.settings.weather.unit,
+      layerName: layer?.name || "",
+      shortfall: assessment.shortfall
+    });
+    const timing = outfit.context.fetchedAt
+      ? ` Fetched ${formatContextTime(outfit.context.fetchedAt)}.`
+      : "";
+    return `<p class="context-explanation">${escapeHtml(explanation + timing)}</p>`;
   }
 
   function renderCloset() {
@@ -819,6 +916,7 @@
     const chips = [
       renderChip(CATEGORIES[item.category]),
       renderChip(SmartCloset.titleCase(item.subtype)),
+      ...(item.layerRoles || []).map((role) => renderChip(`${SmartCloset.titleCase(role)} layer`, "accent")),
       ...SmartCloset.itemColors(item).map(renderChip),
       ...item.labels.slice(0, 3).map(renderChip),
       ...occasionLabels.slice(0, 2).map((label) => renderChip(label, "accent"))
@@ -870,10 +968,19 @@
           <div class="chip-row">
             ${items.map((item) => renderChip(item.name)).join("")}
           </div>
+          ${record.context ? `<p class="small-meta history-context">${escapeHtml(historyContextLabel(record.context))}</p>` : ""}
           ${record.note ? `<p class="history-note">${escapeHtml(record.note)}</p>` : ""}
         </article>
       `;
     }).join("");
+  }
+
+  function historyContextLabel(context) {
+    if (context.source === "ignored") return "Weather ignored";
+    const temperature = context.temperatureC === null ? "" : `${ContextEngine.formatTemperature(context.temperatureC, appState.settings.weather.unit)} · `;
+    const source = { current: "Current", cached: "Cached", manual: "Manual" }[context.source] || "Context";
+    const layer = context.automaticLayerRemoved ? " · Suggested layer removed" : (context.automaticLayerSuggested ? " · Layer suggested" : "");
+    return `${temperature}${source} · ${SmartCloset.titleCase(context.condition)}${layer}`;
   }
 
   function renderSettings() {
@@ -882,9 +989,10 @@
     const archivedCount = appState.wardrobe.filter((item) => item.status === "archived").length;
     $("#themeSelect").value = appState.settings.theme;
     $("#afterLoggingSelect").value = appState.settings.afterLogging;
+    renderDefaultOccasionOptions();
     $("#defaultOccasionSelect").value = appState.settings.defaultOccasion;
     $("#appVersion").textContent = `App version ${APP_VERSION} · Data schema ${appState.schemaVersion}`;
-    $("#exportRecoveryBtn").hidden = localStorage.getItem(RECOVERY_KEY) === null && !loadIssue;
+    renderRecoveryDownloads();
     $("#settingsStats").innerHTML = `
       <div class="stat-card"><strong>${activeCount}</strong><span>Available</span></div>
       <div class="stat-card"><strong>${unavailableCount}</strong><span>Unavailable</span></div>
@@ -912,7 +1020,7 @@
   function updateDefaultOccasion(value) {
     appState.settings.defaultOccasion = validOccasion(value);
     if (!currentOutfit) {
-      $("#occasionSelect").value = appState.settings.defaultOccasion;
+      $("#occasionSelect").value = OCCASION_ORDER.includes(appState.settings.defaultOccasion) ? appState.settings.defaultOccasion : "work";
       handleGenerationContextChange();
     }
     saveState();
@@ -931,31 +1039,210 @@
 
   function renderWeatherControls() {
     const weather = appState.settings.weather;
-    $("#useWeather").checked = weather.enabled;
-    $("#weatherTemperature").value = weather.temperature ?? "";
-    $("#weatherCondition").value = weather.condition;
-    $("#weatherInputs").hidden = !weather.enabled;
-    $("#weatherSummary").textContent = weather.enabled
-      ? `${weather.temperature ?? "--"}°F, ${capitalize(weather.condition)}`
-      : "Off";
-  }
+    const freshness = ContextEngine.weatherFreshness(weather.cached);
+    const effective = currentEffectiveContext();
+    $("#contextMode").value = contextSession.mode;
+    $("#manualContextInputs").hidden = contextSession.mode !== "manual";
+    $("#manualTemperature").value = contextSession.manualTemperatureC === null
+      ? ""
+      : Math.round(displayTemperatureValue(contextSession.manualTemperatureC, weather.unit) * 10) / 10;
+    $("#manualCondition").value = contextSession.manualCondition;
+    $("#temperatureUnit").value = weather.unit;
+    $("#temperatureUnitSuffix").textContent = weather.unit === "c" ? "°C" : "°F";
+    $("#feelsAdjustment").value = contextSession.adjustment;
+    $("#contextExposure").value = contextSession.exposure;
+    $("#expectRain").checked = contextSession.rainExpected;
+    $("#ignoreWeather").checked = contextSession.ignore;
+    $("#acceptStaleWeather").checked = contextSession.acceptStale;
+    $("#staleWeatherControl").hidden = contextSession.mode !== "automatic" || freshness !== "stale";
+    $("#refreshWeatherBtn").hidden = !weather.automatic && !weather.cached;
+    $("#disableWeatherBtn").hidden = !weather.automatic && !weather.cached;
+    $("#useCurrentLocationBtn").disabled = weatherBusy;
+    $("#refreshWeatherBtn").disabled = weatherBusy;
 
-  function saveWeatherSettings() {
-    appState.settings.weather = {
-      enabled: $("#useWeather").checked,
-      temperature: nullableNumber($("#weatherTemperature").value, -30, 130),
-      condition: WEATHER_CONDITIONS.includes($("#weatherCondition").value) ? $("#weatherCondition").value : "sunny"
-    };
-    saveState();
-    renderWeatherControls();
-    handleGenerationContextChange();
+    let status = weatherMessage;
+    if (weatherBusy) status = "Refreshing current conditions…";
+    else if (!status && weather.cached) {
+      const label = freshness === "fresh"
+        ? (weatherSessionFetchedAt === weather.cached.fetchedAt ? "Current" : "Cached current")
+        : (freshness === "stale" ? "Stale cached" : "Expired cached");
+      status = `${label}; fetched ${formatContextTime(weather.cached.fetchedAt)}. ${freshness === "expired" ? "It will not affect generation." : ""}`.trim();
+    } else if (!status && locationPermission === "denied") status = "Location is denied. Manual context remains available.";
+    else if (!status && locationPermission === "unavailable") status = "Location is unavailable. Manual context remains available.";
+    else if (!status) status = "No location request has been made.";
+    $("#weatherStatus").textContent = status;
+    $("#weatherSummary").textContent = contextSummary(effective);
   }
 
   function weatherResultLabel() {
-    const weather = appState.settings.weather;
-    if (!weather.enabled) return "";
-    const temperature = weather.temperature === null ? "" : `${weather.temperature}° `;
-    return `<span class="weather-badge">${escapeHtml(`${temperature}${capitalize(weather.condition)}`)}</span>`;
+    const context = currentOutfit?.context;
+    if (!context || context.source === "none") return "";
+    return `<span class="weather-badge">${escapeHtml(contextSummary(context))}</span>`;
+  }
+
+  function createContextSession() {
+    const weather = appState?.settings?.weather || {};
+    return {
+      mode: weather.automatic || weather.cached ? "automatic" : "manual",
+      manualTemperatureC: null,
+      manualCondition: "unknown",
+      adjustment: "same",
+      exposure: "outdoors",
+      rainExpected: false,
+      ignore: false,
+      acceptStale: false
+    };
+  }
+
+  function currentEffectiveContext() {
+    const unit = appState.settings.weather.unit;
+    return ContextEngine.deriveEffectiveContext({
+      mode: contextSession.mode,
+      cachedWeather: appState.settings.weather.cached,
+      currentSessionFetchedAt: weatherSessionFetchedAt,
+      acceptStale: contextSession.acceptStale,
+      manualTemperature: contextSession.manualTemperatureC === null
+        ? null : displayTemperatureValue(contextSession.manualTemperatureC, unit),
+      manualCondition: contextSession.manualCondition,
+      unit,
+      adjustment: contextSession.adjustment,
+      exposure: contextSession.exposure,
+      rainExpected: contextSession.rainExpected,
+      ignore: contextSession.ignore
+    });
+  }
+
+  function handleContextControlChange() {
+    contextSession.mode = $("#contextMode").value === "automatic" ? "automatic" : "manual";
+    contextSession.acceptStale = $("#acceptStaleWeather").checked;
+    contextSession.manualTemperatureC = ContextEngine.nullableTemperature(
+      $("#manualTemperature").value,
+      appState.settings.weather.unit
+    );
+    contextSession.manualCondition = ContextEngine.CONDITIONS.includes($("#manualCondition").value)
+      ? $("#manualCondition").value : "unknown";
+    contextSession.adjustment = ContextEngine.ADJUSTMENTS.includes($("#feelsAdjustment").value)
+      ? $("#feelsAdjustment").value : "same";
+    contextSession.exposure = ContextEngine.EXPOSURES.includes($("#contextExposure").value)
+      ? $("#contextExposure").value : "outdoors";
+    contextSession.rainExpected = $("#expectRain").checked;
+    contextSession.ignore = $("#ignoreWeather").checked;
+    weatherMessage = "";
+    handleGenerationContextChange();
+    renderWeatherControls();
+  }
+
+  function changeTemperatureUnit() {
+    const previousUnit = appState.settings.weather.unit;
+    contextSession.manualTemperatureC = ContextEngine.nullableTemperature(
+      $("#manualTemperature").value,
+      previousUnit
+    );
+    appState.settings.weather.unit = $("#temperatureUnit").value === "c" ? "c" : "f";
+    if (!saveState()) appState.settings.weather.unit = previousUnit;
+    handleGenerationContextChange();
+    renderWeatherControls();
+  }
+
+  async function initializeAutomaticWeather() {
+    locationPermission = await ContextEngine.permissionState(navigator.permissions, navigator.geolocation);
+    if (!appState.settings.weather.automatic || locationPermission !== "granted") {
+      renderWeatherControls();
+      return;
+    }
+    if (ContextEngine.weatherFreshness(appState.settings.weather.cached) === "fresh") {
+      renderWeatherControls();
+      return;
+    }
+    await refreshWeather({ force: false, userInitiated: false });
+  }
+
+  async function refreshWeather(options = {}) {
+    if (weatherBusy) return false;
+    const previousWeather = { ...appState.settings.weather };
+    const previousMode = contextSession.mode;
+    const previousAcceptStale = contextSession.acceptStale;
+    const previousSessionFetchedAt = weatherSessionFetchedAt;
+    weatherBusy = true;
+    weatherMessage = "";
+    renderWeatherControls();
+    try {
+      const record = await weatherClient.refresh({ force: options.force === true, maximumAge: options.force ? 0 : ContextEngine.FRESH_MAX_MS });
+      appState.settings.weather.cached = record;
+      appState.settings.weather.automatic = true;
+      contextSession.mode = "automatic";
+      contextSession.acceptStale = false;
+      weatherSessionFetchedAt = record.fetchedAt;
+      locationPermission = "granted";
+      if (!saveState()) throw Object.assign(new Error("Weather was fetched but could not be saved."), { code: "STORAGE_WRITE_FAILED" });
+      weatherMessage = `Current conditions fetched ${formatContextTime(record.fetchedAt)}.`;
+      handleGenerationContextChange();
+      return true;
+    } catch (error) {
+      if (error?.code === "STORAGE_WRITE_FAILED") {
+        appState.settings.weather = previousWeather;
+        contextSession.mode = previousMode;
+        contextSession.acceptStale = previousAcceptStale;
+        weatherSessionFetchedAt = previousSessionFetchedAt;
+      }
+      if (error?.code === "REQUEST_CANCELLED") return false;
+      if (error?.code === "RATE_LIMITED") return false;
+      if (error?.code === "LOCATION_DENIED") locationPermission = "denied";
+      if (["LOCATION_UNAVAILABLE", "LOCATION_TIMEOUT"].includes(error?.code)) locationPermission = "unavailable";
+      weatherMessage = `${error?.message || "Weather could not be refreshed."} Manual context remains available.`;
+      if (options.userInitiated && !appState.settings.weather.cached) contextSession.mode = "manual";
+      return false;
+    } finally {
+      weatherBusy = false;
+      renderWeatherControls();
+    }
+  }
+
+  function disableAutomaticWeather() {
+    weatherClient.cancel();
+    const previousWeather = { ...appState.settings.weather };
+    const previousMode = contextSession.mode;
+    const previousAcceptStale = contextSession.acceptStale;
+    const previousSessionFetchedAt = weatherSessionFetchedAt;
+    appState.settings.weather.automatic = false;
+    appState.settings.weather.cached = null;
+    contextSession.mode = "manual";
+    contextSession.acceptStale = false;
+    weatherSessionFetchedAt = "";
+    weatherMessage = "Automatic weather disabled and cached context deleted. Closet data was not changed.";
+    if (!saveState()) {
+      appState.settings.weather = previousWeather;
+      contextSession.mode = previousMode;
+      contextSession.acceptStale = previousAcceptStale;
+      weatherSessionFetchedAt = previousSessionFetchedAt;
+      weatherMessage = "Automatic weather could not be disabled because local storage was unavailable.";
+    }
+    handleGenerationContextChange();
+    renderWeatherControls();
+  }
+
+  function contextSummary(context) {
+    if (!context || context.source === "none") {
+      if (context?.availability === "expired") return "Expired";
+      if (context?.availability === "stale") return "Stale available";
+      return context?.mode === "automatic" ? "No current weather" : "Manual ready";
+    }
+    if (context.ignored) return "Ignored";
+    const temperature = context.effectiveTemperatureC === null ? "" : `${ContextEngine.formatTemperature(context.effectiveTemperatureC, appState.settings.weather.unit)} · `;
+    const source = context.source === "cached"
+      ? (context.availability === "stale" ? "Stale cached" : "Cached current")
+      : ({ current: "Current", manual: "Manual" }[context.source] || "Context");
+    return `${temperature}${source}${context.adjusted ? " · Adjusted" : ""}`;
+  }
+
+  function displayTemperatureValue(celsius, unit) {
+    return unit === "c" ? Number(celsius) : ContextEngine.celsiusToFahrenheit(Number(celsius));
+  }
+
+  function formatContextTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "at an unknown time";
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
   }
 
   function handleClosetAction(event) {
@@ -1002,6 +1289,11 @@
     $("#itemBottomLength").value = item.bottomLength || "not_applicable";
     $("#itemWarmth").value = item.warmth || "unspecified";
     $("#itemRainPolicy").value = item.rainPolicy || "unspecified";
+    $("#itemRainProtection").value = item.rainProtection || "unspecified";
+    $("#itemWindProtection").value = item.windProtection || "unspecified";
+    $$("input[name='itemLayerRole']").forEach((input) => {
+      input.checked = (item.layerRoles || []).includes(input.value);
+    });
     $("#itemStatus").value = item.status || "available";
     $("#itemPreference").value = item.preference || "neutral";
     $("#itemLabels").value = (item.labels || []).join(", ");
@@ -1015,6 +1307,7 @@
     $("#formError").textContent = "";
     itemSaveInProgress = false;
 
+    renderItemOccasionOptions(item.occasions.includes("gym"));
     $$("input[name='itemOccasion']").forEach((input) => {
       input.checked = item.occasions.includes(input.value);
     });
@@ -1034,6 +1327,7 @@
       : "";
     renderPairRelationshipOptions(item.id, options.addSimilar === true);
     renderBeltModeControl();
+    renderLayerControls();
     updateSecondaryColorAvailability();
     updateSelectedColorChip();
 
@@ -1170,6 +1464,11 @@
       beltMode: category === "bottom" ? ($("input[name='itemBeltMode']:checked")?.value || "optional") : "",
       warmth: $("#itemWarmth").value,
       rainPolicy: $("#itemRainPolicy").value,
+      layerRoles: ["top", "layer"].includes(category)
+        ? $$("input[name='itemLayerRole']:checked").map((input) => input.value)
+        : [],
+      rainProtection: ["top", "layer"].includes(category) ? $("#itemRainProtection").value : "none",
+      windProtection: ["top", "layer"].includes(category) ? $("#itemWindProtection").value : "none",
       status: $("#itemStatus").value,
       preference: $("#itemPreference").value,
       labels: parseCsv($("#itemLabels").value),
@@ -1186,6 +1485,9 @@
     if (!validColorValue(item.primaryColor, "primary")) return { message: "Primary color must be a clear name using letters, numbers, spaces, hyphens, slashes, apostrophes, or parentheses.", selector: "#itemPrimaryColorCustom" };
     if (item.secondaryColor && !validColorValue(item.secondaryColor, "secondary")) return { message: "Secondary color must be a clear color name.", selector: "#itemSecondaryColorCustom" };
     if (!item.occasions.length) return { message: "Choose at least one occasion.", selector: "#itemOccasions" };
+    if (["top", "layer"].includes(item.category) && !item.layerRoles.length) {
+      return { message: "Choose at least one eligible layer role.", selector: "#layerRoleFieldset" };
+    }
     const preferred = selectedOptions($("#preferItemsSelect"));
     const never = selectedOptions($("#neverItemsSelect"));
     if (preferred.some((id) => never.includes(id))) return { message: "An item cannot be both preferred and never paired.", selector: "#matchingDetails" };
@@ -1226,12 +1528,18 @@
     $("#itemBottomLength").value = template.bottomLength;
     $("#itemWarmth").value = template.warmth;
     $("#itemRainPolicy").value = template.rainPolicy;
+    $("#itemRainProtection").value = template.rainProtection;
+    $("#itemWindProtection").value = template.windProtection;
+    $$("input[name='itemLayerRole']").forEach((input) => {
+      input.checked = (template.layerRoles || []).includes(input.value);
+    });
     if (template.category === "bottom") {
       const beltInput = $(`input[name='itemBeltMode'][value='${template.beltMode || "optional"}']`);
       if (beltInput) beltInput.checked = true;
     }
     applyOccasions(template.occasions || []);
     renderBeltModeControl();
+    renderLayerControls();
     updateSecondaryColorAvailability();
     refreshPairRelationshipOptions();
     showToast(`${SmartCloset.titleCase(templateId)} defaults applied.`);
@@ -1252,6 +1560,9 @@
       occasions: [...source.occasions],
       warmth: source.warmth,
       rainPolicy: source.rainPolicy,
+      layerRoles: [...source.layerRoles],
+      rainProtection: source.rainProtection,
+      windProtection: source.windProtection,
       preference: source.preference,
       labels: [...source.labels],
       beltMode: source.beltMode,
@@ -1305,7 +1616,8 @@
     const draft = {
       ...(itemId ? findItem(itemId) : emptyItem()),
       id: itemId || "__draft_item__",
-      category: $("#itemCategory").value || "top"
+      category: $("#itemCategory").value || "top",
+      layerRoles: $$("input[name='itemLayerRole']:checked").map((input) => input.value)
     };
     return appState.wardrobe
       .filter((item) => item.id !== itemId && SmartCloset.canWearTogether(draft, item))
@@ -1390,10 +1702,22 @@
     }
   }
 
+  function renderLayerControls() {
+    const applicable = ["top", "layer"].includes($("#itemCategory").value);
+    $("#layerRoleFieldset").hidden = !applicable;
+    $("#itemRainProtection").disabled = !applicable;
+    $("#itemWindProtection").disabled = !applicable;
+    if (!applicable) {
+      $$("input[name='itemLayerRole']").forEach((input) => { input.checked = false; });
+      $("#itemRainProtection").value = "none";
+      $("#itemWindProtection").value = "none";
+    }
+  }
+
   function applyOccasionPreset(preset) {
     const presets = {
       office: ["work", "friday", "date"],
-      casual: ["friday", "casual", "gym"],
+      casual: ["friday", "casual", "athletic"],
       all: OCCASION_ORDER,
       clear: []
     };
@@ -1536,7 +1860,8 @@
     }
 
     swapTargetItemId = currentItem.id;
-    $("#swapDialogTitle").textContent = `Swap ${CATEGORIES[currentItem.category] || "Item"}`;
+    const swapLabel = currentOutfit.automaticLayerId === currentItem.id ? "Layer" : (CATEGORIES[currentItem.category] || "Item");
+    $("#swapDialogTitle").textContent = `Swap ${swapLabel}`;
     $("#swapSummary").textContent = `${choices.length} eligible replacement${choices.length === 1 ? "" : "s"}. ${report.excludedSummary}`;
     $("#swapChoices").innerHTML = choices.map((choice) => {
       const replacement = choice.items.find((item) => item.id === choice.replacementId);
@@ -1559,9 +1884,14 @@
 
   function swapChoiceReport(currentItem) {
     const occasionId = currentOutfit.occasion;
+    const swappingAutomaticLayer = currentOutfit.automaticLayerId === currentItem.id;
     const excluded = { status: 0, occasion: 0, matching: 0 };
     const eligible = appState.wardrobe
-      .filter((item) => item.category === currentItem.category && item.id !== currentItem.id)
+      .filter((item) => item.id !== currentItem.id
+        && (swappingAutomaticLayer
+          ? hasAutomaticLayerRole(item)
+          : (item.category === currentItem.category
+            && (currentItem.category !== "top" || (item.layerRoles || []).includes("base")))))
       .map((replacement) => {
         if (!isAvailable(replacement)) {
           excluded.status += 1;
@@ -1569,6 +1899,10 @@
         }
         if (!matchesOccasion(replacement, occasionId)) {
           excluded.occasion += 1;
+          return null;
+        }
+        if (swappingAutomaticLayer && !isAutomaticLayerCandidate(replacement)) {
+          excluded.matching += 1;
           return null;
         }
         const replaced = currentOutfit.items.map((item) => item.id === currentItem.id ? replacement : item);
@@ -1582,7 +1916,8 @@
         return {
           replacementId: replacement.id,
           items: sortOutfitItems(reconciled),
-          score: scoreOutfit(reconciled, occasionId, { buildAroundId: currentOutfit.buildAroundId })
+          automaticLayerId: currentOutfit.automaticLayerId === currentItem.id ? replacement.id : currentOutfit.automaticLayerId,
+          score: scoreOutfit(reconciled, occasionId, { buildAroundId: currentOutfit.buildAroundId, context: currentOutfit.context })
         };
       })
       .filter(Boolean)
@@ -1616,6 +1951,7 @@
       ...currentOutfit,
       items: choice.items,
       score: choice.score,
+      automaticLayerId: choice.automaticLayerId || "",
       optionalBeltRemoved,
       changedItemIds: changedItemIds(previousItems, choice.items),
       changeNote: describeDependentChanges(previousItems, choice.items)
@@ -1770,7 +2106,8 @@
   function cloneCandidate(candidate) {
     return {
       ...candidate,
-      items: [...candidate.items]
+      items: [...candidate.items],
+      context: candidate.context ? { ...candidate.context } : null
     };
   }
 
@@ -1778,14 +2115,41 @@
     if (!outfit || !outfit.length) return;
     if (buildAroundId && !outfit.some((item) => item.id === buildAroundId)) return;
     if (!isCompatibleOutfit(outfit, occasionId, buildAroundId)) return;
-    const key = comboKey(outfit.map((item) => item.id));
+    const context = currentEffectiveContext();
+    const variants = [{ items: sortOutfitItems(outfit), automaticLayerId: "" }];
+    if (ContextEngine.shouldConsiderLayer(outfit, context)) {
+      const layerChoice = appState.wardrobe
+        .filter((item) => isAutomaticLayerCandidate(item) && matchesOccasion(item, occasionId))
+        .filter((item) => !outfit.some((selected) => selected.id === item.id))
+        .map((layer) => sortOutfitItems([...outfit, layer]))
+        .filter((items) => isCompatibleOutfit(items, occasionId, buildAroundId))
+        .sort((a, b) => scoreOutfit(b, occasionId, { buildAroundId, context }) - scoreOutfit(a, occasionId, { buildAroundId, context }))[0];
+      if (layerChoice) {
+        const automaticLayer = layerChoice.find((item) => !outfit.some((base) => base.id === item.id));
+        variants.push({
+          items: layerChoice,
+          automaticLayerId: automaticLayer?.id || ""
+        });
+      }
+    }
+    variants.forEach((variant) => addCandidateVariant(map, variant, occasionId, buildAroundId, context));
+  }
+
+  function addCandidateVariant(map, variant, occasionId, buildAroundId, context) {
+    const key = comboKey(variant.items.map((item) => item.id));
     if (map.has(key)) return;
+    const assessment = ContextEngine.scoreOutfitContext(variant.items, context);
     map.set(key, {
       signature: key,
       occasion: occasionId,
       buildAroundId,
-      items: sortOutfitItems(outfit),
-      score: scoreOutfit(outfit, occasionId, { buildAroundId })
+      items: variant.items,
+      automaticLayerId: variant.automaticLayerId,
+      automaticLayerSuggested: Boolean(variant.automaticLayerId),
+      automaticLayerRemoved: false,
+      context: { ...context },
+      contextAssessment: assessment,
+      score: scoreOutfit(variant.items, occasionId, { buildAroundId, context })
     });
   }
 
@@ -1796,12 +2160,13 @@
       seen: new Set(),
       poolSize: 0,
       repeatsEnabled: false,
-      message: ""
+      message: "",
+      automaticLayerSuppressed: false
     };
   }
 
   function generationContextKey(occasionId = $("#occasionSelect").value, buildAroundId = $("#buildAroundSelect").value) {
-    const weather = appState.settings.weather;
+    const effectiveContext = currentEffectiveContext();
     const wardrobeContext = appState.wardrobe
       .filter(isAvailable)
       .map((item) => ({
@@ -1820,16 +2185,15 @@
         legacyMatching: item.legacyFallback ? item.legacyMatching : undefined,
         beltMode: item.beltMode,
         warmth: item.warmth,
-        rainPolicy: item.rainPolicy
+        rainPolicy: item.rainPolicy,
+        layerRoles: item.layerRoles,
+        rainProtection: item.rainProtection,
+        windProtection: item.windProtection
       }));
     return JSON.stringify({
       occasionId,
       buildAroundId,
-      weather: {
-        enabled: weather.enabled,
-        temperature: weather.temperature,
-        condition: weather.condition
-      },
+      context: effectiveContext,
       bannedCombos: appState.bannedCombos.map((combo) => comboKey(combo.itemIds)).sort(),
       pairRelationships: appState.pairRelationships.map((record) => `${record.type}:${record.itemIds.join("|")}`).sort(),
       history: appState.history.map((record) => `${record.id}:${record.date}:${comboKey(record.itemIds)}`).sort(),
@@ -1850,7 +2214,11 @@
         occasion: currentOutfit.occasion,
         buildAroundId: currentOutfit.buildAroundId || "",
         items: [...currentOutfit.items],
-        score: currentOutfit.score
+        score: currentOutfit.score,
+        automaticLayerId: currentOutfit.automaticLayerId || "",
+        automaticLayerSuggested: currentOutfit.automaticLayerSuggested === true,
+        automaticLayerRemoved: currentOutfit.automaticLayerRemoved === true,
+        context: currentOutfit.context ? { ...currentOutfit.context } : currentEffectiveContext()
       });
       rerollSession.poolSize = rerollSession.candidates.length;
     }
@@ -1890,9 +2258,11 @@
     if (!currentOutfit || currentOutfit.error) return;
     const contextKey = generationContextKey(currentOutfit.occasion, currentOutfit.buildAroundId || "");
     const candidates = rerollSession.contextKey === contextKey ? rerollSession.candidates : [];
+    const automaticLayerSuppressed = rerollSession.automaticLayerSuppressed === true;
     rerollSession = createRerollSession(contextKey);
     rerollSession.candidates = candidates;
     rerollSession.poolSize = candidates.length;
+    rerollSession.automaticLayerSuppressed = automaticLayerSuppressed;
     trackCurrentOutfitInSession();
     renderRerollSessionStatus();
     showToast("Viewed fits reset.");
@@ -1987,12 +2357,26 @@
 
   function candidateItems(slot, occasionId) {
     return appState.wardrobe.filter((item) => {
-      return isAvailable(item) && slot.categories.includes(item.category) && matchesOccasion(item, occasionId);
+      return isAvailable(item) && slotAcceptsItem(slot, item) && matchesOccasion(item, occasionId);
     });
   }
 
+  function isAutomaticLayerCandidate(item) {
+    return isAvailable(item) && hasAutomaticLayerRole(item);
+  }
+
+  function hasAutomaticLayerRole(item) {
+    return ["top", "layer"].includes(item.category)
+      && Array.isArray(item.layerRoles)
+      && item.layerRoles.some((role) => ["mid", "outer"].includes(role));
+  }
+
   function slotAcceptsItem(slot, item) {
-    return slot.categories.includes(item.category);
+    if (!slot.categories.includes(item.category)) return false;
+    if (slot.key === "top" && item.category === "top") {
+      return Array.isArray(item.layerRoles) && item.layerRoles.includes("base");
+    }
+    return true;
   }
 
   function isCompatibleOutfit(items, occasionId, buildAroundId = "") {
@@ -2030,7 +2414,8 @@
     score -= Math.abs(averageFormality - occasion.targetFormality) * 5;
     score -= formalitySpread * 2.5;
 
-    score += items.reduce((sum, item) => sum + weatherScore(item), 0);
+    const context = options.context || currentEffectiveContext();
+    score += ContextEngine.scoreOutfitContext(items, context).score;
 
     const exactLastWorn = lastExactOutfitDate(items);
     const exactDays = daysSince(exactLastWorn);
@@ -2104,7 +2489,7 @@
     currentOutfit = {
       ...currentOutfit,
       items: nextItems,
-      score: scoreOutfit(nextItems, currentOutfit.occasion, { buildAroundId: currentOutfit.buildAroundId }),
+      score: scoreOutfit(nextItems, currentOutfit.occasion, { buildAroundId: currentOutfit.buildAroundId, context: currentOutfit.context }),
       optionalBeltRemoved: true,
       changedItemIds: [belt.id],
       changeNote: "Optional belt removed."
@@ -2116,34 +2501,32 @@
     return true;
   }
 
-  function weatherScore(item) {
-    const weather = appState.settings.weather;
-    if (!weather.enabled) return 0;
-    let score = 0;
-    const temperature = weather.temperature;
-
-    if (temperature !== null) {
-      if (item.minTemperature !== null && temperature < item.minTemperature) {
-        score -= Math.min(35, (item.minTemperature - temperature) * 2);
-      }
-      if (item.maxTemperature !== null && temperature > item.maxTemperature) {
-        score -= Math.min(35, (temperature - item.maxTemperature) * 2);
-      }
-      const warmthValue = { very_light: 1, light: 2, medium: 3, warm: 4, very_warm: 5 }[item.warmth];
-      if (warmthValue) {
-        const targetWarmth = temperature <= 35 ? 5 : temperature <= 50 ? 4 : temperature <= 65 ? 3 : temperature <= 78 ? 2 : 1;
-        score -= Math.abs(warmthValue - targetWarmth) * 3;
-      }
-    }
-
-    if (Array.isArray(item.suitableConditions) && item.suitableConditions.length) {
-      score += item.suitableConditions.includes(weather.condition) ? 5 : -8;
-    }
-    if (["rain", "snow"].includes(weather.condition)) {
-      if (item.rainPolicy === "preferred") score += 7;
-      else if (item.rainPolicy === "okay") score += 3;
-    }
-    return score;
+  function removeAutomaticLayer() {
+    if (!currentOutfit || currentOutfit.error || resultState !== "outfit" || !currentOutfit.automaticLayerId) return false;
+    const layer = currentOutfit.items.find((item) => item.id === currentOutfit.automaticLayerId);
+    if (!layer || currentOutfit.buildAroundId === layer.id) return false;
+    const nextItems = currentOutfit.items.filter((item) => item.id !== layer.id);
+    currentOutfit = {
+      ...currentOutfit,
+      items: nextItems,
+      score: scoreOutfit(nextItems, currentOutfit.occasion, { buildAroundId: currentOutfit.buildAroundId, context: currentOutfit.context }),
+      automaticLayerId: "",
+      automaticLayerSuggested: true,
+      automaticLayerRemoved: true,
+      contextAssessment: ContextEngine.scoreOutfitContext(nextItems, currentOutfit.context),
+      changedItemIds: [layer.id],
+      changeNote: "Optional layer removed."
+    };
+    rerollSession.automaticLayerSuppressed = true;
+    rerollSession.candidates = rerollSession.candidates.filter((candidate) => !candidate.automaticLayerId);
+    const retainedSignatures = new Set(rerollSession.candidates.map((candidate) => candidate.signature));
+    rerollSession.seen = new Set([...rerollSession.seen].filter((signature) => retainedSignatures.has(signature)));
+    rerollSession.poolSize = rerollSession.candidates.length;
+    trackCurrentOutfitInSession();
+    renderResult();
+    renderRerollSessionStatus();
+    showToast("Optional layer removed. Logging will record only what remains.");
+    return true;
   }
 
   function logCurrentOutfit() {
@@ -2155,7 +2538,11 @@
       occasion: currentOutfit.occasion,
       items: currentOutfit.items,
       source: "generated",
-      note: ""
+      note: "",
+      context: ContextEngine.historyContextSnapshot(currentOutfit.context, {
+        suggested: currentOutfit.automaticLayerSuggested,
+        removed: currentOutfit.automaticLayerRemoved
+      })
     });
     if (appState.settings.afterLogging === "clear") {
       currentOutfit = null;
@@ -2193,7 +2580,7 @@
     showToast("Combo banned.");
   }
 
-  function addHistoryRecord({ date, occasion, items, source, note }) {
+  function addHistoryRecord({ date, occasion, items, source, note, context = null }) {
     const validItems = uniqueItems(items).filter(Boolean);
     appState.history.unshift({
       id: uid("log"),
@@ -2202,7 +2589,8 @@
       itemIds: validItems.map((item) => item.id),
       itemSnapshots: validItems.map(snapshotItem),
       source: source === "manual" ? "manual" : "generated",
-      note: stringOr(note, "")
+      note: stringOr(note, ""),
+      context: ContextEngine.normalizeHistoryContext(context)
     });
 
   }
@@ -2367,8 +2755,44 @@
     showToast("Backup exported.");
   }
 
-  function exportRecoveryPayload() {
-    const payload = localStorage.getItem(RECOVERY_KEY) ?? (loadIssue ? localStorage.getItem(STORAGE_KEY) : null);
+  function renderRecoveryDownloads() {
+    const container = $("#recoveryDownloads");
+    const records = protectedOriginals();
+    container.innerHTML = records.length ? `
+      <p class="small-meta"><strong>Protected originals</strong> — retained exactly and never overwritten.</p>
+      ${records.map((record) => `<button class="secondary-button" type="button" data-recovery-key="${escapeAttribute(record.key)}">${escapeHtml(record.label)}</button>`).join("")}
+    ` : "";
+  }
+
+  function protectedOriginals() {
+    const keys = new Set([LEGACY_RECOVERY_KEY, RECOVERY_KEY]);
+    if (typeof localStorage.key === "function" && Number.isFinite(Number(localStorage.length))) {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(RECOVERY_PREFIX)) keys.add(key);
+      }
+    }
+    const records = [...keys]
+      .filter((key) => localStorage.getItem(key) !== null)
+      .map((key) => ({
+        key,
+        label: key === LEGACY_RECOVERY_KEY
+          ? "Download protected original before schema 4"
+          : (key === RECOVERY_KEY ? "Download protected original before schema 5" : "Download retained legacy import original")
+      }));
+    if (loadIssue && localStorage.getItem(STORAGE_KEY) !== null) {
+      records.push({ key: STORAGE_KEY, label: "Download current unreadable primary (unchanged)" });
+    }
+    return records;
+  }
+
+  function handleRecoveryDownload(event) {
+    const button = event.target.closest("[data-recovery-key]");
+    if (button) exportRecoveryPayload(button.dataset.recoveryKey);
+  }
+
+  function exportRecoveryPayload(key = RECOVERY_KEY) {
+    const payload = localStorage.getItem(key);
     if (payload === null) {
       showToast("No protected original is available.");
       return;
@@ -2377,7 +2801,8 @@
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `fit-roulette-protected-original-${dateOnly(new Date())}.json`;
+    const label = key === LEGACY_RECOVERY_KEY ? "schema4" : (key === RECOVERY_KEY ? "schema5" : "retained");
+    anchor.download = `fit-roulette-protected-original-${label}-${dateOnly(new Date())}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -2413,10 +2838,14 @@
 
     const legacy = sourceSchema < SCHEMA_VERSION;
     let recoveryCreated = false;
+    let recoveryKey = "";
     if (legacy) {
       try {
-        recoveryCreated = preserveRecoveryPayload(rawText);
-        if (recoveryCreated) $("#exportRecoveryBtn").hidden = false;
+        const recovery = preserveRecoveryPayload(rawText, { allowAdditional: true });
+        if (!recovery.retained) throw Object.assign(new Error("Confirmed legacy import could not be retained exactly."), { code: "RECOVERY_WRITE_FAILED" });
+        recoveryCreated = recovery.created;
+        recoveryKey = recovery.key;
+        renderRecoveryDownloads();
       } catch (error) {
         console.error(error);
         showToast("Import stopped because a protected original could not be created.");
@@ -2449,18 +2878,22 @@
     resultState = "empty";
     logInProgress = false;
     rerollSession = createRerollSession();
+    contextSession = createContextSession();
+    weatherMessage = "";
+    weatherSessionFetchedAt = "";
     initializeGenerateOccasion();
     renderAll();
     if (legacy && recoveryCreated) showToast("Backup imported. Protected original saved.");
     else if (legacy) showToast("Backup imported. Existing protected original retained.");
     else showToast("Backup imported.");
-    return { ok: true, legacy, recoveryCreated };
+    return { ok: true, legacy, recoveryCreated, recoveryKey };
   }
 
   function importSchemaVersion(raw) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw Object.assign(new Error("Backup root must be an object."), { code: "INVALID_ROOT" });
     }
+    SmartCloset.assertNoSensitiveLocation(raw);
     const declaredSchema = raw.schemaVersion ?? raw.version;
     const schemaVersion = Number(declaredSchema ?? 1);
     if (declaredSchema !== undefined && (!Number.isFinite(schemaVersion) || schemaVersion < 1)) {
@@ -2482,6 +2915,8 @@
     resultState = "empty";
     logInProgress = false;
     rerollSession = createRerollSession();
+    contextSession = createContextSession();
+    weatherSessionFetchedAt = "";
     saveState();
     initializeGenerateOccasion();
     renderAll();
@@ -2555,6 +2990,10 @@
       item.pattern === "solid" ? "" : item.secondaryColor,
       item.pattern,
       item.status,
+      item.warmth,
+      item.rainProtection,
+      item.windProtection,
+      ...(item.layerRoles || []),
       String(item.formality),
       SmartCloset.FORMALITY_LABELS[item.formality],
       ...item.labels,
@@ -2585,6 +3024,9 @@
       occasions: [...item.occasions],
       warmth: item.warmth,
       rainPolicy: item.rainPolicy,
+      layerRoles: [...(item.layerRoles || [])],
+      rainProtection: item.rainProtection,
+      windProtection: item.windProtection,
       preference: item.preference,
       labels: [...item.labels],
       beltMode: item.beltMode || "",
@@ -2632,6 +3074,9 @@
       beltMode: "optional",
       warmth: "unspecified",
       rainPolicy: "unspecified",
+      layerRoles: ["base"],
+      rainProtection: "unspecified",
+      windProtection: "unspecified",
       status: "available",
       preference: "neutral",
       labels: [],
@@ -2806,8 +3251,11 @@
       fridayjeans: "friday",
       casual: "casual",
       date: "date",
+      athletic: "athletic",
+      exercise: "athletic",
+      training: "athletic",
       gym: "gym",
-      errands: "gym",
+      errands: "casual",
       gymerrands: "gym"
     };
     return aliases[token] || (OCCASIONS[value] ? value : "");
@@ -3182,7 +3630,8 @@
         poolSize: rerollSession.poolSize,
         seen: [...rerollSession.seen],
         repeatsEnabled: rerollSession.repeatsEnabled,
-        message: rerollSession.message
+        message: rerollSession.message,
+        automaticLayerSuppressed: rerollSession.automaticLayerSuppressed
       }),
       normalizeState,
       openItemDialog,
@@ -3214,11 +3663,22 @@
       describeDependentChanges,
       reconcileBeltForOutfit,
       removeOptionalBelt,
+      removeAutomaticLayer,
+      isAutomaticLayerCandidate,
+      currentEffectiveContext,
+      refreshWeather,
+      disableAutomaticWeather,
+      protectedOriginals,
+      preserveRecoveryPayload,
       logCurrentOutfit,
       clearChangedHighlights,
       getLoadIssue: () => loadIssue,
       isStorageWriteLocked: () => storageWriteLocked,
       importBackupText,
+      setContextSession(value) {
+        contextSession = { ...contextSession, ...(value || {}) };
+        renderWeatherControls();
+      },
       setCurrentOutfit(outfit) {
         currentOutfit = outfit;
         resultState = outfit?.error ? "error" : (outfit ? "outfit" : "empty");
@@ -3229,6 +3689,8 @@
         resultState = "empty";
         logInProgress = false;
         rerollSession = createRerollSession();
+        contextSession = createContextSession();
+        weatherSessionFetchedAt = "";
         initializeGenerateOccasion();
         renderAll();
       }

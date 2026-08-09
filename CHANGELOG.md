@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.5.0 &mdash; Context Engine
+
+- Added opt-in current conditions through a small Open-Meteo adapter with explicit location consent, bounded/deduplicated no-store requests, provider attribution, normalized coordinate-free caching, and manual/offline fallback.
+- Added centralized fresh, stale, and expired context policy plus session-only manual temperature, condition, warmer/colder, expected-rain, indoor/outdoor, and Ignore Weather controls.
+- Moved closet data to schema 5 with exact pre-migration recovery at `fitRoulette.v1.recovery.schema5`, retained schema-4 protected originals, additional protected originals for later confirmed legacy imports, and transactional failure behavior.
+- Added independent multi-value Base/Mid/Outer layer roles, compositional warmth, structured rain protection, and structured wind protection while retaining category, subtype, rain wear policy, pair rules, and imported metadata.
+- Added context-aware outfit scoring and at most one compatible automatic Mid/Outer layer, with honest warmth shortfall text and one-action removal that preserves belt, logging, recency, swap, and ban semantics.
+- Added compact coordinate-free history context snapshots recording only the effective roll context and whether an automatic layer was removed.
+- Added Athletic for new exercise and training assignments, preserved ambiguous legacy Gym / Errands values for explicit review, and retained Friday Jeans after confirming Work plus Build Around Jeans is not behaviorally equivalent.
+- Expanded deterministic migration, recovery, provider, privacy, freshness, context, layer, history, occasion, application, service-worker, PWA, and deployment verification.
+
+This release uses app version `1.5.0`, data schema `5`, primary key `fitRoulette.v1`, recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.5.0`. Open-Meteo use is limited to the app's current noncommercial deployment and requires visible attribution; commercialization requires a provider/licensing review.
+
 ## Fit Roulette v1.4.2 &mdash; Smart Closet Field Fixes
 
 - Made garment saves transactional, single-write, and reliably closing only after successful persistence, with focused validation feedback, scroll reset, and unsaved-change protection.
