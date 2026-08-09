@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.4.2">
+    <link rel="stylesheet" href="./styles.css?v=1.5.0">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -52,33 +52,86 @@
 
             <details id="weatherDetails" class="inline-details">
               <summary>
-                <span>Weather</span>
+                <span>Outfit context</span>
                 <span id="weatherSummary" class="small-meta">Off</span>
               </summary>
-              <div class="inline-details-content">
-                <label class="toggle-row availability-toggle">
-                  <input id="useWeather" type="checkbox">
-                  <span>Use weather</span>
+              <div class="inline-details-content context-controls">
+                <p class="small-meta">Location is optional and requested only after you choose <strong>Use Current Location</strong>. Coordinates go directly to Open-Meteo for current conditions and are never saved by Fit Roulette.</p>
+                <div class="context-action-row">
+                  <button id="useCurrentLocationBtn" class="secondary-button compact" type="button">Use Current Location</button>
+                  <button id="refreshWeatherBtn" class="secondary-button compact" type="button" hidden>Refresh</button>
+                  <button id="disableWeatherBtn" class="text-button compact" type="button" hidden>Disable &amp; Clear</button>
+                </div>
+                <p id="weatherStatus" class="context-status small-meta" role="status"></p>
+
+                <label class="field">
+                  <span>Context source</span>
+                  <select id="contextMode">
+                    <option value="automatic">Current weather</option>
+                    <option value="manual">Manual</option>
+                  </select>
                 </label>
-                <div id="weatherInputs" class="weather-inputs" hidden>
+
+                <label id="staleWeatherControl" class="toggle-row" hidden>
+                  <input id="acceptStaleWeather" type="checkbox">
+                  <span>Use this stale cached reading for this roll</span>
+                </label>
+
+                <div id="manualContextInputs" class="weather-inputs">
                   <label class="field">
-                    <span>Temperature</span>
+                    <span>Manual temperature <span class="optional-label">Session only</span></span>
                     <div class="input-with-suffix">
-                      <input id="weatherTemperature" type="number" inputmode="numeric" min="-30" max="130" placeholder="72">
-                      <span>&deg;F</span>
+                      <input id="manualTemperature" type="number" inputmode="decimal" min="-100" max="160" placeholder="72">
+                      <span id="temperatureUnitSuffix">&deg;F</span>
                     </div>
                   </label>
                   <label class="field">
                     <span>Conditions</span>
-                    <select id="weatherCondition">
-                      <option value="sunny">Sunny</option>
+                    <select id="manualCondition">
+                      <option value="unknown">Not specified</option>
+                      <option value="clear">Clear</option>
                       <option value="cloudy">Cloudy</option>
                       <option value="rain">Rain</option>
                       <option value="snow">Snow</option>
-                      <option value="windy">Windy</option>
+                      <option value="wind">Windy</option>
                     </select>
                   </label>
                 </div>
+
+                <div class="two-column">
+                  <label class="field">
+                    <span>Temperature unit</span>
+                    <select id="temperatureUnit">
+                      <option value="f">Fahrenheit</option>
+                      <option value="c">Celsius</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Feels to you</span>
+                    <select id="feelsAdjustment">
+                      <option value="same">As reported</option>
+                      <option value="colder">Colder than reported</option>
+                      <option value="warmer">Warmer than reported</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label class="field">
+                  <span>Day plan</span>
+                  <select id="contextExposure">
+                    <option value="outdoors">Mostly outdoors</option>
+                    <option value="indoors">Mostly indoors</option>
+                  </select>
+                </label>
+                <label class="toggle-row">
+                  <input id="expectRain" type="checkbox">
+                  <span>Expecting rain</span>
+                </label>
+                <label class="toggle-row">
+                  <input id="ignoreWeather" type="checkbox">
+                  <span>Ignore weather for this roll</span>
+                </label>
+                <p class="provider-attribution"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather data by Open-Meteo</a></p>
               </div>
             </details>
 
@@ -166,7 +219,7 @@
             </label>
             <p id="appVersion" class="small-meta"></p>
             <button id="exportBtn" class="secondary-button" type="button">Export JSON Backup</button>
-            <button id="exportRecoveryBtn" class="secondary-button" type="button" hidden>Download Protected Original</button>
+            <div id="recoveryDownloads" class="recovery-downloads" aria-label="Protected originals"></div>
             <button id="importBtn" class="secondary-button" type="button">Import JSON Backup</button>
             <input id="importFile" type="file" accept="application/json" hidden>
             <button id="clearBansBtn" class="secondary-button" type="button">Clear Banned Combos</button>
@@ -303,12 +356,33 @@
 
             <div class="two-column">
               <label class="field">
-                <span>Warmth</span>
+                <span>Warmth contribution</span>
                 <select id="itemWarmth"></select>
               </label>
               <label class="field">
-                <span>Rain policy</span>
+                <span>Rain wear policy</span>
                 <select id="itemRainPolicy"></select>
+              </label>
+            </div>
+
+            <fieldset id="layerRoleFieldset" class="fieldset">
+              <legend>Eligible layer roles</legend>
+              <div class="segmented-control three-part">
+                <label><input type="checkbox" name="itemLayerRole" value="base"><span>Base</span></label>
+                <label><input type="checkbox" name="itemLayerRole" value="mid"><span>Mid</span></label>
+                <label><input type="checkbox" name="itemLayerRole" value="outer"><span>Outer</span></label>
+              </div>
+              <p class="small-meta">Category and layer role are separate. A garment can support more than one role.</p>
+            </fieldset>
+
+            <div class="two-column">
+              <label class="field">
+                <span>Rain protection</span>
+                <select id="itemRainProtection"></select>
+              </label>
+              <label class="field">
+                <span>Wind protection</span>
+                <select id="itemWindProtection"></select>
               </label>
             </div>
 
@@ -450,10 +524,11 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.4.2", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.5.0", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./smart-closet.js?v=1.4.2" defer></script>
-    <script src="./app.js?v=1.4.2" defer></script>
+    <script src="./context-engine.js?v=1.5.0" defer></script>
+    <script src="./smart-closet.js?v=1.5.0" defer></script>
+    <script src="./app.js?v=1.5.0" defer></script>
   </body>
 </html>

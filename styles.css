@@ -559,6 +559,59 @@ textarea:focus {
   gap: 10px;
 }
 
+.context-controls > .small-meta {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.context-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.context-status {
+  min-height: 1.25em;
+  margin: 0;
+}
+
+.provider-attribution {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.provider-attribution a {
+  color: var(--accent-strong);
+}
+
+.context-explanation {
+  margin: 10px 2px 0;
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.history-context {
+  margin: 8px 0 0;
+}
+
+.recovery-downloads {
+  display: grid;
+  gap: 8px;
+}
+
+.recovery-downloads p {
+  margin: 0;
+}
+
+.legacy-occasion {
+  border-color: color-mix(in srgb, #c98518 58%, var(--line));
+  background: color-mix(in srgb, #c98518 8%, var(--surface));
+}
+
 .input-with-suffix {
   position: relative;
 }
@@ -1424,6 +1477,10 @@ textarea:focus {
 
   .two-column {
     gap: 8px;
+  }
+
+  .weather-inputs {
+    grid-template-columns: 1fr;
   }
 
   .today-log-notice {

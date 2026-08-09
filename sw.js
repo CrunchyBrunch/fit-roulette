@@ -1,9 +1,10 @@
-const CACHE_NAME = "fit-roulette-v1.4.2";
-const ASSET_VERSION = "1.4.2";
+const CACHE_NAME = "fit-roulette-v1.5.0";
+const ASSET_VERSION = "1.5.0";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
+  "./context-engine.js",
   "./smart-closet.js",
   "./app.js",
   "./manifest.json",
@@ -48,7 +49,8 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.origin !== self.location.origin) {
+  if (request.method !== "GET" || url.origin !== self.location.origin
+    || url.searchParams.has("latitude") || url.searchParams.has("longitude")) {
     return;
   }
 
