@@ -634,6 +634,14 @@
     return state.pairRelationships.find((record) => record.itemIds.join("|") === pair.join("|"))?.type || "";
   }
 
+  function canWearTogether(itemA, itemB) {
+    if (!itemA || !itemB || itemA.id === itemB.id) return false;
+    const categoryA = normalizeCategory(itemA.category);
+    const categoryB = normalizeCategory(itemB.category);
+    if (!CATEGORIES[categoryA] || !CATEGORIES[categoryB]) return false;
+    return categoryA !== categoryB;
+  }
+
   function setRelationship(state, itemA, itemB, type, now) {
     const pair = canonicalPair(itemA, itemB);
     if (pair.length !== 2) return state;
@@ -657,6 +665,7 @@
     }
     for (let i = 0; i < items.length; i += 1) {
       for (let j = i + 1; j < items.length; j += 1) {
+        if (!canWearTogether(items[i], items[j])) continue;
         const pair = canonicalPair(items[i].id, items[j].id).join("|");
         const relationship = relationships.find((record) => record.itemIds.join("|") === pair);
         if (relationship?.type === "never") return hardFailure(result, `${items[i].name} and ${items[j].name} are set to Never pair.`);
@@ -700,7 +709,9 @@
   }
 
   function itemColors(item) {
-    return uniqueStrings([item.primaryColor, item.secondaryColor]);
+    return uniqueStrings(item.pattern === "solid"
+      ? [item.primaryColor]
+      : [item.primaryColor, item.secondaryColor]);
   }
 
   function colorCompatibility(items, reasons) {
@@ -883,6 +894,7 @@
     canonicalPair,
     relationshipType,
     setRelationship,
+    canWearTogether,
     semanticCompatibility,
     itemColors,
     normalizeCategory,

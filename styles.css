@@ -417,6 +417,14 @@ textarea:focus {
   font-size: 0.78rem;
 }
 
+.result-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .result-item.is-changed {
   border-color: color-mix(in srgb, var(--accent) 78%, var(--line));
   background: color-mix(in srgb, var(--accent) 16%, var(--surface));
@@ -997,6 +1005,78 @@ textarea:focus {
 .field select[multiple] {
   min-height: 116px;
   padding-block: 6px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.color-custom-input {
+  margin-top: 6px;
+}
+
+.field.is-disabled {
+  opacity: 0.68;
+}
+
+.relationship-grid,
+.relationship-choice-list,
+.relationship-legacy-list {
+  display: grid;
+  gap: 8px;
+}
+
+.relationship-picker {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--surface-soft);
+}
+
+.relationship-picker h4 {
+  margin: 0 0 8px;
+}
+
+.compact-field {
+  gap: 4px;
+}
+
+.relationship-choice {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: var(--surface);
+  font-weight: 700;
+}
+
+.relationship-choice input {
+  width: 20px;
+  min-height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
+.relationship-choice span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.relationship-legacy-list {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.relationship-legacy-list > strong {
+  color: var(--danger);
+  font-size: 0.8rem;
 }
 
 .section-heading h3 {

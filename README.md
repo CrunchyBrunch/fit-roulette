@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.4.1 - Smart Closet Stabilization**
+Current release: **1.4.2 - Smart Closet Field Fixes**
 
 ## Run Locally
 
@@ -53,7 +53,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.4.1`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.4.2`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -97,13 +97,13 @@ To restore:
 
 Import replaces the current local data on that device/browser.
 
-When a confirmed legacy backup is imported, v1.4.1 stores the exact untouched file text at `fitRoulette.v1.recovery.schema4` before replacing primary storage. If a protected original already exists, it is retained without modification. The import stops without changing the current closet if required recovery or primary storage cannot be written.
+When a confirmed legacy backup is imported, v1.4.2 stores the exact untouched file text at `fitRoulette.v1.recovery.schema4` before replacing primary storage. If a protected original already exists, it is retained without modification. The import stops without changing the current closet if required recovery or primary storage cannot be written.
 
 ## Add To iPhone Home Screen
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.4.1`.
+3. Open Data and confirm the app displays version `1.4.2`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.
@@ -118,7 +118,7 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
 - All app data stays local to the browser through `localStorage`.
 
-The v1.4.1 release uses service-worker cache `fit-roulette-v1.4.1`, synchronized with the visible app version. The cache includes the complete Smart Closet application shell, including `smart-closet.js`.
+The v1.4.2 release uses service-worker cache `fit-roulette-v1.4.2`, synchronized with the visible app version. The cache includes the complete Smart Closet application shell, including `smart-closet.js`.
 
 ## Verify Smart Closet Release
 

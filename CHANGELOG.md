@@ -1,5 +1,16 @@
 # Changelog
 
+## Fit Roulette v1.4.2 &mdash; Smart Closet Field Fixes
+
+- Made garment saves transactional, single-write, and reliably closing only after successful persistence, with focused validation feedback, scroll reset, and unsaved-change protection.
+- Grouped Prefer Together and Never Pair candidates by wearable category, excluded impossible same-slot pairs, and kept stored exceptions visible and removable without letting them influence matching.
+- Replaced unrestricted color fields with canonical selectors plus an explicit custom-color route, and made Solid use the schema-4 absent-secondary value without bulk rewriting existing closets.
+- Expanded Closet search across structured garment fields with predictable case-insensitive multi-term matching while leaving outfit scoring unchanged.
+- Made Optional Belt generate a compatible belt by default, added one-action removal, and ensured removal is respected by logging, recency, and unrelated swaps; Required and No Belt remain strict.
+- Retained the v1.4.1 protected-original import transaction and added regression coverage across the complete maintenance scope.
+
+This release keeps data schema version 4, storage key `fitRoulette.v1`, and recovery key `fitRoulette.v1.recovery.schema4`.
+
 ## Fit Roulette v1.4.1 &mdash; Smart Closet Stabilization
 
 - Confirmed legacy JSON imports now store the exact untouched file text as the protected original before replacing primary closet storage.
