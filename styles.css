@@ -1249,11 +1249,26 @@ summary:focus-visible {
 }
 
 .segmented-control label {
+  position: relative;
   min-width: 0;
 }
 
 .segmented-control input {
   position: absolute;
+  inset: 0 auto auto 0;
+  width: 1px;
+  min-width: 1px;
+  max-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  max-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
   opacity: 0;
   pointer-events: none;
 }
@@ -1579,6 +1594,12 @@ summary:focus-visible {
   }
 
   .item-form {
+    padding-inline: 10px;
+  }
+
+  .dialog-header,
+  .dialog-actions {
+    margin-inline: -10px;
     padding-inline: 10px;
   }
 
