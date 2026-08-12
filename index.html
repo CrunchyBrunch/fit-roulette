@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.5.2">
+    <link rel="stylesheet" href="./styles.css?v=1.5.3">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -50,6 +50,12 @@
               </label>
             </div>
 
+            <div class="context-state-overview" aria-live="polite">
+              <p id="weatherPreferenceStatus"><strong>Automatic Weather:</strong> Off</p>
+              <p id="weatherAvailabilityStatus"><strong>Current conditions:</strong> Not enabled</p>
+              <p id="weatherEffectiveStatus"><strong>Next roll will use:</strong> Neutral context</p>
+            </div>
+
             <details id="weatherDetails" class="inline-details">
               <summary>
                 <span>Outfit context</span>
@@ -60,14 +66,14 @@
                 <div class="context-action-row">
                   <button id="useCurrentLocationBtn" class="secondary-button compact" type="button">Use Current Location</button>
                   <button id="refreshWeatherBtn" class="secondary-button compact" type="button" hidden>Refresh</button>
-                  <button id="disableWeatherBtn" class="text-button compact" type="button" hidden>Disable &amp; Clear</button>
+                  <button id="disableWeatherBtn" class="text-button compact" type="button" hidden>Disable Automatic Weather</button>
                 </div>
                 <p id="weatherStatus" class="context-status small-meta" role="status"></p>
 
                 <label class="field">
                   <span>Context source</span>
                   <select id="contextMode">
-                    <option value="automatic">Current weather</option>
+                    <option value="automatic">Automatic weather</option>
                     <option value="manual">Manual</option>
                   </select>
                 </label>
@@ -137,6 +143,7 @@
 
             <button id="generateBtn" class="primary-button" type="button">Generate Fit</button>
             <button id="manualLogGenerateBtn" class="text-button" type="button">Log Outfit Manually</button>
+            <p class="generator-trust-copy">Fit Roulette ranks valid outfits using occasion, compatibility, your preferences, current context, and wear history.</p>
           </div>
 
           <article id="outfitResult" class="result-card empty-state"></article>
@@ -236,31 +243,31 @@
       </nav>
     </div>
 
-    <dialog id="itemDialog" class="item-dialog">
+    <dialog id="itemDialog" class="item-dialog" aria-labelledby="itemDialogTitle">
       <form id="itemForm" class="item-form" method="dialog" novalidate>
         <div class="dialog-header">
           <div>
             <p class="eyebrow" id="itemDialogMode">Smart Closet</p>
-            <h2 id="itemDialogTitle">Add Item</h2>
+            <h2 id="itemDialogTitle" tabindex="-1">Add Item</h2>
           </div>
           <button id="closeItemDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
         </div>
 
         <input id="itemId" type="hidden">
-        <p id="formError" class="form-error" role="alert" hidden></p>
-        <div id="itemReviewNotice" class="review-notice" hidden></div>
+        <div id="formError" class="form-error" role="alert" tabindex="-1" hidden></div>
 
-        <section class="editor-section quick-add-section">
+        <section id="presetSection" class="editor-section preset-section">
           <div class="section-heading">
-            <h3>Quick Add</h3>
-            <p class="small-meta">Choose a common garment type to fill sensible defaults.</p>
+            <h3>Start with a garment preset <span class="optional-label">Optional</span></h3>
+            <p class="small-meta">Apply sensible defaults, then review and change any value before saving.</p>
           </div>
           <div id="templateChips" class="quick-row" aria-label="Garment templates"></div>
+          <p id="presetStatus" class="selection-status small-meta" role="status" hidden></p>
         </section>
 
         <label class="field item-name-field">
           <span>Item name</span>
-          <input id="itemName" type="text" required autocomplete="off" placeholder="Navy Chinos">
+          <input id="itemName" type="text" required autocomplete="off" placeholder="Example: &quot;Navy Chinos&quot;">
         </label>
 
         <div class="two-column">
@@ -274,98 +281,76 @@
           </label>
         </div>
 
-        <div class="two-column">
-          <label class="field">
-            <span>Primary color</span>
-            <select id="itemPrimaryColor" required></select>
-            <input id="itemPrimaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom color, such as Cerulean" aria-label="Custom primary color" hidden>
-          </label>
+        <section class="editor-section" aria-labelledby="physicalDetailsTitle">
+          <div class="section-heading">
+            <h3 id="physicalDetailsTitle">Garment details</h3>
+          </div>
+          <div class="two-column">
+            <label class="field" id="sleeveLengthField">
+              <span>Sleeve length</span>
+              <select id="itemSleeveLength"></select>
+            </label>
+            <label class="field" id="bottomLengthField">
+              <span>Bottom length</span>
+              <select id="itemBottomLength"></select>
+            </label>
+          </div>
+          <fieldset id="beltModeFieldset" class="fieldset" hidden>
+            <legend>Belt policy</legend>
+            <div class="segmented-control">
+              <label><input type="radio" name="itemBeltMode" value="required"><span>Required</span></label>
+              <label><input type="radio" name="itemBeltMode" value="optional"><span>Optional</span></label>
+              <label><input type="radio" name="itemBeltMode" value="none"><span>No belt</span></label>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="editor-section" aria-labelledby="appearanceTitle">
+          <div class="section-heading">
+            <h3 id="appearanceTitle">Appearance</h3>
+          </div>
+          <div class="two-column">
+            <label class="field">
+              <span>Primary color</span>
+              <select id="itemPrimaryColor" required></select>
+              <input id="itemPrimaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom color, such as Cerulean" aria-label="Custom primary color" hidden>
+            </label>
+            <label class="field">
+              <span>Pattern</span>
+              <select id="itemPattern"></select>
+            </label>
+          </div>
+          <div id="primaryColorChips" class="quick-row" aria-label="Primary color shortcuts"></div>
           <label id="secondaryColorField" class="field">
             <span>Secondary color <span class="optional-label">Optional</span></span>
             <select id="itemSecondaryColor"></select>
             <input id="itemSecondaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom secondary color" aria-label="Custom secondary color" hidden>
             <small id="secondaryColorHint" class="field-hint">Choose a non-solid pattern to add a secondary color.</small>
           </label>
-        </div>
-        <div id="primaryColorChips" class="quick-row" aria-label="Primary color shortcuts"></div>
+        </section>
 
-        <div class="two-column">
-          <label class="field">
-            <span>Pattern</span>
-            <select id="itemPattern"></select>
-          </label>
-          <label class="field">
-            <span>Formality</span>
-            <select id="itemFormality"></select>
-          </label>
-        </div>
-
-        <fieldset class="fieldset">
+        <fieldset id="itemOccasionFieldset" class="fieldset" tabindex="-1">
           <legend>Occasion eligibility</legend>
           <div class="quick-row" aria-label="Occasion presets">
-            <button class="mini-button" type="button" data-occasion-preset="office">Office</button>
-            <button class="mini-button" type="button" data-occasion-preset="casual">Casual</button>
-            <button class="mini-button" type="button" data-occasion-preset="all">All</button>
-            <button class="mini-button" type="button" data-occasion-preset="clear">Clear</button>
+            <button class="mini-button" type="button" data-occasion-preset="office" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>Office</button>
+            <button class="mini-button" type="button" data-occasion-preset="casual" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>Casual</button>
+            <button class="mini-button" type="button" data-occasion-preset="all" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>All</button>
+            <button class="mini-button" type="button" data-occasion-preset="clear" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>Clear</button>
           </div>
           <div id="itemOccasions" class="check-grid"></div>
         </fieldset>
 
-        <div class="two-column">
-          <label class="field">
-            <span>Status</span>
-            <select id="itemStatus">
-              <option value="available">Available</option>
-              <option value="unavailable">Unavailable</option>
-              <option value="archived">Archived</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Preference</span>
-            <select id="itemPreference">
-              <option value="avoid">Avoid</option>
-              <option value="neutral">Neutral</option>
-              <option value="like">Like</option>
-              <option value="favorite">Favorite</option>
-            </select>
-          </label>
-        </div>
+        <label class="field">
+          <span>Formality</span>
+          <select id="itemFormality"></select>
+        </label>
 
-        <details id="matchingDetails" class="details-block">
-          <summary>Fit and matching details</summary>
+        <section id="weatherLayerSection" class="editor-section" aria-labelledby="weatherLayerTitle">
+          <div class="section-heading">
+            <h3 id="weatherLayerTitle">Weather and layering</h3>
+          </div>
           <div class="details-content">
-            <div class="two-column">
-              <label class="field" id="sleeveLengthField">
-                <span>Sleeve length</span>
-                <select id="itemSleeveLength"></select>
-              </label>
-              <label class="field" id="bottomLengthField">
-                <span>Bottom length</span>
-                <select id="itemBottomLength"></select>
-              </label>
-            </div>
-
-            <fieldset id="beltModeFieldset" class="fieldset" hidden>
-              <legend>Belt</legend>
-              <div class="segmented-control">
-                <label><input type="radio" name="itemBeltMode" value="required"><span>Required</span></label>
-                <label><input type="radio" name="itemBeltMode" value="optional"><span>Optional</span></label>
-                <label><input type="radio" name="itemBeltMode" value="none"><span>No belt</span></label>
-              </div>
-            </fieldset>
-
-            <div class="two-column">
-              <label class="field">
-                <span>Warmth contribution</span>
-                <select id="itemWarmth"></select>
-              </label>
-              <label class="field">
-                <span>Rain wear policy</span>
-                <select id="itemRainPolicy"></select>
-              </label>
-            </div>
-
-            <fieldset id="layerRoleFieldset" class="fieldset">
+            <fieldset id="layerRoleFieldset" class="fieldset" tabindex="-1">
               <legend>Eligible layer roles</legend>
               <div class="segmented-control three-part">
                 <label><input type="checkbox" name="itemLayerRole" value="base"><span>Base</span></label>
@@ -377,6 +362,14 @@
 
             <div class="two-column">
               <label class="field">
+                <span>Warmth contribution</span>
+                <select id="itemWarmth"></select>
+              </label>
+              <label class="field">
+                <span>Rain wear policy</span>
+                <select id="itemRainPolicy"></select>
+              </label>
+              <label class="field">
                 <span>Rain protection</span>
                 <select id="itemRainProtection"></select>
               </label>
@@ -385,6 +378,21 @@
                 <select id="itemWindProtection"></select>
               </label>
             </div>
+          </div>
+        </section>
+
+        <details id="matchingDetails" class="details-block">
+          <summary id="matchingSummary">Matching preferences</summary>
+          <div class="details-content">
+            <label class="field">
+              <span>Item preference</span>
+              <select id="itemPreference">
+                <option value="avoid">Avoid</option>
+                <option value="neutral">Neutral</option>
+                <option value="like">Like</option>
+                <option value="favorite">Favorite</option>
+              </select>
+            </label>
 
             <div class="relationship-grid">
               <details id="preferDetails" class="relationship-picker">
@@ -417,7 +425,7 @@
         </details>
 
         <details id="advancedDetails" class="details-block">
-          <summary>Advanced</summary>
+          <summary>Advanced and administrative</summary>
           <div class="details-content">
             <label class="field">
               <span>Labels</span>
@@ -435,6 +443,16 @@
               <input id="itemImageUrl" type="text" autocomplete="off">
             </label>
 
+            <label class="field">
+              <span>Availability</span>
+              <select id="itemStatus">
+                <option value="available">Available</option>
+                <option value="unavailable">Unavailable</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+
+            <div id="itemReviewNotice" class="review-notice" hidden></div>
             <div id="legacyMatchingNotice" class="legacy-notice" hidden></div>
             <button id="permanentDeleteBtn" class="danger-button" type="button">Permanently Delete Item</button>
           </div>
@@ -541,11 +559,11 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.5.2", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.5.3", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.5.2" defer></script>
-    <script src="./smart-closet.js?v=1.5.2" defer></script>
-    <script src="./app.js?v=1.5.2" defer></script>
+    <script src="./context-engine.js?v=1.5.3" defer></script>
+    <script src="./smart-closet.js?v=1.5.3" defer></script>
+    <script src="./app.js?v=1.5.3" defer></script>
   </body>
 </html>

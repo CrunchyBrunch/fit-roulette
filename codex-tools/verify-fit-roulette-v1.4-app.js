@@ -183,7 +183,19 @@ function runApp(savedValue, options = {}) {
   };
   vm.runInNewContext(appCode, context, { filename: "app.js" });
   domReady();
-  return { api: windowObject.__fitRouletteTest, elements, storage, storageWrites, storageWriteAttempts, confirmations, events, windowObject, windowListeners };
+  return {
+    api: windowObject.__fitRouletteTest,
+    elements,
+    occasionInputs,
+    layerRoleInputs,
+    storage,
+    storageWrites,
+    storageWriteAttempts,
+    confirmations,
+    events,
+    windowObject,
+    windowListeners
+  };
 }
 
 const legacyRaw = JSON.stringify({
@@ -506,6 +518,47 @@ assert.equal(editorApp.elements.get("itemName").focused, true, "Validation must 
 assert.equal(editorApp.storageWriteAttempts.length, invalidWrites, "Invalid save must not attempt persistence.");
 assert.equal(editorApp.elements.get("itemForm").listenerAdds.get("submit"), 1, "Repeated opens must not accumulate submit handlers.");
 
+const multiValidationApp = runApp(JSON.stringify(fieldState));
+multiValidationApp.api.openItemDialog();
+multiValidationApp.occasionInputs.forEach((input) => { input.checked = false; });
+multiValidationApp.layerRoleInputs.forEach((input) => { input.checked = false; });
+multiValidationApp.elements.get("itemName").value = "";
+multiValidationApp.elements.get("itemPrimaryColor").value = "";
+assert.equal(multiValidationApp.elements.get("itemReviewNotice").hidden, true, "A new draft must not show migration review messaging.");
+assert.equal(multiValidationApp.elements.get("itemDialogTitle").focused, true, "New editors must focus the heading.");
+assert.equal(Boolean(multiValidationApp.elements.get("itemName").focused), false, "New editors must not focus the Name field.");
+assert.equal(multiValidationApp.api.saveItemFromEditor({ generateAfter: false }), false);
+assert(multiValidationApp.elements.get("formError").textContent.includes("Fix 4 problems"));
+for (const id of ["itemName", "itemPrimaryColor", "itemOccasionFieldset", "layerRoleFieldset"]) {
+  assert.equal(multiValidationApp.elements.get(id).attributes.get("aria-invalid"), "true", `${id} must expose invalid state.`);
+  assert(multiValidationApp.elements.get(id).attributes.get("aria-describedby").startsWith("item-error-"));
+}
+
+const genuineReviewApp = runApp(JSON.stringify({
+  ...fieldState,
+  wardrobe: fieldState.wardrobe.map((entry) => entry.id === fieldTopA.id ? {
+    ...entry,
+    review: { status: "needs_review", reasons: ["Confirm migrated values."], reviewedAt: "" },
+    legacyFallback: true,
+    legacyMatching: { worksWithTags: ["navy"] }
+  } : entry)
+}));
+genuineReviewApp.api.openItemDialog(fieldTopA.id);
+assert.equal(genuineReviewApp.elements.get("itemReviewNotice").hidden, false, "A genuine persisted review item must retain its warning.");
+assert(genuineReviewApp.elements.get("itemReviewNotice").innerHTML.includes("Confirm migrated values"));
+assert.equal(genuineReviewApp.elements.get("advancedDetails").open, true, "Genuine review information must be revealed on entry.");
+
+const relationshipValidationApp = runApp(JSON.stringify(fieldState));
+relationshipValidationApp.api.openItemDialog(fieldTopA.id);
+relationshipValidationApp.elements.get("preferItemsSelect").selectedOptions = [{ value: fieldLayer.id }];
+relationshipValidationApp.elements.get("neverItemsSelect").selectedOptions = [{ value: fieldLayer.id }];
+assert.equal(relationshipValidationApp.api.saveItemFromEditor({ generateAfter: false }), false);
+assert.equal(relationshipValidationApp.elements.get("matchingSummary").attributes.get("aria-invalid"), "true");
+assert.equal(relationshipValidationApp.elements.get("matchingSummary").focused, true, "A matching conflict must focus a keyboard-focusable disclosure summary.");
+for (const id of ["matchingDetails", "preferDetails", "neverDetails"]) {
+  assert.equal(relationshipValidationApp.elements.get(id).open, true, `${id} must open to reveal the matching conflict.`);
+}
+
 const failureApp = runApp(JSON.stringify(fieldState), { failSetItem: (key) => key === "fitRoulette.v1" });
 const failureStateBefore = JSON.stringify(failureApp.api.getState());
 failureApp.api.openItemDialog(fieldTopA.id);
@@ -516,6 +569,7 @@ assert.equal(failureApp.api.saveItemFromEditor({ generateAfter: false }), false)
 assert.equal(failureApp.elements.get("itemDialog").open, true, "Persistence failure must keep the editor open.");
 assert.equal(JSON.stringify(failureApp.api.getState()), failureStateBefore, "Persistence failure must not mutate in-memory closet state.");
 assert(failureApp.elements.get("formError").textContent.includes("not saved"));
+assert.equal(failureApp.elements.get("itemName").attributes.has("aria-invalid"), false, "Persistence failure must not masquerade as field validation.");
 
 const guardedCloseApp = runApp(JSON.stringify(fieldState), { confirmResult: false });
 guardedCloseApp.api.openItemDialog(fieldTopA.id);
@@ -1058,9 +1112,13 @@ async function verifyAsyncWeatherState() {
   assert.equal(weatherApp.api.getState().settings.weather.automatic, true);
   assert.equal(weatherApp.api.getState().settings.weather.cached.condition, "rain");
   assert.equal(weatherApp.api.currentEffectiveContext().source, "current", "A successful in-session refresh must be labeled current.");
+  assert(weatherApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(weatherApp.elements.get("weatherAvailabilityStatus").textContent.includes("Current"));
+  assert(weatherApp.elements.get("weatherEffectiveStatus").textContent.includes("Next roll will use"));
   assert(!/latitude|longitude|accuracy|coordinates/i.test(JSON.stringify(weatherApp.api.getState().settings.weather.cached)));
   const reloadedWeatherApp = runApp(weatherApp.storage.get("fitRoulette.v1"));
   assert.equal(reloadedWeatherApp.api.currentEffectiveContext().source, "cached", "Reload must not represent persisted provider data as newly fetched.");
+  assert(reloadedWeatherApp.elements.get("weatherAvailabilityStatus").textContent.includes("Cached"));
   weatherApp.api.disableAutomaticWeather();
   assert.equal(weatherApp.api.getState().settings.weather.automatic, false);
   assert.equal(weatherApp.api.getState().settings.weather.cached, null);
@@ -1127,6 +1185,25 @@ async function verifyAsyncWeatherState() {
   assert.equal(promptFetches, 0, "Prompt permission must not be triggered by generation.");
   assert.equal(promptApp.api.getState().settings.weather.automatic, true);
   assert(promptApp.elements.get("weatherStatus").textContent.includes("Automatic weather remains enabled"));
+  assert(promptApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(promptApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
+  assert(promptApp.elements.get("weatherEffectiveStatus").textContent.includes("This outfit used: Neutral context"));
+
+  const deniedApp = runApp(JSON.stringify(dailyState), {
+    permissions: { query: async () => ({ state: "denied" }) }, geolocation
+  });
+  deniedApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } } });
+  deniedApp.elements.get("occasionSelect").value = "casual";
+  await deniedApp.api.generateAndRender({ mode: "generate" });
+  assert(deniedApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(deniedApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
+
+  const unavailableApp = runApp(JSON.stringify(dailyState), { permissions: null, geolocation: null });
+  unavailableApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } } });
+  unavailableApp.elements.get("occasionSelect").value = "casual";
+  await unavailableApp.api.generateAndRender({ mode: "generate" });
+  assert(unavailableApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(unavailableApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
 
   let unsupportedFetches = 0;
   const unsupportedApp = runApp(JSON.stringify(dailyState), {
@@ -1139,6 +1216,8 @@ async function verifyAsyncWeatherState() {
   await unsupportedApp.api.generateAndRender({ mode: "generate" });
   assert.equal(unsupportedFetches, 1, "Permissions-API fallback must use a session attempt guard after failure.");
   assert.equal(unsupportedApp.api.getState().settings.weather.automatic, true);
+  assert(unsupportedApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(unsupportedApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
 
   const stale = { ...cached, fetchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() };
   const stalePromptApp = runApp(JSON.stringify(dailyState), { permissions: { query: async () => ({ state: "prompt" }) }, geolocation });
@@ -1147,9 +1226,29 @@ async function verifyAsyncWeatherState() {
   stalePromptApp.api.setContextSession({ mode: "automatic", acceptStale: false });
   await stalePromptApp.api.generateAndRender({ mode: "generate" });
   assert.equal(stalePromptApp.api.getCurrentOutfit().context.source, "none", "Unaccepted stale context must not influence generation.");
+  assert(stalePromptApp.elements.get("weatherAvailabilityStatus").textContent.includes("Stale"));
+  assert(stalePromptApp.elements.get("weatherEffectiveStatus").textContent.includes("This outfit used: Neutral context"));
   stalePromptApp.api.setContextSession({ mode: "automatic", acceptStale: true });
   await stalePromptApp.api.generateAndRender({ mode: "generate" });
   assert.equal(stalePromptApp.api.getCurrentOutfit().context.source, "cached", "Accepted stale context may be used after refresh fallback.");
+  assert(stalePromptApp.elements.get("weatherEffectiveStatus").textContent.includes("Accepted stale context"));
+
+  const expired = { ...cached, fetchedAt: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString() };
+  const expiredApp = runApp(JSON.stringify(dailyState));
+  expiredApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: expired, legacyManual: null } } });
+  assert(expiredApp.elements.get("weatherAvailabilityStatus").textContent.includes("Expired"));
+  assert(expiredApp.elements.get("weatherEffectiveStatus").textContent.includes("Neutral context"));
+
+  const manualApp = runApp(JSON.stringify(dailyState));
+  manualApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached, legacyManual: null } } });
+  manualApp.api.setContextSession({ mode: "manual", manualTemperatureC: 18, manualCondition: "cloudy", adjustment: "same", ignore: false });
+  assert(manualApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(manualApp.elements.get("weatherEffectiveStatus").textContent.includes("Manual context"));
+  manualApp.api.setContextSession({ mode: "manual", adjustment: "warmer" });
+  assert(manualApp.elements.get("weatherEffectiveStatus").textContent.includes("Adjusted manual context"));
+  manualApp.api.setContextSession({ mode: "automatic", ignore: true });
+  assert(manualApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
+  assert(manualApp.elements.get("weatherEffectiveStatus").textContent.includes("Ignored"));
 }
 
 verifyAsyncWeatherState().then(() => {

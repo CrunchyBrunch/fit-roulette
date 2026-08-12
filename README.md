@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.5.2 - Narrow Editor Hotfix**
+Current release: **1.5.3 - Item Entry Polish**
 
 ## Run Locally
 
@@ -55,7 +55,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.5.2`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.5.3`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -81,9 +81,13 @@ Outfit context is optional. Generation remains functional with no location permi
 
 `Use Current Location` is the explicit action for first-time permission. Once automatic weather is enabled, every generation resolves context before building candidates: fresh cache is immediate, while stale, expired, or missing data is refreshed when permission is already granted. Permission prompt or denied states retain the saved opt-in and visibly fall back without blocking or duplicating generation. When the Permissions API is unavailable, a saved opt-in may require one best-effort geolocation attempt per session; browser-controlled permission UI cannot be bypassed, and an explicit retry resets that guard. Fit Roulette never watches location or performs background tracking. The app rounds coordinates before sending them directly to Open-Meteo and does not store coordinates, accuracy, location history, raw provider payloads, or coordinate-bearing request URLs. Closet contents, history, garment data, and identity are never sent to the provider.
 
+The context panel presents the saved Automatic Weather preference separately from current-condition availability and from the effective context the next roll will use or the generated outfit used. Manual, Ignore Weather, provider failure, and neutral fallback therefore never make an enabled automatic preference appear disabled.
+
 Footwear-aware reconciliation adds a compatible available sock after shoes are selected. Sandals and explicitly sockless footwear remain sockless; sneakers, running shoes, boots, and conservative custom footwear expect socks; dress shoes prefer dress socks. If no compatible sock or complete alternate shoe exists, generation remains usable and identifies the missing sock instead of inventing one. Generated results display in stable wear order without changing scoring, history, signatures, or saved item order.
 
-The item editor protects modified drafts across Close, Escape, backdrop, navigation where supported, and reload/tab close. In-app exits offer Save, Discard, or Continue Editing. Prefer Together and Never Pair are independent lazy disclosures, and Save and Add Similar persists once before opening a clean variant draft with item-specific fields reset. Its native segmented inputs stay accessible and interactable without widening Add Item, Quick Add, Edit Item, Add Similar, or Save and Add Similar dialogs at 320px and 359px viewports.
+The item editor is one shared workflow across Add Item, Edit, Add Similar, and Save and Add Similar. New items may start from an optional garment preset, whose visible and accessible state distinguishes an exact preset from a customized draft. Presets never save automatically and are hidden during ordinary Edit and Similar flows. New drafts use ordinary validation rather than migration-review messaging; genuine imported or migrated review reasons remain visible until a valid review/save clears them. Multiple validation issues receive a summary, inline explanations, accessible invalid state, and first-error focus without partially saving. Opening any editor mode focuses its heading instead of summoning a text keyboard. Modified drafts remain protected across Close, Escape, backdrop, navigation where supported, and reload/tab close. Prefer Together and Never Pair remain independent lazy disclosures, and native segmented inputs stay accessible without widening the editor at 320px and 359px.
+
+The editor follows the same user-facing order in every mode: identity, garment details, appearance, occasions and formality, weather and layering, matching preferences, then advanced/administrative details. Pattern precedes its conditional Secondary Color, while warmth, rainwear, protection, and eligible layer roles remain grouped without changing stored data or matching semantics.
 
 Fresh cached current conditions are at most 60 minutes old. A reading older than 60 minutes and no more than 6 hours old is labeled stale and requires explicit awareness before it affects a roll. Older readings are expired and cannot influence generation. Failed refreshes retain the last valid normalized cache. Provider readings are modeled current conditions, not live sensors or safety advice.
 
@@ -114,13 +118,13 @@ To restore:
 
 Import replaces the current local data on that device/browser.
 
-When a confirmed schema 1-4 backup is imported, v1.5.2 stores the exact untouched file text in a schema-5 protected-original slot before replacing primary storage. Existing schema-4 and schema-5 protected originals remain byte-for-byte unchanged, and every retained original is listed separately in Data. Import stops without changing primary or in-memory closet state if required recovery, migration, validation, or primary storage fails. Schema-5 imports do not create an unnecessary legacy recovery.
+When a confirmed schema 1-4 backup is imported, v1.5.3 stores the exact untouched file text in a schema-5 protected-original slot before replacing primary storage. Existing schema-4 and schema-5 protected originals remain byte-for-byte unchanged, and every retained original is listed separately in Data. Import stops without changing primary or in-memory closet state if required recovery, migration, validation, or primary storage fails. Schema-5 imports do not create an unnecessary legacy recovery.
 
 ## Add To iPhone Home Screen
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.5.2`.
+3. Open Data and confirm the app displays version `1.5.3`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.
@@ -135,7 +139,7 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
 - Closet and normalized context data stay local to the browser through `localStorage`; opt-in coordinates are sent directly to Open-Meteo and are never stored by Fit Roulette.
 
-The v1.5.2 release uses service-worker cache `fit-roulette-v1.5.2`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js` and `smart-closet.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
+The v1.5.3 release uses service-worker cache `fit-roulette-v1.5.3`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js` and `smart-closet.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
 
 ## Verify Smart Closet Release
 
@@ -144,13 +148,14 @@ With Node.js available, run:
 ```powershell
 node codex-tools/verify-fit-roulette-smart-closet.js
 node codex-tools/verify-fit-roulette-context-engine.js
-node codex-tools/verify-fit-roulette-v1.5.2-app.js
-node codex-tools/verify-fit-roulette-v1.5.2-static.js
-node codex-tools/verify-fit-roulette-v1.5.2-layout.js
+node codex-tools/verify-fit-roulette-v1.5.3-app.js
+node codex-tools/verify-fit-roulette-v1.5.3-static.js
+node codex-tools/verify-fit-roulette-v1.5.3-layout.js
+node codex-tools/verify-fit-roulette-v1.5.3-ui.js
 node codex-tools/verify-fit-roulette-deploy.js
 ```
 
-The rendered v1.5.2 layout verifier requires Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
+The rendered v1.5.3 layout and UI verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
 
 The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Detailed architecture, audit findings, thresholds, privacy behavior, and deferred scope are in `CONTEXT_ENGINE.md`.
 

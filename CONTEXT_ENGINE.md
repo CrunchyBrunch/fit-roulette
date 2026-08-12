@@ -1,5 +1,13 @@
 # Fit Roulette v1.5.1 Context Engine
 
+## v1.5.3 Item Entry And Context Communication
+
+Item creation, editing, Add Similar, and Save and Add Similar use one shared schema-5 editor. New items can start from an optional garment preset; preset identity and customization state are transient and never enter storage or export. New and Similar drafts never own migration-review messaging. Only a persisted garment that entered Edit with `review.status = needs_review` presents its retained reasons, and the existing valid review/save path remains the only editor action that clears those reasons and item-level legacy fallback.
+
+Validation remains transactional and now reports all known issues through a top summary plus field/group-specific messages, programmatic invalid/error association, disclosure opening, and first-error focus. The field reordering is presentation-only: collection, validation, pair rules, search, generation, history, import/export, custom-color strings, schema 5, and all protected-original behavior remain unchanged. Editor openings focus a programmatic heading rather than a text field so Add Similar and Save and Add Similar do not summon a mobile keyboard without typing intent.
+
+The context interface communicates three independent dimensions: saved `Automatic Weather: On/Off`; current-condition availability (`Current`, `Cached`, `Stale`, `Expired`, `Unavailable`, or `Not enabled`); and the effective context the next roll will use or the generated outfit used (`Current`, `Cached`, accepted stale, Manual, Adjusted, Ignored, or Neutral). Temporary Manual and Ignore Weather remain session controls and do not change the saved automatic preference. This wording layer does not alter provider calls, permission rules, freshness thresholds, cache normalization, fallback behavior, generation orchestration, history context, or coordinate privacy.
+
 ## v1.5.1 Daily-Use Corrections
 
 Generation now resolves effective automatic context before candidate construction. Fresh cache is used immediately; stale, expired, or missing cache starts one shared refresh when the saved opt-in and current permission state allow it. Concurrent Generate actions await the same resolution and produce one outfit. Failures preserve the last valid cache and saved opt-in, identify the actual fallback, and never block generation. Prompt and denied states are not repeatedly invoked. Browsers without the Permissions API receive at most one best-effort automatic attempt per session after a failure; an explicit Use Current Location or retry action resets that guard. Browser permission UI remains browser-controlled.
