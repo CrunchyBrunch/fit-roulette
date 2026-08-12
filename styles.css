@@ -345,7 +345,21 @@ summary:focus-visible {
 .mini-button.is-selected {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
   background: color-mix(in srgb, var(--accent) 18%, var(--surface));
-  color: var(--accent-strong);
+  color: var(--text);
+}
+
+.selection-indicator {
+  display: none;
+  margin-right: 5px;
+  font-weight: 1000;
+}
+
+.mini-button.is-selected .selection-indicator {
+  display: inline;
+}
+
+.mini-button.is-customized {
+  border-style: dashed;
 }
 
 .success-button {
@@ -940,6 +954,7 @@ summary:focus-visible {
   min-height: 48px;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0 12px;
   font-weight: 800;
   cursor: pointer;
@@ -969,6 +984,7 @@ summary:focus-visible {
   border-bottom: 2px solid currentColor;
   transform: rotate(45deg);
   transition: transform 160ms ease;
+  margin-left: auto;
 }
 
 .inline-details[open] > summary::after,
@@ -998,12 +1014,50 @@ summary:focus-visible {
   background: var(--surface);
 }
 
-.quick-add-section {
+.preset-section {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+#weatherLayerSection .details-content {
+  padding: 0;
+}
+
+.selection-status {
+  min-height: 1.3em;
+  color: var(--accent-strong);
+  font-weight: 800;
 }
 
 .item-name-field input {
   font-weight: 800;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  opacity: 1;
+  font-weight: 500;
+}
+
+.context-state-overview {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  font-size: 0.84rem;
+}
+
+.context-state-overview p,
+.generator-trust-copy {
+  margin: 0;
+}
+
+.generator-trust-copy {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .safety-notice {
@@ -1551,6 +1605,40 @@ summary:focus-visible {
   background: color-mix(in srgb, var(--danger) 10%, var(--surface));
   color: var(--danger);
   font-weight: 800;
+}
+
+.form-error ul {
+  margin: 6px 0 0;
+  padding-left: 22px;
+}
+
+.form-error a {
+  color: inherit;
+}
+
+.has-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.has-error > span:first-child,
+.has-error > legend {
+  color: var(--danger);
+  font-weight: 900;
+}
+
+.field-error {
+  margin: 4px 0 0;
+  color: var(--danger);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.field-error::before {
+  content: "! ";
+  display: inline-block;
+  min-width: 1em;
+  text-align: center;
 }
 
 .toast {

@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.5.2";
+  const APP_VERSION = "1.5.3";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -104,6 +104,12 @@
   const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = SmartCloset.COLOR_PALETTE;
   const CUSTOM_COLOR_VALUE = "__custom__";
+  const OCCASION_PRESETS = {
+    office: ["work", "friday", "date"],
+    casual: ["friday", "casual", "athletic"],
+    all: OCCASION_ORDER,
+    clear: []
+  };
   const FEEDBACK_REASONS = [
     ["colors", "These colors do not work together"],
     ["top_pants", "Top and pants do not work together"],
@@ -130,6 +136,9 @@
   let itemSaveInProgress = false;
   let itemEditorBaseline = "";
   let itemEditorOriginalColors = { primary: "", secondary: "" };
+  let activePresetId = "";
+  let activePresetBaseline = null;
+  let itemValidationAttempted = false;
   let pendingEditorExit = null;
   let unloadGuardActive = false;
   let relationshipRendered = { prefer: false, never: false };
@@ -246,13 +255,17 @@
 
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
-    $("#itemForm").addEventListener("input", updateEditorDirtyState);
-    $("#itemForm").addEventListener("change", updateEditorDirtyState);
+    $("#itemForm").addEventListener("input", handleItemFormMutation);
+    $("#itemForm").addEventListener("change", handleItemFormMutation);
     $("#itemCategory").addEventListener("change", () => {
       renderSubtypeOptions();
-      applyTemplate($("#itemSubtype").value);
+      clearActivePreset();
+      applyTemplate($("#itemSubtype").value, { presetInteraction: false });
     });
-    $("#itemSubtype").addEventListener("change", () => applyTemplate($("#itemSubtype").value));
+    $("#itemSubtype").addEventListener("change", () => {
+      clearActivePreset();
+      applyTemplate($("#itemSubtype").value, { presetInteraction: false });
+    });
     $("#itemPattern").addEventListener("change", updateSecondaryColorAvailability);
     $("#itemPrimaryColor").addEventListener("change", () => updateColorControl("primary", true));
     $("#itemSecondaryColor").addEventListener("change", () => updateColorControl("secondary", true));
@@ -297,11 +310,11 @@
 
     const quickTemplates = ["polo", "t-shirt", "button-down", "sweater", "jeans", "dress pants", "chinos", "cargos", "athletic shorts", "sneakers", "athletic/running shoes", "dress shoes", "boots", "jacket", "hoodie"];
     $("#templateChips").innerHTML = quickTemplates.map((id) => {
-      return `<button class="mini-button" type="button" data-template-id="${escapeAttribute(id)}">${escapeHtml(SmartCloset.titleCase(id))}</button>`;
+      return `<button class="mini-button selection-button" type="button" data-template-id="${escapeAttribute(id)}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>${escapeHtml(SmartCloset.titleCase(id))}</button>`;
     }).join("");
 
     $("#primaryColorChips").innerHTML = COLOR_OPTIONS.map((color) => {
-      return `<button class="mini-button" type="button" data-color="${escapeAttribute(SmartCloset.titleCase(color))}">${escapeHtml(SmartCloset.titleCase(color))}</button>`;
+      return `<button class="mini-button selection-button" type="button" data-color="${escapeAttribute(SmartCloset.titleCase(color))}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>${escapeHtml(SmartCloset.titleCase(color))}</button>`;
     }).join("");
 
     renderColorOptions();
@@ -676,7 +689,7 @@
       <p class="small-meta">This choice only appears on a genuinely fresh installation.</p>
       <div class="setup-actions">
         <button class="secondary-button" type="button" data-setup-choice="empty">Start with an empty closet</button>
-        <button class="primary-button" type="button" data-setup-choice="quick_add">Add clothes with Quick Add</button>
+        <button class="primary-button" type="button" data-setup-choice="quick_add">Add your first item</button>
         <button class="secondary-button" type="button" data-setup-choice="sample">Explore a sample closet</button>
       </div>`;
   }
@@ -735,6 +748,11 @@
   }
 
   function renderResult() {
+    renderWeatherStateCommunication(
+      appState.settings.weather,
+      ContextEngine.weatherFreshness(appState.settings.weather.cached),
+      currentEffectiveContext()
+    );
     const card = $("#outfitResult");
     const actions = $("#resultActions");
 
@@ -1092,6 +1110,36 @@
     else if (!status) status = "No location request has been made.";
     $("#weatherStatus").textContent = status;
     $("#weatherSummary").textContent = contextSummary(effective);
+    renderWeatherStateCommunication(weather, freshness, effective);
+  }
+
+  function renderWeatherStateCommunication(weather, freshness, nextContext) {
+    const preference = weather.automatic ? "On" : "Off";
+    let availability = "Not enabled";
+    if (weather.cached) {
+      if (freshness === "fresh") {
+        availability = weatherSessionFetchedAt === weather.cached.fetchedAt ? "Current" : "Cached";
+      } else if (freshness === "stale") availability = "Stale";
+      else if (freshness === "expired") availability = "Expired";
+    } else if (weather.automatic) {
+      availability = "Unavailable";
+    }
+    const generated = Boolean(currentOutfit && !currentOutfit.error && currentOutfit.context);
+    const effective = generated ? currentOutfit.context : nextContext;
+    $("#weatherPreferenceStatus").textContent = `Automatic Weather: ${preference}`;
+    $("#weatherAvailabilityStatus").textContent = `Current conditions: ${availability}`;
+    $("#weatherEffectiveStatus").textContent = `${generated ? "This outfit used" : "Next roll will use"}: ${effectiveContextCommunication(effective)}`;
+  }
+
+  function effectiveContextCommunication(context) {
+    if (context?.ignored) return "Ignored";
+    let label = "Neutral context";
+    if (context?.source === "current") label = "Current conditions";
+    else if (context?.source === "cached" && context.availability === "stale") label = "Accepted stale context";
+    else if (context?.source === "cached") label = "Cached conditions";
+    else if (context?.source === "manual") label = "Manual context";
+    if (context?.adjusted && label !== "Neutral context") return `Adjusted ${label.toLowerCase()}`;
+    return label;
   }
 
   function weatherResultLabel() {
@@ -1332,16 +1380,19 @@
     editingItemId = source && !options.addSimilar ? item.id : null;
     addSimilarSourceId = options.addSimilar && source ? source.id : null;
     itemEditorOriginalColors = { primary: item.primaryColor || "", secondary: item.secondaryColor || "" };
+    activePresetId = "";
+    activePresetBaseline = null;
+    itemValidationAttempted = false;
 
-    $("#itemDialogMode").textContent = editingItemId ? "Editing Smart Closet item" : (addSimilarSourceId ? "Add Similar" : "Quick Add");
+    $("#itemDialogMode").textContent = editingItemId ? "Edit Item" : (addSimilarSourceId ? "Add Similar" : "Add Item");
     $("#itemId").value = editingItemId || "";
     $("#itemName").value = item.name || "";
     updateEditorTitle();
     $("#itemCategory").value = item.category || "top";
     renderSubtypeOptions(item.subtype);
+    $("#itemPattern").value = item.pattern || "solid";
     setColorControl("primary", item.primaryColor || "");
     setColorControl("secondary", item.secondaryColor || "");
-    $("#itemPattern").value = item.pattern || "solid";
     $("#itemFormality").value = item.formality || 3;
     $("#itemSleeveLength").value = item.sleeveLength || "unspecified";
     $("#itemBottomLength").value = item.bottomLength || "not_applicable";
@@ -1361,8 +1412,7 @@
     $("#itemImageUrl").value = item.imageUrl || "";
     $("#itemImageField").hidden = !item.imageUrl;
     $("#itemNotes").value = item.notes || "";
-    $("#formError").hidden = true;
-    $("#formError").textContent = "";
+    clearValidationErrors();
     itemSaveInProgress = false;
 
     renderItemOccasionOptions(item.occasions.includes("gym"));
@@ -1370,15 +1420,19 @@
       input.checked = item.occasions.includes(input.value);
     });
 
+    $("#presetSection").hidden = Boolean(editingItemId || addSimilarSourceId);
+    $("#presetStatus").hidden = true;
+    $("#presetStatus").textContent = "";
     $("#addSimilarBtn").hidden = !editingItemId;
     $("#permanentDeleteBtn").hidden = !editingItemId;
     $("#matchingDetails").open = Boolean(editingItemId);
-    $("#advancedDetails").open = false;
+    const persistedNeedsReview = Boolean(editingItemId && source?.review?.status === "needs_review");
+    $("#advancedDetails").open = persistedNeedsReview;
     $("#preferDetails").open = false;
     $("#neverDetails").open = false;
     relationshipRendered = { prefer: false, never: false };
-    const reviewReasons = item.review?.reasons || [];
-    $("#itemReviewNotice").hidden = item.review?.status !== "needs_review";
+    const reviewReasons = persistedNeedsReview ? (source.review?.reasons || []) : [];
+    $("#itemReviewNotice").hidden = !persistedNeedsReview;
     $("#itemReviewNotice").innerHTML = reviewReasons.length
       ? `<strong>Review requested</strong><ul>${reviewReasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
       : "";
@@ -1391,6 +1445,8 @@
     renderLayerControls();
     updateSecondaryColorAvailability();
     updateSelectedColorChip();
+    updateOccasionPresetState();
+    renderPresetState();
 
     const dialog = $("#itemDialog");
     if (typeof dialog.showModal === "function") {
@@ -1401,7 +1457,7 @@
     resetItemEditorScroll();
     itemEditorBaseline = itemEditorSnapshot();
     updateEditorDirtyState();
-    if (options.addSimilar && typeof $("#itemName").focus === "function") $("#itemName").focus({ preventScroll: true });
+    if (typeof $("#itemDialogTitle").focus === "function") $("#itemDialogTitle").focus({ preventScroll: true });
   }
 
   function updateEditorTitle() {
@@ -1421,6 +1477,9 @@
     addSimilarSourceId = null;
     itemEditorBaseline = "";
     itemEditorOriginalColors = { primary: "", secondary: "" };
+    activePresetId = "";
+    activePresetBaseline = null;
+    itemValidationAttempted = false;
     pendingEditorExit = null;
     updateBeforeUnloadGuard(false);
     return true;
@@ -1435,7 +1494,7 @@
       continuation?.();
       return true;
     }
-    pendingEditorExit = { reason, continuation };
+    pendingEditorExit = { reason, continuation, invoker: document.activeElement };
     $("#itemExitDescription").textContent = reason === "navigation"
       ? "Save or discard this item before leaving the editor."
       : "This item has unsaved changes.";
@@ -1457,9 +1516,11 @@
   }
 
   function continuePendingEditorExit() {
+    const invoker = pendingEditorExit?.invoker || $("#itemDialogTitle");
     pendingEditorExit = null;
     closeDialog($("#itemExitDialog"));
     updateBeforeUnloadGuard(isItemEditorDirty());
+    if (typeof invoker?.focus === "function") invoker.focus({ preventScroll: true });
   }
 
   function handleItemDialogCancel(event) {
@@ -1481,6 +1542,14 @@
 
   function updateEditorDirtyState() {
     updateBeforeUnloadGuard(isItemEditorDirty());
+  }
+
+  function handleItemFormMutation() {
+    updateEditorDirtyState();
+    updatePresetCustomizationState();
+    updateOccasionPresetState();
+    updateSelectedColorChip();
+    if (itemValidationAttempted) renderValidationIssues(validateItemIssues(collectItemFromForm()), { focusFirst: false });
   }
 
   function updateBeforeUnloadGuard(active) {
@@ -1514,11 +1583,13 @@
 
     try {
       const item = collectItemFromForm();
-      const issue = validateItem(item);
-      if (issue) {
-        showItemFormError(issue);
+      const issues = validateItemIssues(item);
+      itemValidationAttempted = true;
+      if (issues.length) {
+        renderValidationIssues(issues);
         return false;
       }
+      clearValidationErrors();
 
       const now = new Date().toISOString();
       const nextState = JSON.parse(JSON.stringify(appState));
@@ -1527,7 +1598,7 @@
       if (editingItemId) {
         const index = nextState.wardrobe.findIndex((existing) => existing.id === editingItemId);
         if (index === -1) {
-          showItemFormError({ message: "This item no longer exists. Close the editor and try again.", selector: "#formError" });
+          showEditorPersistenceError("This item no longer exists. Close the editor and try again.");
           return false;
         }
         nextState.wardrobe[index] = {
@@ -1557,7 +1628,7 @@
 
       syncPairRelationships(nextState, savedItemId, selectedOptions($("#preferItemsSelect")), selectedOptions($("#neverItemsSelect")), now);
       if (!persistEditorState(nextState)) {
-        showItemFormError({ message: "Item was not saved. Local storage may be full or unavailable.", selector: "#formError" });
+        showEditorPersistenceError("Item was not saved. Local storage may be full or unavailable.");
         return false;
       }
 
@@ -1621,26 +1692,51 @@
   }
 
   function validateItem(item) {
-    if (!item.name) return { message: "Name is required.", selector: "#itemName" };
-    if (!item.category) return { message: "Category is required.", selector: "#itemCategory" };
-    if (!item.subtype) return { message: "Subtype is required.", selector: "#itemSubtype" };
-    if (!item.primaryColor) return { message: "Primary color is required. Choose a listed color or enter a custom color.", selector: "#itemPrimaryColor" };
-    if (!validColorValue(item.primaryColor, "primary")) return { message: "Primary color must be a clear name using letters, numbers, spaces, hyphens, slashes, apostrophes, or parentheses.", selector: "#itemPrimaryColorCustom" };
-    if (item.secondaryColor && !validColorValue(item.secondaryColor, "secondary")) return { message: "Secondary color must be a clear color name.", selector: "#itemSecondaryColorCustom" };
-    if (!item.occasions.length) return { message: "Choose at least one occasion.", selector: "#itemOccasions" };
+    return validateItemIssues(item)[0] || null;
+  }
+
+  function validateItemIssues(item) {
+    const issues = [];
+    const add = (id, summary, message, selector, containerSelector = "", disclosureSelectors = []) => {
+      issues.push({ id, summary, message, selector, containerSelector, disclosureSelectors });
+    };
+    if (!item.name) add("name", "Name is required", "Name is required. Enter a name for this garment.", "#itemName");
+    if (!item.category) add("category", "Choose a category", "Choose the garment category.", "#itemCategory");
+    if (!item.subtype) add("subtype", "Choose a subtype", "Choose the closest garment subtype.", "#itemSubtype");
+    if (!item.primaryColor) {
+      add("primary-color", "Primary color is required", "Primary color is required. Choose a listed color or enter a custom color.", "#itemPrimaryColor");
+    } else if (!validColorValue(item.primaryColor, "primary")) {
+      add("primary-color", "Check the primary color", "Use a clear color name with letters, numbers, spaces, hyphens, slashes, apostrophes, or parentheses.", "#itemPrimaryColorCustom");
+    }
+    if (item.secondaryColor && !validColorValue(item.secondaryColor, "secondary")) {
+      add("secondary-color", "Check the secondary color", "Enter a clear secondary color name.", "#itemSecondaryColorCustom");
+    }
+    if (!item.occasions.length) {
+      add("occasions", "Choose an occasion", "Choose at least one occasion where you would wear this garment.", "#itemOccasionFieldset");
+    }
     if (["top", "layer"].includes(item.category) && !item.layerRoles.length) {
-      return { message: "Choose at least one eligible layer role.", selector: "#layerRoleFieldset" };
+      add("layer-roles", "Choose a layer role", "Choose at least one eligible layer role.", "#layerRoleFieldset", "#weatherLayerSection", ["#weatherLayerSection"]);
     }
     const preferred = selectedOptions($("#preferItemsSelect"));
     const never = selectedOptions($("#neverItemsSelect"));
-    if (preferred.some((id) => never.includes(id))) return { message: "An item cannot be both preferred and never paired.", selector: "#preferDetails" };
-    return null;
+    if (preferred.some((id) => never.includes(id))) {
+      add(
+        "pair-relationships",
+        "Resolve the matching conflict",
+        "An item cannot be both preferred and never paired.",
+        "#matchingSummary",
+        "#matchingDetails",
+        ["#matchingDetails", "#preferDetails", "#neverDetails"]
+      );
+    }
+    return issues;
   }
 
   function handleItemFormClick(event) {
     const templateButton = event.target.closest("[data-template-id]");
     if (templateButton) {
-      applyTemplate(templateButton.dataset.templateId);
+      applyTemplate(templateButton.dataset.templateId, { presetInteraction: true });
+      if (typeof templateButton.focus === "function") templateButton.focus({ preventScroll: true });
       return;
     }
 
@@ -1648,19 +1744,20 @@
     if (colorButton) {
       const selected = normalizeTag(colorControlValue("primary")) === normalizeTag(colorButton.dataset.color);
       setColorControl("primary", selected ? "" : colorButton.dataset.color);
-      updateSelectedColorChip();
+      handleItemFormMutation();
       return;
     }
 
     const presetButton = event.target.closest("[data-occasion-preset]");
     if (presetButton) {
       applyOccasionPreset(presetButton.dataset.occasionPreset);
+      if (typeof presetButton.focus === "function") presetButton.focus({ preventScroll: true });
       return;
     }
 
   }
 
-  function applyTemplate(templateId) {
+  function applyTemplate(templateId, options = {}) {
     const template = SmartCloset.SUBTYPE_TEMPLATES[templateId];
     if (!template) return;
     $("#itemCategory").value = template.category;
@@ -1685,7 +1782,60 @@
     renderLayerControls();
     updateSecondaryColorAvailability();
     refreshPairRelationshipOptions();
-    showToast(`${SmartCloset.titleCase(templateId)} defaults applied.`);
+    if (options.presetInteraction) {
+      activePresetId = templateId;
+      activePresetBaseline = presetControlledSnapshot();
+      renderPresetState();
+      showToast(`${SmartCloset.titleCase(templateId)} preset applied.`);
+    }
+    updateOccasionPresetState();
+    updateEditorDirtyState();
+    if (itemValidationAttempted) renderValidationIssues(validateItemIssues(collectItemFromForm()), { focusFirst: false });
+  }
+
+  function presetControlledSnapshot() {
+    return JSON.stringify({
+      category: $("#itemCategory").value,
+      subtype: $("#itemSubtype").value,
+      pattern: $("#itemPattern").value,
+      formality: $("#itemFormality").value,
+      sleeveLength: $("#itemSleeveLength").value,
+      bottomLength: $("#itemBottomLength").value,
+      warmth: $("#itemWarmth").value,
+      rainPolicy: $("#itemRainPolicy").value,
+      rainProtection: $("#itemRainProtection").value,
+      windProtection: $("#itemWindProtection").value,
+      beltMode: $("input[name='itemBeltMode']:checked")?.value || "",
+      layerRoles: $$("input[name='itemLayerRole']:checked").map((input) => input.value).sort(),
+      occasions: $$("input[name='itemOccasion']:checked").map((input) => input.value).sort()
+    });
+  }
+
+  function clearActivePreset() {
+    activePresetId = "";
+    activePresetBaseline = null;
+    renderPresetState();
+  }
+
+  function updatePresetCustomizationState() {
+    if (!activePresetId || !activePresetBaseline) return;
+    renderPresetState();
+  }
+
+  function renderPresetState() {
+    const customized = Boolean(activePresetId && activePresetBaseline && presetControlledSnapshot() !== activePresetBaseline);
+    $$('[data-template-id]').forEach((button) => {
+      const selected = button.dataset.templateId === activePresetId;
+      button.classList.toggle("is-selected", selected);
+      button.classList.toggle("is-customized", selected && customized);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    const status = $("#presetStatus");
+    if (!status) return;
+    status.hidden = !activePresetId;
+    status.textContent = activePresetId
+      ? `${customized ? "Customized from" : "Applied"} ${SmartCloset.titleCase(activePresetId)} preset.`
+      : "";
   }
 
   function similarItem(source) {
@@ -1890,22 +2040,28 @@
   }
 
   function applyOccasionPreset(preset) {
-    const presets = {
-      office: ["work", "friday", "date"],
-      casual: ["friday", "casual", "athletic"],
-      all: OCCASION_ORDER,
-      clear: []
-    };
-    const selected = new Set(presets[preset] || []);
+    const selected = new Set(OCCASION_PRESETS[preset] || []);
     $$("input[name='itemOccasion']").forEach((input) => {
       input.checked = selected.has(input.value);
     });
+    updateOccasionPresetState();
+    handleItemFormMutation();
   }
 
   function applyOccasions(occasions) {
     const selected = new Set(occasions);
     $$("input[name='itemOccasion']").forEach((input) => {
       input.checked = selected.has(input.value);
+    });
+  }
+
+  function updateOccasionPresetState() {
+    const selected = $$("input[name='itemOccasion']:checked").map((input) => input.value).sort();
+    $$('[data-occasion-preset]').forEach((button) => {
+      const expected = [...(OCCASION_PRESETS[button.dataset.occasionPreset] || [])].sort();
+      const matches = selected.length === expected.length && selected.every((value, index) => value === expected[index]);
+      button.classList.toggle("is-selected", matches);
+      button.setAttribute("aria-pressed", matches ? "true" : "false");
     });
   }
 
@@ -1965,22 +2121,87 @@
     updateColorControl("secondary");
   }
 
-  function showItemFormError(issue) {
+  function clearValidationErrors() {
     const error = $("#formError");
-    error.textContent = issue.message;
+    error.hidden = true;
+    error.textContent = "";
+    error.innerHTML = "";
+    $$(".field-error").forEach((message) => message.remove?.());
+    $$("[aria-invalid='true']").forEach((target) => {
+      target.removeAttribute("aria-invalid");
+      target.removeAttribute("aria-describedby");
+    });
+    $$(".has-error").forEach((container) => container.classList.remove("has-error"));
+  }
+
+  function renderValidationIssues(issues, options = {}) {
+    clearValidationErrors();
+    if (!issues.length) return;
+    const error = $("#formError");
+    const summaryText = `Fix ${issues.length} ${issues.length === 1 ? "problem" : "problems"} before saving: ${issues.map((issue) => issue.summary).join("; ")}.`;
+    error.textContent = summaryText;
+    error.innerHTML = `
+      <strong>Fix ${issues.length} ${issues.length === 1 ? "problem" : "problems"} before saving.</strong>
+      <ul>${issues.map((issue) => `<li><a href="${escapeAttribute(issue.selector)}">${escapeHtml(issue.summary)}</a></li>`).join("")}</ul>`;
     error.hidden = false;
-    const field = $(issue.selector || "#formError") || error;
-    let details = typeof field.closest === "function" ? field.closest("details") : null;
-    while (details) {
-      details.open = true;
-      details = typeof details.parentElement?.closest === "function" ? details.parentElement.closest("details") : null;
-    }
+
+    issues.forEach((issue) => {
+      const target = $(issue.selector);
+      if (!target) return;
+      const container = (issue.containerSelector && $(issue.containerSelector))
+        || target.closest?.(".field, .fieldset, details, .editor-section")
+        || target;
+      const messageId = `item-error-${issue.id}`;
+      const inline = document.createElement("p");
+      inline.id = messageId;
+      inline.className = "field-error";
+      inline.textContent = issue.message;
+      inline.setAttribute?.("role", "status");
+      container.classList?.add("has-error");
+      target.setAttribute?.("aria-invalid", "true");
+      target.setAttribute?.("aria-describedby", messageId);
+      container.appendChild?.(inline);
+      (issue.disclosureSelectors || []).forEach((selector) => {
+        const disclosure = $(selector);
+        if (disclosure) disclosure.open = true;
+      });
+      openValidationAncestors(target);
+    });
+
+    if (options.focusFirst === false) return;
+    const first = $(issues[0].selector) || error;
     const reveal = () => {
-      if (typeof field.scrollIntoView === "function") field.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (field !== error && typeof field.focus === "function") field.focus({ preventScroll: true });
+      first.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      first.focus?.({ preventScroll: true });
     };
     if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reveal);
     else reveal();
+  }
+
+  function openValidationAncestors(field) {
+    let details = field.closest?.("details") || null;
+    while (details) {
+      details.open = true;
+      details = details.parentElement?.closest?.("details") || null;
+    }
+  }
+
+  function showEditorPersistenceError(message) {
+    clearValidationErrors();
+    const error = $("#formError");
+    error.textContent = message;
+    error.hidden = false;
+    error.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    error.focus?.({ preventScroll: true });
+  }
+
+  function showItemFormError(issue) {
+    renderValidationIssues([{
+      id: "legacy",
+      summary: issue.message,
+      message: issue.message,
+      selector: issue.selector || "#formError"
+    }]);
   }
 
   function resetItemEditorScroll() {
@@ -2007,7 +2228,9 @@
   function updateSelectedColorChip() {
     const selected = normalizeTag(colorControlValue("primary"));
     $$("[data-color]").forEach((button) => {
-      button.classList.toggle("is-selected", normalizeTag(button.dataset.color) === selected);
+      const pressed = Boolean(selected && normalizeTag(button.dataset.color) === selected);
+      button.classList.toggle("is-selected", pressed);
+      button.setAttribute("aria-pressed", pressed ? "true" : "false");
     });
   }
 
@@ -3936,6 +4159,8 @@
       saveItemFromEditor,
       collectItemFromForm,
       validateItem,
+      validateItemIssues,
+      renderValidationIssues,
       setColorControl,
       colorControlValue,
       updateSecondaryColorAvailability,
@@ -3967,6 +4192,7 @@
       removeAutomaticLayer,
       isAutomaticLayerCandidate,
       currentEffectiveContext,
+      effectiveContextCommunication,
       refreshWeather,
       resolveAutomaticContextForGeneration,
       generateAndRender,

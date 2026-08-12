@@ -1,5 +1,17 @@
 # Changelog
 
+## Fit Roulette v1.5.3 &mdash; Item Entry Polish
+
+- Unified Add Item around one shared editor with an optional `Start with a garment preset` launcher, accessible exact/customized preset feedback, semantic color and occasion shortcut states, and no persisted preset identity.
+- Corrected the false migration-style Review Requested notice on new and Similar drafts while retaining genuine imported/migrated review reasons and existing valid review-save behavior.
+- Reordered item entry into identity, garment details, appearance, occasions/formality, weather/layering, matching, and advanced/administrative groups without changing serialization, search, matching, generation, or custom-color strings.
+- Replaced intrusive Similar-mode Name focus with deliberate dialog-heading focus and retained validation focus, dirty-exit protection, and native close restoration.
+- Added multi-issue transactional validation with a linked summary, inline actionable messages, `aria-invalid`, `aria-describedby`, non-color-only styling, disclosure opening, correction clearing, and first-error focus.
+- Separated Automatic Weather preference, current-condition availability, and next-roll/used context communication while leaving provider, permission, cache, fallback, privacy, and scoring behavior unchanged.
+- Added concise generator-trust copy and deterministic UI coverage for workflow, review provenance, selection semantics, validation, weather state communication, contrast, and the retained v1.5.2 narrow-layout matrix.
+
+This release uses app version `1.5.3`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.5.3`.
+
 ## Fit Roulette v1.5.2 &mdash; Narrow Editor Hotfix
 
 - Constrained the visually hidden native segmented-control inputs so global form-control sizing can no longer widen the item editor, and aligned narrow sticky header/action insets with the form's responsive padding.
