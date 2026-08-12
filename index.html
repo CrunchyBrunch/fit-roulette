@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.5.1">
+    <link rel="stylesheet" href="./styles.css?v=1.5.2">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -541,11 +541,11 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.5.1", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.5.2", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.5.1" defer></script>
-    <script src="./smart-closet.js?v=1.5.1" defer></script>
-    <script src="./app.js?v=1.5.1" defer></script>
+    <script src="./context-engine.js?v=1.5.2" defer></script>
+    <script src="./smart-closet.js?v=1.5.2" defer></script>
+    <script src="./app.js?v=1.5.2" defer></script>
   </body>
 </html>

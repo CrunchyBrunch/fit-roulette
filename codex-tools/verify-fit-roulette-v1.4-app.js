@@ -1075,14 +1075,18 @@ async function verifyAsyncWeatherState() {
   assert.deepEqual(disableFailureApp.api.getState().settings.weather.cached, cached);
 
   let generationFetches = 0;
-  const generationWeatherApp = runApp(JSON.stringify(dailyState), {
+  const generationWeatherState = {
+    ...dailyState,
+    wardrobe: dailyState.wardrobe.filter((entry) => entry.id !== dailySandals.id)
+  };
+  const generationWeatherApp = runApp(JSON.stringify(generationWeatherState), {
     permissions: { query: async () => ({ state: "granted" }) },
     geolocation,
     fetchImpl: async () => { generationFetches += 1; return { ok: true, json: async () => providerPayload }; }
   });
   generationWeatherApp.api.replaceState({
-    ...dailyState,
-    settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } }
+    ...generationWeatherState,
+    settings: { ...generationWeatherState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } }
   });
   generationWeatherApp.elements.get("occasionSelect").value = "casual";
   const firstGeneration = generationWeatherApp.api.generateAndRender({ mode: "generate" });

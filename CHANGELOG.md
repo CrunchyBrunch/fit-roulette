@@ -1,5 +1,13 @@
 # Changelog
 
+## Fit Roulette v1.5.2 &mdash; Narrow Editor Hotfix
+
+- Constrained the visually hidden native segmented-control inputs so global form-control sizing can no longer widen the item editor, and aligned narrow sticky header/action insets with the form's responsive padding.
+- Preserved native checkbox semantics, label association, pointer and keyboard activation, checked styling, and visible focus treatment.
+- Added rendered 320px and 359px overflow coverage across Quick Add, Add Item, Edit Item, Add Similar, Save and Add Similar, expanded matching disclosures, long content, validation, and two-digit relationship counts.
+
+This hotfix uses app version `1.5.2`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.5.2`.
+
 ## Fit Roulette v1.5.1 &mdash; Context and Daily-Use Field Fixes
 
 - Resolved automatic context exactly once before candidate construction, sharing eligible in-flight weather refreshes and retaining the saved opt-in plus visible fallback across permission, network, provider, timeout, and storage failures.
