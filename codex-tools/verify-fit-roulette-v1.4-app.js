@@ -98,14 +98,22 @@ function runApp(savedValue, options = {}) {
   const confirmations = [];
   const events = [];
   const windowListeners = new Map();
+  const documentListeners = new Map();
   if (savedValue !== undefined && savedValue !== null) storage.set("fitRoulette.v1", savedValue);
   if (options.initialRecovery !== undefined && options.initialRecovery !== null) storage.set(Smart.RECOVERY_KEY, options.initialRecovery);
   if (options.initialLegacyRecovery !== undefined && options.initialLegacyRecovery !== null) storage.set(Smart.LEGACY_RECOVERY_KEY, options.initialLegacyRecovery);
 
   const document = {
+    visibilityState: options.visibilityState || "visible",
     documentElement: new MockElement("documentElement"),
     body: { appendChild() {} },
-    addEventListener(type, callback) { if (type === "DOMContentLoaded") domReady = callback; },
+    addEventListener(type, callback) {
+      if (type === "DOMContentLoaded") domReady = callback;
+      else {
+        if (!documentListeners.has(type)) documentListeners.set(type, new Set());
+        documentListeners.get(type).add(callback);
+      }
+    },
     createElement() { return new MockElement(); },
     querySelector(selector) {
       if (selector.startsWith("#")) return elements.get(selector.slice(1)) || null;
@@ -146,6 +154,7 @@ function runApp(savedValue, options = {}) {
   };
   const windowObject = {
     __FIT_ROULETTE_TESTING__: true,
+    __FIT_ROULETTE_NOW__: options.now,
     FitRouletteContextEngine: ContextEngine,
     FitRouletteSmartCloset: Smart,
     addEventListener(type, callback) {
@@ -194,7 +203,8 @@ function runApp(savedValue, options = {}) {
     confirmations,
     events,
     windowObject,
-    windowListeners
+    windowListeners,
+    documentListeners
   };
 }
 
@@ -1029,6 +1039,46 @@ assert(!cloneApp.api.getState().pairRelationships.some((record) => record.itemId
 const safeSimilar = cloneApp.api.similarItem({ ...fieldTopA, notes: "Do not copy", status: "archived", lastWorn: "2026-08-01" });
 assert.equal(safeSimilar.name, "");
 assert.equal(safeSimilar.notes, "");
+
+const duplicateApp = runApp(JSON.stringify(fieldState));
+duplicateApp.api.openItemDialog(fieldTopA.id, { addSimilar: true });
+duplicateApp.elements.get("itemName").value = `  ${fieldTopA.name.toUpperCase()}  `;
+const duplicateCountBefore = duplicateApp.api.getState().wardrobe.length;
+assert.equal(duplicateApp.api.saveItemFromEditor({ generateAfter: false }), false, "An exact likely duplicate must pause before persistence.");
+assert.equal(duplicateApp.elements.get("duplicateDialog").open, true);
+assert.equal(duplicateApp.api.getState().wardrobe.length, duplicateCountBefore);
+duplicateApp.elements.get("reviewDuplicateBtn").click();
+assert.equal(duplicateApp.elements.get("duplicateReviewDetails").hidden, false, "Review Existing must reveal a non-destructive summary.");
+duplicateApp.elements.get("continueDuplicateEditingBtn").click();
+assert.equal(duplicateApp.elements.get("itemDialog").open, true);
+assert.equal(duplicateApp.elements.get("itemName").value.trim(), fieldTopA.name.toUpperCase(), "Continue Editing must preserve the complete draft.");
+assert.equal(duplicateApp.api.saveItemFromEditor({ generateAfter: false }), false, "The unchanged draft must be reevaluated after dismissal.");
+duplicateApp.elements.get("saveDuplicateAnywayBtn").click();
+assert.equal(duplicateApp.api.getState().wardrobe.length, duplicateCountBefore + 1, "Save Anyway must persist one intentional identical garment.");
+assert.equal(duplicateApp.storageWriteAttempts.filter((entry) => entry.key === "fitRoulette.v1").length, 1, "Intentional duplicate persistence must occur exactly once.");
+
+const duplicateVariantApp = runApp(JSON.stringify(fieldState));
+duplicateVariantApp.api.openItemDialog(fieldTopA.id, { addSimilar: true });
+duplicateVariantApp.elements.get("itemName").value = fieldTopA.name;
+duplicateVariantApp.api.setColorControl("primary", "Red");
+assert.equal(duplicateVariantApp.api.findLikelyDuplicate(duplicateVariantApp.api.collectItemFromForm()), null, "A differently colored variant must not warn.");
+assert.equal(duplicateVariantApp.api.saveItemFromEditor({ generateAfter: false }), true);
+
+const archivedDuplicateState = JSON.parse(JSON.stringify(fieldState));
+archivedDuplicateState.wardrobe[0].status = "archived";
+const archivedDuplicateApp = runApp(JSON.stringify(archivedDuplicateState));
+archivedDuplicateApp.api.openItemDialog(archivedDuplicateState.wardrobe[0].id, { addSimilar: true });
+archivedDuplicateApp.elements.get("itemName").value = archivedDuplicateState.wardrobe[0].name;
+assert.equal(archivedDuplicateApp.api.saveItemFromEditor({ generateAfter: false }), false);
+assert.match(archivedDuplicateApp.elements.get("duplicateDescription").textContent, /Archived/, "Archived matches must remain visible in the advisory.");
+
+const duplicateStorageFailureApp = runApp(JSON.stringify(fieldState), { failSetItem: (key) => key === "fitRoulette.v1" });
+duplicateStorageFailureApp.api.openItemDialog(fieldTopA.id, { addSimilar: true });
+duplicateStorageFailureApp.elements.get("itemName").value = fieldTopA.name;
+assert.equal(duplicateStorageFailureApp.api.saveItemFromEditor({ generateAfter: false }), false);
+duplicateStorageFailureApp.elements.get("saveDuplicateAnywayBtn").click();
+assert.equal(duplicateStorageFailureApp.elements.get("itemDialog").open, true, "Storage failure must preserve the intentional duplicate draft.");
+assert.equal(duplicateStorageFailureApp.api.getState().wardrobe.length, fieldState.wardrobe.length);
 assert.equal(safeSimilar.status, "available");
 assert.equal(safeSimilar.lastWorn, null);
 
@@ -1184,7 +1234,7 @@ async function verifyAsyncWeatherState() {
   await promptApp.api.generateAndRender({ mode: "generate" });
   assert.equal(promptFetches, 0, "Prompt permission must not be triggered by generation.");
   assert.equal(promptApp.api.getState().settings.weather.automatic, true);
-  assert(promptApp.elements.get("weatherStatus").textContent.includes("Automatic weather remains enabled"));
+  assert(promptApp.elements.get("weatherStatus").textContent.includes("Automatic Weather remains on"));
   assert(promptApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
   assert(promptApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
   assert(promptApp.elements.get("weatherEffectiveStatus").textContent.includes("This outfit used: Neutral context"));
@@ -1206,18 +1256,107 @@ async function verifyAsyncWeatherState() {
   assert(unavailableApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
 
   let unsupportedFetches = 0;
+  let unsupportedNow = Date.parse("2026-08-19T10:00:00.000Z");
   const unsupportedApp = runApp(JSON.stringify(dailyState), {
-    permissions: null, geolocation,
-    fetchImpl: async () => { unsupportedFetches += 1; throw new Error("offline"); }
+    permissions: null, geolocation, now: () => unsupportedNow,
+    fetchImpl: async () => {
+      unsupportedFetches += 1;
+      if (unsupportedFetches === 1) throw new Error("offline");
+      return { ok: true, json: async () => providerPayload };
+    }
   });
   unsupportedApp.api.replaceState({ ...dailyState, settings: { ...dailyState.settings, weather: { automatic: true, unit: "f", cached: null, legacyManual: null } } });
   unsupportedApp.elements.get("occasionSelect").value = "casual";
   await unsupportedApp.api.generateAndRender({ mode: "generate" });
   await unsupportedApp.api.generateAndRender({ mode: "generate" });
-  assert.equal(unsupportedFetches, 1, "Permissions-API fallback must use a session attempt guard after failure.");
+  assert.equal(unsupportedFetches, 1, "Permissions-API fallback must respect failure backoff.");
   assert.equal(unsupportedApp.api.getState().settings.weather.automatic, true);
   assert(unsupportedApp.elements.get("weatherPreferenceStatus").textContent.includes("On"));
   assert(unsupportedApp.elements.get("weatherAvailabilityStatus").textContent.includes("Unavailable"));
+  unsupportedNow += ContextEngine.FAILURE_BACKOFF_MS;
+  await unsupportedApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(unsupportedFetches, 2, "Permissions-API fallback must recover after backoff in the same session.");
+  assert.equal(unsupportedApp.api.getCurrentOutfit().context.source, "current");
+
+  let retryNow = Date.parse("2026-08-19T12:00:00.000Z");
+  let retryFetches = 0;
+  let retryLocations = 0;
+  const retryState = JSON.parse(JSON.stringify(dailyState));
+  retryState.settings.weather = { automatic: true, unit: "f", cached: null, legacyManual: null };
+  const retryApp = runApp(JSON.stringify(retryState), {
+    now: () => retryNow,
+    permissions: { query: async () => ({ state: "granted" }) },
+    geolocation: { getCurrentPosition(success) { retryLocations += 1; success({ coords: { latitude: 12.34567, longitude: 45.67891 } }); } },
+    fetchImpl: async () => {
+      retryFetches += 1;
+      if (retryFetches === 1) throw new Error("synthetic offline");
+      return { ok: true, json: async () => providerPayload };
+    }
+  });
+  retryApp.elements.get("occasionSelect").value = "casual";
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(retryFetches, 1, "Startup must attempt one automatic refresh.");
+  assert.equal(retryApp.api.getWeatherRefreshState().lastAutomaticSuccess, 0, "Failed startup must not start the success throttle.");
+  await retryApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(retryFetches, 1, "Immediate Generate must respect the separate failure backoff.");
+  assert.equal(retryLocations, 1);
+  assert.equal(retryApp.api.getCurrentOutfit().context.source, "none");
+  assert.equal(retryApp.api.getRerollSession().seen.length, 1, "Fallback generation must occur exactly once.");
+  assert.equal(retryApp.api.getState().settings.weather.automatic, true, "Failure must not disable the saved preference.");
+  assert.match(retryApp.elements.get("weatherStatus").textContent, /retry will be available shortly/i);
+  assert(!/refreshed recently/i.test(retryApp.elements.get("weatherStatus").textContent), "Failure must not be described as a successful recent refresh.");
+
+  retryNow += ContextEngine.FAILURE_BACKOFF_MS - 1;
+  await retryApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(retryFetches, 1, "Generate before 30 seconds must not duplicate provider work.");
+  retryNow += 1;
+  await retryApp.api.generateAndRender({ mode: "generate" });
+  assert.equal(retryFetches, 2, "The 30-second boundary must permit automatic recovery.");
+  assert.equal(retryLocations, 2);
+  assert.equal(retryApp.api.getCurrentOutfit().context.source, "current");
+  assert.equal(retryApp.api.getState().settings.weather.automatic, true);
+  assert(!/latitude|longitude|accuracy|coordinates/i.test(JSON.stringify(retryApp.api.getState())));
+  retryApp.api.logCurrentOutfit();
+  assert.equal(retryApp.api.getState().history[0].context.source, "current", "Recovered weather must be snapshotted into history.");
+
+  let lifecycleNow = Date.parse("2026-08-19T14:00:00.000Z");
+  let lifecycleFetches = 0;
+  const lifecycleApp = runApp(JSON.stringify(retryState), {
+    now: () => lifecycleNow,
+    permissions: { query: async () => ({ state: "granted" }) },
+    geolocation,
+    fetchImpl: async () => {
+      lifecycleFetches += 1;
+      if (lifecycleFetches === 1) throw new Error("synthetic offline");
+      return { ok: true, json: async () => providerPayload };
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  lifecycleNow += ContextEngine.FAILURE_BACKOFF_MS;
+  const lifecycleCalls = [
+    ...lifecycleApp.documentListeners.get("visibilitychange"),
+    ...lifecycleApp.windowListeners.get("pageshow"),
+    ...lifecycleApp.windowListeners.get("online")
+  ].map((listener) => listener({ type: "synthetic" }));
+  await Promise.all(lifecycleCalls);
+  assert.equal(lifecycleFetches, 2, "Overlapping visible/pageshow/online recovery must share one request.");
+  assert.equal(lifecycleApp.api.currentEffectiveContext().source, "current");
+
+  let explicitFetches = 0;
+  const explicitApp = runApp(JSON.stringify(retryState), {
+    now: () => Date.parse("2026-08-19T16:00:00.000Z"),
+    permissions: { query: async () => ({ state: "granted" }) },
+    geolocation,
+    fetchImpl: async () => {
+      explicitFetches += 1;
+      if (explicitFetches === 1) throw new Error("synthetic offline");
+      return { ok: true, json: async () => providerPayload };
+    }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(await explicitApp.api.ensureAutomaticWeather("use-current-location", { force: true, userInitiated: true }), true);
+  assert.equal(explicitFetches, 2, "Explicit Use Current Location must bypass failure backoff.");
+  assert.equal(explicitApp.api.currentEffectiveContext().source, "current");
 
   const stale = { ...cached, fetchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() };
   const stalePromptApp = runApp(JSON.stringify(dailyState), { permissions: { query: async () => ({ state: "prompt" }) }, geolocation });

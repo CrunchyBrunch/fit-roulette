@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.5.3";
+  const APP_VERSION = "1.5.4";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -103,6 +103,13 @@
   const AFTER_LOGGING_VALUES = ["confirm_keep", "keep", "clear"];
   const BELT_MODES = ["required", "optional", "none"];
   const COLOR_OPTIONS = SmartCloset.COLOR_PALETTE;
+  const COLOR_SWATCH_TOKENS = Object.freeze({
+    black: "black", white: "white", "off-white": "off-white", cream: "cream", gray: "gray",
+    charcoal: "charcoal", "dark gray": "dark-gray", navy: "navy", blue: "blue", "light blue": "light-blue",
+    brown: "brown", tan: "tan", khaki: "khaki", olive: "olive", green: "green", red: "red",
+    burgundy: "burgundy", pink: "pink", purple: "purple", orange: "orange", yellow: "yellow",
+    multicolor: "multicolor"
+  });
   const CUSTOM_COLOR_VALUE = "__custom__";
   const OCCASION_PRESETS = {
     office: ["work", "friday", "date"],
@@ -140,7 +147,10 @@
   let activePresetBaseline = null;
   let itemValidationAttempted = false;
   let pendingEditorExit = null;
+  let pendingDuplicateDecision = null;
+  let duplicateWarningBypassSignature = "";
   let unloadGuardActive = false;
+  let lastInputWasKeyboard = false;
   let relationshipRendered = { prefer: false, never: false };
   let rerollSession = createRerollSession();
   let contextSession = createContextSession();
@@ -149,11 +159,14 @@
   let weatherMessage = "";
   let weatherSessionFetchedAt = "";
   let locationPermission = "unknown";
-  let automaticAttemptWithoutPermissionsApi = false;
   let generationPromise = null;
+  let manualSelectedItemIds = new Set();
+  let manualItemSearch = "";
+  const weatherNow = typeof window.__FIT_ROULETTE_NOW__ === "function" ? window.__FIT_ROULETTE_NOW__ : () => Date.now();
   const weatherClient = ContextEngine.createWeatherClient({
     fetchImpl: typeof window.fetch === "function" ? window.fetch.bind(window) : null,
-    geolocation: navigator.geolocation
+    geolocation: navigator.geolocation,
+    now: weatherNow
   });
   let closetFilters = {
     search: "",
@@ -173,10 +186,14 @@
     bindEvents();
     renderAll();
     registerServiceWorker();
-    initializeAutomaticWeather();
+    ensureAutomaticWeather("startup");
   }
 
   function bindEvents() {
+    document.addEventListener("pointerdown", () => { lastInputWasKeyboard = false; }, true);
+    document.addEventListener("keydown", (event) => {
+      if (["Tab", "Enter", " "].includes(event.key)) lastInputWasKeyboard = true;
+    }, true);
     $$(".tab-button").forEach((button) => {
       button.addEventListener("click", () => setActiveScreen(button.dataset.screen));
     });
@@ -199,15 +216,21 @@
     $("#manualLogHistoryBtn").addEventListener("click", openManualLogDialog);
     $("#manualLogForm").addEventListener("submit", saveManualLog);
     $("#closeManualLogBtn").addEventListener("click", () => closeDialog($("#manualLogDialog")));
-    $("#manualIncludeUnavailable").addEventListener("change", renderManualItemPicker);
+    $("#manualIncludeUnavailable").addEventListener("change", handleManualAvailabilityChange);
+    $("#manualItemSearch").addEventListener("input", (event) => {
+      manualItemSearch = event.target.value;
+      renderManualItemPicker();
+    });
+    $("#manualItemPicker").addEventListener("change", handleManualItemSelection);
+    $("#manualSelectedSummary").addEventListener("click", handleManualSelectedSummaryClick);
     $("#swapChoices").addEventListener("click", handleSwapChoice);
     $("#closeSwapDialogBtn").addEventListener("click", () => closeDialog($("#swapDialog")));
     $("#feedbackForm").addEventListener("submit", saveBanFeedback);
     $("#feedbackForm").addEventListener("change", updateFeedbackOtherVisibility);
     $("#dismissFeedbackBtn").addEventListener("click", finishBanFeedback);
     $("#skipFeedbackBtn").addEventListener("click", finishBanFeedback);
-    $("#useCurrentLocationBtn").addEventListener("click", () => refreshWeather({ force: true, userInitiated: true }));
-    $("#refreshWeatherBtn").addEventListener("click", () => refreshWeather({ force: true, userInitiated: true }));
+    $("#useCurrentLocationBtn").addEventListener("click", () => ensureAutomaticWeather("use-current-location", { force: true, userInitiated: true }));
+    $("#refreshWeatherBtn").addEventListener("click", () => ensureAutomaticWeather("explicit-refresh", { force: true, userInitiated: true }));
     $("#disableWeatherBtn").addEventListener("click", disableAutomaticWeather);
     $("#contextMode").addEventListener("change", handleContextControlChange);
     $("#acceptStaleWeather").addEventListener("change", handleContextControlChange);
@@ -292,6 +315,18 @@
       event.preventDefault();
       continuePendingEditorExit();
     });
+    $("#reviewDuplicateBtn").addEventListener("click", reviewDuplicateCandidate);
+    $("#saveDuplicateAnywayBtn").addEventListener("click", saveDuplicateAnyway);
+    $("#continueDuplicateEditingBtn").addEventListener("click", continueDuplicateEditing);
+    $("#duplicateDialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      continueDuplicateEditing();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") ensureAutomaticWeather("visible-resume");
+    });
+    window.addEventListener("pageshow", () => ensureAutomaticWeather("pageshow"));
+    window.addEventListener("online", () => ensureAutomaticWeather("online"));
     window.addEventListener("popstate", handleEditorNavigation);
   }
 
@@ -313,9 +348,8 @@
       return `<button class="mini-button selection-button" type="button" data-template-id="${escapeAttribute(id)}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>${escapeHtml(SmartCloset.titleCase(id))}</button>`;
     }).join("");
 
-    $("#primaryColorChips").innerHTML = COLOR_OPTIONS.map((color) => {
-      return `<button class="mini-button selection-button" type="button" data-color="${escapeAttribute(SmartCloset.titleCase(color))}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span>${escapeHtml(SmartCloset.titleCase(color))}</button>`;
-    }).join("");
+    renderColorChoiceButtons("primary");
+    renderColorChoiceButtons("secondary");
 
     renderColorOptions();
     $("#itemPattern").innerHTML = SmartCloset.PATTERNS.map((value) => `<option value="${value}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("");
@@ -750,7 +784,7 @@
   function renderResult() {
     renderWeatherStateCommunication(
       appState.settings.weather,
-      ContextEngine.weatherFreshness(appState.settings.weather.cached),
+      ContextEngine.weatherFreshness(appState.settings.weather.cached, weatherNow()),
       currentEffectiveContext()
     );
     const card = $("#outfitResult");
@@ -1077,7 +1111,7 @@
 
   function renderWeatherControls() {
     const weather = appState.settings.weather;
-    const freshness = ContextEngine.weatherFreshness(weather.cached);
+    const freshness = ContextEngine.weatherFreshness(weather.cached, weatherNow());
     const effective = currentEffectiveContext();
     $("#contextMode").value = contextSession.mode;
     $("#manualContextInputs").hidden = contextSession.mode !== "manual";
@@ -1176,7 +1210,8 @@
       adjustment: contextSession.adjustment,
       exposure: contextSession.exposure,
       rainExpected: contextSession.rainExpected,
-      ignore: contextSession.ignore
+      ignore: contextSession.ignore,
+      now: weatherNow()
     });
   }
 
@@ -1212,41 +1247,32 @@
     renderWeatherControls();
   }
 
-  async function initializeAutomaticWeather() {
+  async function ensureAutomaticWeather(reason = "foreground", options = {}) {
+    const force = options.force === true;
+    if (!force && !appState.settings.weather.automatic) return null;
+    if (!force && reason === "generation" && (contextSession.mode !== "automatic" || contextSession.ignore)) return null;
+    if (!force && ContextEngine.weatherFreshness(appState.settings.weather.cached, weatherNow()) === "fresh") {
+      renderWeatherControls();
+      return true;
+    }
+    if (force) return refreshWeather({ ...options, reason, force: true });
+
     locationPermission = await ContextEngine.permissionState(navigator.permissions, navigator.geolocation);
-    if (!appState.settings.weather.automatic || locationPermission !== "granted") {
-      renderWeatherControls();
-      return;
+    if (["granted", "unsupported"].includes(locationPermission)) {
+      return refreshWeather({ ...options, reason, force: false, userInitiated: false });
     }
-    if (ContextEngine.weatherFreshness(appState.settings.weather.cached) === "fresh") {
-      renderWeatherControls();
-      return;
-    }
-    await refreshWeather({ force: false, userInitiated: false });
+    const label = locationPermission === "prompt"
+      ? "Location permission still needs an explicit Use Current Location action."
+      : (locationPermission === "denied"
+        ? "Location permission is unavailable."
+        : "Current location is unavailable in this browser.");
+    weatherMessage = `${label} Automatic Weather remains on; using the available fallback.`;
+    renderWeatherControls();
+    return false;
   }
 
   function resolveAutomaticContextForGeneration() {
-    if (!appState.settings.weather.automatic || contextSession.mode !== "automatic" || contextSession.ignore) return null;
-    if (ContextEngine.weatherFreshness(appState.settings.weather.cached) === "fresh") return null;
-    return (async () => {
-      locationPermission = await ContextEngine.permissionState(navigator.permissions, navigator.geolocation);
-      if (locationPermission === "granted") {
-        await refreshWeather({ force: false, userInitiated: false, generationInitiated: true });
-        return;
-      }
-      if (locationPermission === "unsupported" && !automaticAttemptWithoutPermissionsApi) {
-        automaticAttemptWithoutPermissionsApi = true;
-        await refreshWeather({ force: false, userInitiated: false, generationInitiated: true });
-        return;
-      }
-      const label = locationPermission === "prompt"
-        ? "Location permission still needs an explicit Use Current Location action."
-        : (locationPermission === "denied"
-          ? "Location permission is unavailable."
-          : "Current location is unavailable in this browser.");
-      weatherMessage = `${label} Automatic weather remains enabled; using the available fallback.`;
-      renderWeatherControls();
-    })();
+    return ensureAutomaticWeather("generation");
   }
 
   function refreshWeather(options = {}) {
@@ -1257,7 +1283,6 @@
   }
 
   async function performWeatherRefresh(options = {}) {
-    if (options.userInitiated) automaticAttemptWithoutPermissionsApi = false;
     const previousWeather = { ...appState.settings.weather };
     const previousMode = contextSession.mode;
     const previousAcceptStale = contextSession.acceptStale;
@@ -1279,23 +1304,26 @@
       return true;
     } catch (error) {
       if (error?.code === "STORAGE_WRITE_FAILED") {
+        weatherClient.recordPersistenceFailure?.("STORAGE_WRITE_FAILED");
         appState.settings.weather = previousWeather;
         contextSession.mode = previousMode;
         contextSession.acceptStale = previousAcceptStale;
         weatherSessionFetchedAt = previousSessionFetchedAt;
       }
       if (error?.code === "REQUEST_CANCELLED") return false;
-      if (error?.code === "RATE_LIMITED") {
-        weatherMessage = "Automatic weather was refreshed recently. Using the available context fallback.";
+      if (error?.code === "SUCCESS_THROTTLED") {
+        weatherMessage = "Current conditions were refreshed recently. Using the available context.";
+        return false;
+      }
+      if (error?.code === "FAILURE_BACKOFF") {
+        weatherMessage = "Automatic refresh failed. Automatic Weather remains on; retry will be available shortly.";
         return false;
       }
       if (error?.code === "LOCATION_DENIED") locationPermission = "denied";
       if (["LOCATION_UNAVAILABLE", "LOCATION_TIMEOUT"].includes(error?.code)) locationPermission = "unavailable";
-      if (!navigator.permissions && ["LOCATION_DENIED", "LOCATION_UNAVAILABLE", "LOCATION_TIMEOUT"].includes(error?.code)) {
-        automaticAttemptWithoutPermissionsApi = true;
-      }
-      weatherMessage = `${error?.message || "Weather could not be refreshed."} Manual context remains available.`;
-      if (options.userInitiated && !appState.settings.weather.cached) contextSession.mode = "manual";
+      weatherMessage = appState.settings.weather.automatic
+        ? `${error?.message || "Weather could not be refreshed."} Automatic Weather remains on; Manual context remains available.`
+        : `${error?.message || "Weather could not be refreshed."} Manual context remains available.`;
       return false;
     } finally {
       weatherBusy = false;
@@ -1314,7 +1342,7 @@
     contextSession.mode = "manual";
     contextSession.acceptStale = false;
     weatherSessionFetchedAt = "";
-    automaticAttemptWithoutPermissionsApi = false;
+    weatherClient.resetRefreshState?.();
     weatherMessage = "Automatic weather disabled and cached context deleted. Closet data was not changed.";
     if (!saveState()) {
       appState.settings.weather = previousWeather;
@@ -1383,6 +1411,8 @@
     activePresetId = "";
     activePresetBaseline = null;
     itemValidationAttempted = false;
+    pendingDuplicateDecision = null;
+    duplicateWarningBypassSignature = "";
 
     $("#itemDialogMode").textContent = editingItemId ? "Edit Item" : (addSimilarSourceId ? "Add Similar" : "Add Item");
     $("#itemId").value = editingItemId || "";
@@ -1444,11 +1474,12 @@
     renderBeltModeControl();
     renderLayerControls();
     updateSecondaryColorAvailability();
-    updateSelectedColorChip();
+    updateSelectedColorChips();
     updateOccasionPresetState();
     renderPresetState();
 
     const dialog = $("#itemDialog");
+    dialog.classList.toggle("keyboard-open", lastInputWasKeyboard);
     if (typeof dialog.showModal === "function") {
       dialog.showModal();
     } else {
@@ -1472,7 +1503,9 @@
 
   function finalizeEditorClose() {
     closeDialog($("#itemExitDialog"));
+    closeDialog($("#duplicateDialog"));
     closeDialog($("#itemDialog"));
+    $("#itemDialog").classList.remove("keyboard-open");
     editingItemId = null;
     addSimilarSourceId = null;
     itemEditorBaseline = "";
@@ -1481,6 +1514,8 @@
     activePresetBaseline = null;
     itemValidationAttempted = false;
     pendingEditorExit = null;
+    pendingDuplicateDecision = null;
+    duplicateWarningBypassSignature = "";
     updateBeforeUnloadGuard(false);
     return true;
   }
@@ -1545,10 +1580,13 @@
   }
 
   function handleItemFormMutation() {
+    if (duplicateWarningBypassSignature && duplicateIdentity(collectItemFromForm()) !== duplicateWarningBypassSignature) {
+      duplicateWarningBypassSignature = "";
+    }
     updateEditorDirtyState();
     updatePresetCustomizationState();
     updateOccasionPresetState();
-    updateSelectedColorChip();
+    updateSelectedColorChips();
     if (itemValidationAttempted) renderValidationIssues(validateItemIssues(collectItemFromForm()), { focusFirst: false });
   }
 
@@ -1578,18 +1616,26 @@
       showToast("Data is locked to protect the original closet.");
       return false;
     }
-    if (itemSaveInProgress) return false;
-    itemSaveInProgress = true;
+    if (itemSaveInProgress || pendingDuplicateDecision) return false;
+    const item = collectItemFromForm();
+    const issues = validateItemIssues(item);
+    itemValidationAttempted = true;
+    if (issues.length) {
+      renderValidationIssues(issues);
+      return false;
+    }
+    clearValidationErrors();
 
+    const saveOptions = { generateAfter, addSimilarAfter, afterSave };
+    const duplicate = findLikelyDuplicate(item);
+    const identity = duplicateIdentity(item);
+    if (duplicate && duplicateWarningBypassSignature !== identity) {
+      showDuplicateWarning(duplicate, item, saveOptions);
+      return false;
+    }
+
+    itemSaveInProgress = true;
     try {
-      const item = collectItemFromForm();
-      const issues = validateItemIssues(item);
-      itemValidationAttempted = true;
-      if (issues.length) {
-        renderValidationIssues(issues);
-        return false;
-      }
-      clearValidationErrors();
 
       const now = new Date().toISOString();
       const nextState = JSON.parse(JSON.stringify(appState));
@@ -1648,6 +1694,68 @@
     } finally {
       itemSaveInProgress = false;
     }
+  }
+
+  function duplicateIdentity(item) {
+    const pattern = normalizeTag(item?.pattern);
+    return [
+      normalizeTag(item?.name),
+      normalizeTag(item?.category),
+      normalizeTag(item?.subtype),
+      normalizeTag(item?.primaryColor),
+      pattern === "solid" ? "" : normalizeTag(item?.secondaryColor),
+      pattern
+    ].join("|");
+  }
+
+  function findLikelyDuplicate(item) {
+    const identity = duplicateIdentity(item);
+    if (!normalizeTag(item?.name)) return null;
+    return appState.wardrobe.find((candidate) => {
+      return candidate.id !== editingItemId && duplicateIdentity(candidate) === identity;
+    }) || null;
+  }
+
+  function showDuplicateWarning(match, item, saveOptions) {
+    pendingDuplicateDecision = {
+      matchId: match.id,
+      identity: duplicateIdentity(item),
+      saveOptions,
+      invoker: document.activeElement
+    };
+    const secondary = item.pattern === "solid" || !item.secondaryColor ? "" : `, ${item.secondaryColor}`;
+    $("#duplicateDescription").textContent = `“${match.name}” already has the same category, subtype, ${item.primaryColor}${secondary}, and ${SmartCloset.titleCase(item.pattern)} pattern. Status: ${SmartCloset.titleCase(match.status)}.`;
+    $("#duplicateReviewDetails").hidden = true;
+    $("#duplicateReviewDetails").innerHTML = "";
+    openDialog($("#duplicateDialog"));
+  }
+
+  function reviewDuplicateCandidate() {
+    const match = pendingDuplicateDecision ? findItem(pendingDuplicateDecision.matchId) : null;
+    if (!match) return;
+    const details = $("#duplicateReviewDetails");
+    const secondary = match.pattern === "solid" || !match.secondaryColor ? "None" : match.secondaryColor;
+    details.innerHTML = `<strong>${escapeHtml(match.name)}</strong><dl><div><dt>Status</dt><dd>${escapeHtml(SmartCloset.titleCase(match.status))}</dd></div><div><dt>Category</dt><dd>${escapeHtml(CATEGORIES[match.category] || match.category)}</dd></div><div><dt>Subtype</dt><dd>${escapeHtml(SmartCloset.titleCase(match.subtype))}</dd></div><div><dt>Colors</dt><dd>${escapeHtml(match.primaryColor)} / ${escapeHtml(secondary)}</dd></div><div><dt>Pattern</dt><dd>${escapeHtml(SmartCloset.titleCase(match.pattern))}</dd></div></dl><p>Your current draft is still open behind this summary.</p>`;
+    details.hidden = false;
+    details.focus?.({ preventScroll: true });
+  }
+
+  function saveDuplicateAnyway() {
+    if (!pendingDuplicateDecision) return false;
+    const pending = pendingDuplicateDecision;
+    pendingDuplicateDecision = null;
+    duplicateWarningBypassSignature = pending.identity;
+    closeDialog($("#duplicateDialog"));
+    return saveItemFromEditor(pending.saveOptions);
+  }
+
+  function continueDuplicateEditing() {
+    const invoker = pendingDuplicateDecision?.invoker || $("#itemDialogTitle");
+    pendingDuplicateDecision = null;
+    duplicateWarningBypassSignature = "";
+    closeDialog($("#duplicateDialog"));
+    invoker?.focus?.({ preventScroll: true });
+    return true;
   }
 
   function persistEditorState(nextState) {
@@ -1740,10 +1848,11 @@
       return;
     }
 
-    const colorButton = event.target.closest("[data-color]");
+    const colorButton = event.target.closest("[data-color][data-color-kind]");
     if (colorButton) {
-      const selected = normalizeTag(colorControlValue("primary")) === normalizeTag(colorButton.dataset.color);
-      setColorControl("primary", selected ? "" : colorButton.dataset.color);
+      const kind = colorButton.dataset.colorKind === "secondary" ? "secondary" : "primary";
+      const selected = normalizeTag(colorControlValue(kind)) === normalizeTag(colorButton.dataset.color);
+      setColorControl(kind, selected ? "" : colorButton.dataset.color);
       handleItemFormMutation();
       return;
     }
@@ -2074,6 +2183,16 @@
     $("#itemSecondaryColor").innerHTML = `<option value="">No secondary color</option>${canonicalOptions}<option value="${CUSTOM_COLOR_VALUE}">Custom color…</option>`;
   }
 
+  function renderColorChoiceButtons(kind) {
+    const container = $(`#${kind}ColorChips`);
+    if (!container) return;
+    container.innerHTML = COLOR_OPTIONS.map((color) => {
+      const label = SmartCloset.titleCase(color);
+      const token = COLOR_SWATCH_TOKENS[normalizeTag(color)] || "multicolor";
+      return `<button class="mini-button selection-button color-choice" type="button" data-color-kind="${kind}" data-color="${escapeAttribute(label)}" aria-label="${escapeAttribute(`${label} ${kind} color`)}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span><span class="color-swatch color-swatch-${escapeAttribute(token)}" aria-hidden="true"></span><span>${escapeHtml(label)}</span></button>`;
+    }).join("");
+  }
+
   function setColorControl(kind, value) {
     const select = $(`#item${capitalize(kind)}Color`);
     const custom = $(`#item${capitalize(kind)}ColorCustom`);
@@ -2098,7 +2217,7 @@
     custom.hidden = select.value !== CUSTOM_COLOR_VALUE;
     custom.disabled = custom.hidden || (kind === "secondary" && $("#itemPattern").value === "solid");
     if (focusCustom && !custom.hidden && typeof custom.focus === "function") custom.focus();
-    if (kind === "primary") updateSelectedColorChip();
+    updateSelectedColorChips();
   }
 
   function colorControlValue(kind) {
@@ -2118,6 +2237,8 @@
     $("#itemSecondaryColor").disabled = solid;
     $("#secondaryColorField").classList.toggle("is-disabled", solid);
     $("#secondaryColorHint").hidden = !solid;
+    $("#secondaryColorChips").hidden = solid;
+    $$("[data-color-kind='secondary']").forEach((button) => { button.disabled = solid; });
     updateColorControl("secondary");
   }
 
@@ -2225,9 +2346,10 @@
     });
   }
 
-  function updateSelectedColorChip() {
-    const selected = normalizeTag(colorControlValue("primary"));
-    $$("[data-color]").forEach((button) => {
+  function updateSelectedColorChips() {
+    $$("[data-color][data-color-kind]").forEach((button) => {
+      const kind = button.dataset.colorKind === "secondary" ? "secondary" : "primary";
+      const selected = normalizeTag(colorControlValue(kind));
       const pressed = Boolean(selected && normalizeTag(button.dataset.color) === selected);
       button.classList.toggle("is-selected", pressed);
       button.setAttribute("aria-pressed", pressed ? "true" : "false");
@@ -3103,6 +3225,9 @@
     $("#manualLogDate").value = dateOnly(new Date().toISOString());
     $("#manualLogOccasion").value = $("#occasionSelect").value || "casual";
     $("#manualIncludeUnavailable").checked = false;
+    $("#manualItemSearch").value = "";
+    manualItemSearch = "";
+    manualSelectedItemIds = new Set();
     $("#manualLogNote").value = "";
     $("#manualLogError").hidden = true;
     renderManualItemPicker();
@@ -3111,13 +3236,13 @@
 
   function renderManualItemPicker() {
     const includeUnavailable = $("#manualIncludeUnavailable").checked;
-    const selectedIds = new Set($$("input[name='manualItem']:checked").map((input) => input.value));
     const items = appState.wardrobe
       .filter((item) => includeUnavailable || isAvailable(item))
       .sort(sortItems);
+    const filteredItems = items.filter((item) => matchesClosetSearch(item, manualItemSearch));
 
     $("#manualItemPicker").innerHTML = CATEGORY_ORDER.map((category) => {
-      const categoryItems = items.filter((item) => item.category === category);
+      const categoryItems = filteredItems.filter((item) => item.category === category);
       if (!categoryItems.length) return "";
       return `
         <fieldset class="manual-category">
@@ -3125,7 +3250,7 @@
           <div class="manual-choice-list">
             ${categoryItems.map((item) => `
               <label class="check-pill">
-                <input type="checkbox" name="manualItem" value="${escapeAttribute(item.id)}" ${selectedIds.has(item.id) ? "checked" : ""}>
+                <input type="checkbox" name="manualItem" value="${escapeAttribute(item.id)}" ${manualSelectedItemIds.has(item.id) ? "checked" : ""}>
                 <span>${escapeHtml(item.name)}${isAvailable(item) ? "" : ` (${escapeHtml(item.status)})`}</span>
               </label>
             `).join("")}
@@ -3133,11 +3258,43 @@
         </fieldset>
       `;
     }).join("");
+    $("#manualNoResults").hidden = Boolean(filteredItems.length || !manualItemSearch.trim());
+    renderManualSelectionSummary();
+  }
+
+  function handleManualItemSelection(event) {
+    const input = event.target.closest?.("input[name='manualItem']");
+    if (!input) return;
+    if (input.checked) manualSelectedItemIds.add(input.value);
+    else manualSelectedItemIds.delete(input.value);
+    renderManualSelectionSummary();
+  }
+
+  function handleManualAvailabilityChange() {
+    if (!$("#manualIncludeUnavailable").checked) {
+      manualSelectedItemIds = new Set([...manualSelectedItemIds].filter((id) => isAvailable(findItem(id))));
+    }
+    renderManualItemPicker();
+  }
+
+  function handleManualSelectedSummaryClick(event) {
+    const button = event.target.closest?.("[data-remove-manual-item]");
+    if (!button) return;
+    manualSelectedItemIds.delete(button.dataset.removeManualItem);
+    renderManualItemPicker();
+  }
+
+  function renderManualSelectionSummary() {
+    const selectedItems = [...manualSelectedItemIds].map(findItem).filter(Boolean).sort(sortItems);
+    $("#manualSelectedCount").textContent = `${selectedItems.length} ${selectedItems.length === 1 ? "garment" : "garments"} selected`;
+    $("#manualSelectedSummary").innerHTML = selectedItems.length
+      ? selectedItems.map((item) => `<button class="selected-item-pill" type="button" data-remove-manual-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.name)} from manual outfit"><span>${escapeHtml(item.name)}</span><span aria-hidden="true">×</span></button>`).join("")
+      : `<span class="small-meta">Selected garments stay visible here while you search.</span>`;
   }
 
   function saveManualLog(event) {
     event.preventDefault();
-    const itemIds = $$("input[name='manualItem']:checked").map((input) => input.value);
+    const itemIds = [...manualSelectedItemIds];
     const items = itemIds.map(findItem).filter(Boolean);
     if (!items.length) {
       $("#manualLogError").textContent = "Choose at least one item.";
@@ -4194,9 +4351,15 @@
       currentEffectiveContext,
       effectiveContextCommunication,
       refreshWeather,
+      ensureAutomaticWeather,
       resolveAutomaticContextForGeneration,
       generateAndRender,
       disableAutomaticWeather,
+      findLikelyDuplicate,
+      duplicateIdentity,
+      renderManualItemPicker,
+      getManualSelectedItemIds: () => [...manualSelectedItemIds],
+      getWeatherRefreshState: () => weatherClient.refreshState?.() || {},
       protectedOriginals,
       preserveRecoveryPayload,
       logCurrentOutfit,
@@ -4220,7 +4383,7 @@
         rerollSession = createRerollSession();
         contextSession = createContextSession();
         weatherSessionFetchedAt = "";
-        automaticAttemptWithoutPermissionsApi = false;
+        weatherClient.resetRefreshState?.();
         generationPromise = null;
         initializeGenerateOccasion();
         renderAll();
