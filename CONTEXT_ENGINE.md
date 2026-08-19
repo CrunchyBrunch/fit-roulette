@@ -1,5 +1,13 @@
 # Fit Roulette v1.5.1 Context Engine
 
+## v1.5.4 Foreground Weather And Daily Workflow
+
+Automatic Weather now uses one foreground resolver for startup, Generate/Reroll, visible resume, `pageshow`, and `online`. Concurrent triggers share the in-flight request. A successful automatic refresh starts the existing 15-minute success throttle only after provider validation and successful local persistence. Location, provider, timeout, or persistence failures instead start a separate 30-second failure backoff; they preserve the saved opt-in and last valid cache, generate at most one explicit fallback outfit, and may recover later in the same session. Explicit Refresh and Use Current Location bypass both guards. There is no repeating timer, background polling, fallback provider, or stored location data.
+
+Permission prompt and denied states do not cause unsolicited repeat prompts. Browsers without the Permissions API receive bounded best-effort attempts using the same failure backoff rather than a permanent session guard. Messaging continues to separate the saved Automatic preference, current-condition availability, and effective context used. Provider fields, freshness boundaries, coordinate rounding, request privacy, matching, candidate construction, and history context remain unchanged.
+
+Daily-workflow changes remain schema-neutral: Primary and Secondary Color use one native-select-backed canonical swatch control; programmatic editor-title focus keeps dialog announcement and mobile-keyboard avoidance while pointer launches suppress only the title's native outline; exact identity duplicates receive a non-blocking transient warning; and Manual Log adds structured search plus transient selected-item visibility. None of these controls add persisted fields or rewrite garments, history, recovery data, or custom-color strings.
+
 ## v1.5.3 Item Entry And Context Communication
 
 Item creation, editing, Add Similar, and Save and Add Similar use one shared schema-5 editor. New items can start from an optional garment preset; preset identity and customization state are transient and never enter storage or export. New and Similar drafts never own migration-review messaging. Only a persisted garment that entered Edit with `review.status = needs_review` presents its retained reasons, and the existing valid review/save path remains the only editor action that clears those reasons and item-level legacy fallback.
@@ -67,7 +75,7 @@ Open-Meteo's free endpoint is approved only while Fit Roulette remains noncommer
 - Stale: older than 60 minutes and up to and including 6 hours; labeled and usable only after explicit awareness.
 - Expired: older than 6 hours; displayed as expired and excluded from matching.
 
-Manual refresh bypasses the 15-minute automatic attempt interval. Failed refresh retains the last valid normalized record. Offline and permission-failure flows retain full manual and weather-neutral generation.
+Manual refresh bypasses the 15-minute successful-refresh throttle and 30-second failure backoff. Failed refresh retains the last valid normalized record. Offline and permission-failure flows retain full manual and weather-neutral generation.
 
 Effective context is derived from exactly one reported source (`current` when fetched in this page session, fresh/stale `cached` after persistence or reload, or `manual`), then applies session-only warmer/colder, expected-rain, and indoor/outdoor adjustments. Ignore Weather returns a neutral scoring context. Adjustments never mutate the cached provider record.
 

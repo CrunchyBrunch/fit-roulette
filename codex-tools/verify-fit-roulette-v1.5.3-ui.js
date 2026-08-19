@@ -98,12 +98,12 @@ async function verifyWorkflow(browser, baseUrl) {
     await tshirt.click();
     assert.match(await page.locator("#presetStatus").textContent(), /Applied T-Shirt preset/);
 
-    const navy = page.locator('[data-color="Navy"]');
+    const navy = page.locator('[data-color-kind="primary"][data-color="Navy"]');
     await navy.click();
     assert.equal(await navy.getAttribute("aria-pressed"), "true");
-    assert.equal(await navy.locator(".selection-indicator").evaluate((node) => getComputedStyle(node).display), "inline");
+    assert.notEqual(await navy.locator(".selection-indicator").evaluate((node) => getComputedStyle(node).display), "none");
     await page.locator("#itemPrimaryColor").selectOption("__custom__");
-    assert.equal(await page.locator('[data-color][aria-pressed="true"]').count(), 0);
+    assert.equal(await page.locator('[data-color-kind="primary"][aria-pressed="true"]').count(), 0);
     await page.locator("#itemPrimaryColorCustom").fill("Cerulean");
 
     const casual = page.locator('[data-occasion-preset="casual"]');
@@ -305,6 +305,111 @@ async function verifySelectedContrast(browser, baseUrl, colorScheme) {
   }
 }
 
+async function verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme) {
+  const { context, page, issues } = await freshPage(browser, baseUrl, { width, colorScheme });
+  try {
+    const unavailableName = await page.evaluate(() => {
+      const api = window.__fitRouletteTest;
+      const Smart = window.FitRouletteSmartCloset;
+      const now = new Date().toISOString();
+      const state = Smart.createFreshState(now);
+      state.setup = { completed: true, choice: "existing" };
+      state.wardrobe = api.sampleWardrobe();
+      state.wardrobe[0].status = "unavailable";
+      api.replaceState(state);
+      return state.wardrobe[0].name;
+    });
+    if (width === 320) await page.evaluate(() => { document.documentElement.style.fontSize = "20px"; });
+
+    const quickAdd = page.locator("#quickAddBtn");
+    await quickAdd.click();
+    assert.equal(await page.locator("#itemDialogTitle").evaluate((node) => document.activeElement === node), true);
+    assert.equal(await page.locator("#itemName").evaluate((node) => document.activeElement === node), false);
+    assert.equal(await page.locator("#itemDialog").evaluate((node) => node.classList.contains("keyboard-open")), false);
+    assert.equal(await page.locator("#itemDialogTitle").evaluate((node) => getComputedStyle(node).outlineStyle), "none");
+
+    assert.equal(await page.locator('[data-color-kind="primary"]').count(), 22);
+    assert.equal(await page.locator('[data-color-kind="secondary"]').count(), 22);
+    assert.equal(await page.locator(".color-swatch").count(), 44);
+    await page.locator("#itemPattern").selectOption("striped");
+    assert.equal(await page.locator("#secondaryColorChips").isVisible(), true);
+    await page.locator('[data-color-kind="primary"][data-color="Navy"]').click();
+    await page.locator('[data-color-kind="secondary"][data-color="White"]').click();
+    assert.equal(await page.locator("#itemPrimaryColor").inputValue(), "Navy");
+    assert.equal(await page.locator("#itemSecondaryColor").inputValue(), "White");
+    assert.equal(await page.locator('[data-color-kind="primary"][data-color="Navy"]').getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator('[data-color-kind="secondary"][data-color="White"]').getAttribute("aria-pressed"), "true");
+    assert.notEqual(
+      await page.locator(".color-swatch-navy").first().evaluate((node) => { const style = getComputedStyle(node); return style.backgroundImage === "none" ? style.backgroundColor : style.backgroundImage; }),
+      await page.locator(".color-swatch-white").first().evaluate((node) => { const style = getComputedStyle(node); return style.backgroundImage === "none" ? style.backgroundColor : style.backgroundImage; })
+    );
+    await page.locator("#itemPattern").selectOption("solid");
+    assert.equal(await page.locator("#secondaryColorChips").isHidden(), true);
+    assert.equal(await page.locator("#itemSecondaryColor").isDisabled(), true);
+    await page.locator("#closeItemDialogBtn").click();
+    if (await page.locator("#itemExitDialog").isVisible()) await page.locator("#discardItemExitBtn").click();
+
+    await quickAdd.focus();
+    await quickAdd.press("Enter");
+    assert.equal(await page.locator("#itemDialog").evaluate((node) => node.classList.contains("keyboard-open")), true);
+    assert.equal(await page.locator("#itemDialogTitle").evaluate((node) => getComputedStyle(node).outlineStyle), "solid");
+    await page.locator("#closeItemDialogBtn").click();
+    assert.equal(await quickAdd.evaluate((node) => document.activeElement === node), true);
+
+    await page.locator('[data-screen="closet"]').click();
+    const sourceCard = page.locator("[data-item-id]").first();
+    const sourceName = (await sourceCard.locator("h3").textContent()).trim();
+    const beforeDuplicate = await page.evaluate(() => window.__fitRouletteTest.getState().wardrobe.length);
+    await sourceCard.locator('[data-action="add-similar"]').click();
+    await page.locator("#itemName").fill(`  ${sourceName.toUpperCase()}  `);
+    await page.locator('#itemForm button[type="submit"]').click();
+    assert.equal(await page.locator("#duplicateDialog").isVisible(), true);
+    await page.locator("#reviewDuplicateBtn").click();
+    assert.equal(await page.locator("#duplicateReviewDetails").isVisible(), true);
+    await page.locator("#continueDuplicateEditingBtn").click();
+    assert.equal((await page.locator("#itemName").inputValue()).trim(), sourceName.toUpperCase());
+    await page.locator('#itemForm button[type="submit"]').click();
+    await page.locator("#saveDuplicateAnywayBtn").click();
+    assert.equal(await page.evaluate(() => window.__fitRouletteTest.getState().wardrobe.length), beforeDuplicate + 1);
+
+    await page.locator('[data-screen="generate"]').click();
+    await page.locator("#manualLogGenerateBtn").click();
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^0 garments/);
+    await page.locator("#manualItemSearch").fill("navy");
+    const navyChoice = page.locator('input[name="manualItem"]').first();
+    const navyId = await navyChoice.getAttribute("value");
+    await navyChoice.check();
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^1 garment/);
+    await page.locator("#manualItemSearch").fill("no synthetic match token");
+    assert.equal(await page.locator('input[name="manualItem"]').count(), 0);
+    assert.equal(await page.locator(`[data-remove-manual-item="${navyId}"]`).count(), 1, "Selected garments must stay discoverable while filtered out.");
+    await page.locator("#manualItemSearch").fill("");
+    assert.equal(await page.locator(`input[name="manualItem"][value="${navyId}"]`).isChecked(), true);
+    const remaining = page.locator('input[name="manualItem"]:not(:checked)');
+    for (let index = 0; index < 5; index += 1) await remaining.nth(index).check();
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/);
+    await page.locator("#manualIncludeUnavailable").check();
+    await page.locator("#manualItemSearch").fill(unavailableName);
+    await page.locator('input[name="manualItem"]').check();
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^7 garments/);
+    await page.locator("#manualIncludeUnavailable").uncheck();
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/, "Disabling unavailable items must remove only newly ineligible selections.");
+    await page.locator("#manualItemSearch").fill("");
+    await page.locator('#manualLogForm button[type="submit"]').click();
+    const logged = await page.evaluate(() => window.__fitRouletteTest.getState().history[0]);
+    assert.equal(logged.source, "manual");
+    assert.equal(logged.itemIds.length, 6);
+    assert.equal(new Set(logged.itemIds).size, 6);
+
+    const overflow = await page.evaluate(() => ({ html: document.documentElement.scrollWidth - document.documentElement.clientWidth, body: document.body.scrollWidth - document.body.clientWidth }));
+    assert(overflow.html <= 1 && overflow.body <= 1, `${width}px daily workflow overflowed: ${JSON.stringify(overflow)}`);
+    assert.deepEqual(issues, []);
+    return { width, colorScheme, enlargedText: width === 320, canonicalColors: 22, manualItemsLogged: 6, horizontalOverflow: 0 };
+  } finally {
+    await context.close();
+  }
+}
+
 (async () => {
   const { chromium } = loadPlaywright();
   const executablePath = browserExecutable();
@@ -320,7 +425,11 @@ async function verifySelectedContrast(browser, baseUrl, colorScheme) {
       light: await verifySelectedContrast(browser, baseUrl, "light"),
       dark: await verifySelectedContrast(browser, baseUrl, "dark")
     };
-    console.log(JSON.stringify({ ok: true, workflow, weatherStates: Object.keys(weather), selectedContrast: contrast }));
+    const dailyWorkflow = [];
+    for (const width of [320, 359, 1280]) {
+      for (const colorScheme of ["light", "dark"]) dailyWorkflow.push(await verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme));
+    }
+    console.log(JSON.stringify({ ok: true, workflow, weatherStates: Object.keys(weather), selectedContrast: contrast, dailyWorkflow }));
   } finally {
     await browser.close();
     await new Promise((resolve) => server.close(resolve));

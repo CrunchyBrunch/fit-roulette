@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.5.3">
+    <link rel="stylesheet" href="./styles.css?v=1.5.4">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -327,6 +327,7 @@
             <input id="itemSecondaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom secondary color" aria-label="Custom secondary color" hidden>
             <small id="secondaryColorHint" class="field-hint">Choose a non-solid pattern to add a secondary color.</small>
           </label>
+          <div id="secondaryColorChips" class="quick-row" aria-label="Secondary color shortcuts" hidden></div>
         </section>
 
         <fieldset id="itemOccasionFieldset" class="fieldset" tabindex="-1">
@@ -480,6 +481,19 @@
       </div>
     </dialog>
 
+    <dialog id="duplicateDialog" class="decision-dialog" aria-labelledby="duplicateTitle" aria-describedby="duplicateDescription">
+      <div class="decision-dialog-content">
+        <h2 id="duplicateTitle">Possible duplicate</h2>
+        <p id="duplicateDescription"></p>
+        <div id="duplicateReviewDetails" class="duplicate-review" tabindex="-1" hidden></div>
+        <div class="decision-actions">
+          <button id="reviewDuplicateBtn" class="secondary-button" type="button">Review Existing</button>
+          <button id="saveDuplicateAnywayBtn" class="primary-button" type="button">Save Anyway</button>
+          <button id="continueDuplicateEditingBtn" class="secondary-button" type="button">Continue Editing</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="manualLogDialog" class="item-dialog compact-dialog">
       <form id="manualLogForm" class="item-form" method="dialog">
         <div class="dialog-header">
@@ -501,12 +515,23 @@
           </label>
         </div>
 
+        <label class="field">
+          <span>Search garments</span>
+          <input id="manualItemSearch" type="search" autocomplete="off" placeholder="Name, category, color, pattern, or label">
+        </label>
+
+        <div class="manual-selection-status">
+          <strong id="manualSelectedCount" role="status" aria-live="polite">0 garments selected</strong>
+          <div id="manualSelectedSummary" class="manual-selected-summary"></div>
+        </div>
+
         <label class="toggle-row availability-toggle">
           <input id="manualIncludeUnavailable" type="checkbox">
           <span>Include unavailable items</span>
         </label>
 
         <div id="manualItemPicker" class="manual-item-picker"></div>
+        <p id="manualNoResults" class="small-meta" hidden>No garments match this search.</p>
         <p id="manualLogError" class="form-error" role="alert" hidden></p>
 
         <label class="field">
@@ -559,11 +584,11 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.5.3", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.5.4", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.5.3" defer></script>
-    <script src="./smart-closet.js?v=1.5.3" defer></script>
-    <script src="./app.js?v=1.5.3" defer></script>
+    <script src="./context-engine.js?v=1.5.4" defer></script>
+    <script src="./smart-closet.js?v=1.5.4" defer></script>
+    <script src="./app.js?v=1.5.4" defer></script>
   </body>
 </html>

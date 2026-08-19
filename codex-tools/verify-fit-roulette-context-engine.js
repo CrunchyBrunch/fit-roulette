@@ -159,9 +159,32 @@ async function verifyClient() {
     fetchImpl: async () => ({ ok: true, json: async () => providerPayload() })
   });
   await rateClient.refresh({ force: false });
-  await assert.rejects(() => rateClient.refresh({ force: false }), (error) => error.code === "RATE_LIMITED");
+  await assert.rejects(() => rateClient.refresh({ force: false }), (error) => error.code === "SUCCESS_THROTTLED");
   autoNow += 60001;
   await rateClient.refresh({ force: false });
+
+  let recoveryNow = Date.parse(NOW);
+  let recoveryFetches = 0;
+  const recoveryClient = Context.createWeatherClient({
+    geolocation,
+    now: () => recoveryNow,
+    automaticMinimumMs: 60000,
+    failureBackoffMs: 30000,
+    fetchImpl: async () => {
+      recoveryFetches += 1;
+      if (recoveryFetches === 1) throw new Error("synthetic offline");
+      return { ok: true, json: async () => providerPayload() };
+    }
+  });
+  await assert.rejects(() => recoveryClient.refresh({ force: false }), (error) => error.code === "NETWORK_ERROR");
+  assert.equal(recoveryClient.refreshState().lastAutomaticSuccess, 0, "Failure must not start the success throttle.");
+  await assert.rejects(() => recoveryClient.refresh({ force: false }), (error) => error.code === "FAILURE_BACKOFF");
+  assert.equal(recoveryFetches, 1, "Failure backoff must prevent duplicate provider calls.");
+  recoveryNow += Context.FAILURE_BACKOFF_MS;
+  await recoveryClient.refresh({ force: false });
+  assert.equal(recoveryFetches, 2, "The exact failure-backoff boundary must permit same-session recovery.");
+  assert(recoveryClient.refreshState().lastAutomaticSuccess > 0);
+  assert.equal(recoveryClient.refreshState().lastAutomaticFailure, 0);
 
   const denied = Context.createWeatherClient({
     geolocation: { getCurrentPosition(success, failure) { failure({ code: 1 }); } },

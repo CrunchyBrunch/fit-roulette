@@ -24,6 +24,7 @@
   const FRESH_MAX_MS = 60 * 60 * 1000;
   const STALE_MAX_MS = 6 * 60 * 60 * 1000;
   const AUTO_REFRESH_MIN_MS = 15 * 60 * 1000;
+  const FAILURE_BACKOFF_MS = 30 * 1000;
   const REQUEST_TIMEOUT_MS = 10000;
   const WIND_THRESHOLD_KPH = 25;
 
@@ -411,8 +412,11 @@
     const now = options?.now || (() => Date.now());
     const timeoutMs = Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : REQUEST_TIMEOUT_MS;
     const automaticMinimumMs = Number(options?.automaticMinimumMs) >= 0 ? Number(options.automaticMinimumMs) : AUTO_REFRESH_MIN_MS;
+    const failureBackoffMs = Number(options?.failureBackoffMs) >= 0 ? Number(options.failureBackoffMs) : FAILURE_BACKOFF_MS;
     let inFlight = null;
-    let lastAutomaticAttempt = 0;
+    let lastAutomaticSuccess = 0;
+    let lastAutomaticFailure = 0;
+    let lastFailureCode = "";
     let activeController = null;
     let cancelled = false;
 
@@ -420,14 +424,25 @@
       const force = refreshOptions?.force === true;
       if (inFlight) return inFlight;
       const currentTime = now();
-      if (!force && lastAutomaticAttempt && currentTime - lastAutomaticAttempt < automaticMinimumMs) {
-        throw contextError("RATE_LIMITED", "Automatic weather refresh is rate-limited.");
+      if (!force && lastAutomaticSuccess && currentTime - lastAutomaticSuccess < automaticMinimumMs) {
+        throw contextError("SUCCESS_THROTTLED", "Current conditions were refreshed recently.");
       }
-      if (!fetchImpl) throw contextError("FETCH_UNAVAILABLE", "Weather requests are unavailable in this browser.");
+      if (!force && lastAutomaticFailure && currentTime - lastAutomaticFailure < failureBackoffMs) {
+        const error = contextError("FAILURE_BACKOFF", "Automatic refresh failed. Automatic Weather remains on; retry will be available shortly.");
+        error.failureCode = lastFailureCode;
+        error.retryAt = lastAutomaticFailure + failureBackoffMs;
+        throw error;
+      }
+      if (!fetchImpl) {
+        lastAutomaticFailure = currentTime;
+        lastFailureCode = "FETCH_UNAVAILABLE";
+        throw contextError("FETCH_UNAVAILABLE", "Weather requests are unavailable in this browser.");
+      }
       if (!geolocation || typeof geolocation.getCurrentPosition !== "function") {
+        lastAutomaticFailure = currentTime;
+        lastFailureCode = "LOCATION_UNAVAILABLE";
         throw contextError("LOCATION_UNAVAILABLE", "Current location is unavailable in this browser.");
       }
-      if (!force) lastAutomaticAttempt = currentTime;
       inFlight = (async () => {
         cancelled = false;
         activeController = typeof AbortController === "function" ? new AbortController() : null;
@@ -455,12 +470,21 @@
             throw contextError("PROVIDER_ERROR", `Weather provider returned ${response?.status || "an error"}.`);
           }
           const payload = await response.json();
-          return normalizeProviderResponse(payload, { fetchedAt: now() });
+          const record = normalizeProviderResponse(payload, { fetchedAt: now() });
+          if (!force) lastAutomaticSuccess = now();
+          lastAutomaticFailure = 0;
+          lastFailureCode = "";
+          return record;
         } catch (error) {
-          if (cancelled) throw contextError("REQUEST_CANCELLED", "Weather request was cancelled.");
-          if (error?.name === "AbortError") throw contextError("WEATHER_TIMEOUT", "Weather request timed out.");
-          if (error?.code) throw error;
-          throw contextError("NETWORK_ERROR", "Weather could not be refreshed.");
+          let normalizedError = error;
+          if (cancelled) normalizedError = contextError("REQUEST_CANCELLED", "Weather request was cancelled.");
+          else if (error?.name === "AbortError") normalizedError = contextError("WEATHER_TIMEOUT", "Weather request timed out.");
+          else if (!error?.code) normalizedError = contextError("NETWORK_ERROR", "Weather could not be refreshed.");
+          if (normalizedError.code !== "REQUEST_CANCELLED") {
+            lastAutomaticFailure = now();
+            lastFailureCode = normalizedError.code || "UNKNOWN";
+          }
+          throw normalizedError;
         } finally {
           if (timeoutId !== null) clearTimeout(timeoutId);
           activeController = null;
@@ -477,7 +501,23 @@
       activeController?.abort();
     }
 
-    return { refresh, cancel, isRefreshing: () => Boolean(inFlight) };
+    function recordPersistenceFailure(code = "STORAGE_WRITE_FAILED") {
+      lastAutomaticSuccess = 0;
+      lastAutomaticFailure = now();
+      lastFailureCode = code;
+    }
+
+    function resetRefreshState() {
+      lastAutomaticSuccess = 0;
+      lastAutomaticFailure = 0;
+      lastFailureCode = "";
+    }
+
+    function refreshState() {
+      return { lastAutomaticSuccess, lastAutomaticFailure, lastFailureCode, inFlight: Boolean(inFlight) };
+    }
+
+    return { refresh, cancel, isRefreshing: () => Boolean(inFlight), recordPersistenceFailure, resetRefreshState, refreshState };
   }
 
   function locate(geolocation, timeoutMs, maximumAge, signal) {
@@ -572,6 +612,7 @@
     FRESH_MAX_MS,
     STALE_MAX_MS,
     AUTO_REFRESH_MIN_MS,
+    FAILURE_BACKOFF_MS,
     REQUEST_TIMEOUT_MS,
     WIND_THRESHOLD_KPH,
     WARMTH_POINTS,

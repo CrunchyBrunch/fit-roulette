@@ -1,5 +1,16 @@
 # Changelog
 
+## Fit Roulette v1.5.4 &mdash; Daily Workflow Field Fixes
+
+- Separated the 15-minute successful automatic-refresh throttle from a 30-second failure backoff, preserving one-request deduplication, same-session recovery, exactly-once Generate/Reroll, saved opt-in state, last valid cache, and coordinate privacy.
+- Centralized foreground weather resolution across startup, Generate/Reroll, visible resume, `pageshow`, and `online` without timers, background polling, unsolicited permission prompts, or lifecycle-triggered outfit generation.
+- Reused one native-select-backed Primary/Secondary canonical color control with labeled swatches, independent selection state, non-color selected indicators, forced-color boundaries, custom-string preservation, and responsive wrapping.
+- Retained programmatic editor-title focus and mobile-keyboard avoidance while replacing the pointer-open native rectangle with a narrowly scoped, app-themed keyboard-opening indicator.
+- Added an advisory exact-identity duplicate decision covering every item-entry save path, including read-only review, Continue Editing, and transactional Save Anyway without fuzzy matching, merging, or persisted warning state.
+- Added structured Manual Log search, persistent selection state, live count, and a removable selected-garment summary without changing partial logs, provenance, recency, history, or schema.
+
+This release uses app version `1.5.4`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.5.4`.
+
 ## Fit Roulette v1.5.3 &mdash; Item Entry Polish
 
 - Unified Add Item around one shared editor with an optional `Start with a garment preset` launcher, accessible exact/customized preset feedback, semantic color and occasion shortcut states, and no persisted preset identity.
