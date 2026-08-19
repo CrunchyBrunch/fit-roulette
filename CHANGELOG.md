@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.6.0 &mdash; Closet Insights Foundation
+
+- Added a fifth top-level Insights section with separate Data Readiness, current Closet Composition, explicitly Logged Activity, Current Coverage, and user-initiated Closet Evaluation groups.
+- Added a deterministic pure-analysis module that accepts state and explicit options, returns serializable evidence with denominators and limitations, never reads or writes browser storage, and does not affect generation.
+- Added snapshot-first historical metadata, unique-per-log item and pair counts, local calendar-day date ranges, future/invalid-date flags, current-utilization denominators, exact logged repetition, source/context provenance, and lower-confidence legacy recency labels.
+- Added exact current-coverage enumeration with stable ordering, released availability/occasion/compatibility/pair/ban/belt/sock/single-layer/Build Around rules, explicit context assumptions, stale-result protection, and a hard 50,000-tuple deterministic lower-bound cap.
+- Added a nonjudgmental on-demand Closet Evaluation built from the same evidence cards, with no overall grade, persisted analytics, purchase recommendation, personality inference, or automatic matching changes.
+- Added accessible text-first cards, lists, and breakdowns; five-section 320px/359px navigation; screen-reader current state; forced-color boundaries; status announcements; long-name wrapping; and light/dark/responsive rendered verification.
+- Preserved invalid saved history dates through normalization so Insights can flag them instead of silently treating them as current, while retaining schema 5 and the stored history shape.
+- Added 24 deterministic analytical fixtures, read-only state-equivalence checks, exact/capped performance coverage, provenance/date/snapshot regression checks, rendered accessibility and offline tests, and synchronized deployment verification.
+
+This release uses app version `1.6.0`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.6.0`. Insights remains local-only and makes no network request.
+
 ## Fit Roulette v1.5.4 &mdash; Daily Workflow Field Fixes
 
 - Separated the 15-minute successful automatic-refresh throttle from a 30-second failure backoff, preserving one-request deduplication, same-session recovery, exactly-once Generate/Reroll, saved opt-in state, last valid cache, and coordinate privacy.

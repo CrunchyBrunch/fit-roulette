@@ -17,9 +17,10 @@ new vm.Script(contextEngine, { filename: "context-engine.js" });
 new vm.Script(smart, { filename: "smart-closet.js" });
 new vm.Script(sw, { filename: "sw.js" });
 
-assert(html.indexOf('src="./context-engine.js?v=1.5.4"') < html.indexOf('src="./smart-closet.js?v=1.5.4"'), "Context Engine must load before Smart Closet.");
-assert(html.indexOf('src="./smart-closet.js?v=1.5.4"') < html.indexOf('src="./app.js?v=1.5.4"'), "Smart Closet data module must load before the app.");
-assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.5.4"') < html.indexOf('src="./context-engine.js?v=1.5.4"'), "Versioned service-worker update bootstrap must run before cached application bundles.");
+assert(html.indexOf('src="./context-engine.js?v=1.6.0"') < html.indexOf('src="./smart-closet.js?v=1.6.0"'), "Context Engine must load before Smart Closet.");
+assert(html.indexOf('src="./smart-closet.js?v=1.6.0"') < html.indexOf('src="./insights.js?v=1.6.0"'), "Smart Closet data module must load before Insights.");
+assert(html.indexOf('src="./insights.js?v=1.6.0"') < html.indexOf('src="./app.js?v=1.6.0"'), "Insights must load before the app.");
+assert(html.indexOf('navigator.serviceWorker.register("./sw.js?v=1.6.0"') < html.indexOf('src="./context-engine.js?v=1.6.0"'), "Versioned service-worker update bootstrap must run before cached application bundles.");
 for (const id of [
   "freshSetup", "reviewQueue", "itemSubtype", "itemPattern", "itemFormality", "itemStatus", "itemPreference",
   "itemSleeveLength", "itemBottomLength", "itemWarmth", "itemRainPolicy", "preferItemsSelect", "neverItemsSelect",
@@ -46,8 +47,8 @@ assert(smart.includes("const SCHEMA_VERSION = 5"));
 assert(smart.includes('RECOVERY_KEY = "fitRoulette.v1.recovery.schema5"'));
 assert(smart.includes('LEGACY_RECOVERY_KEY = "fitRoulette.v1.recovery.schema4"'));
 assert(app.includes('STORAGE_KEY = "fitRoulette.v1"'));
-assert(app.includes('APP_VERSION = "1.5.4"'), "Visible release version must be 1.5.4.");
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.5.4"'), "Final service-worker cache must match the 1.5.4 release.");
+assert(app.includes('APP_VERSION = "1.6.0"'), "Visible release version must be 1.6.0.");
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.6.0"'), "Final service-worker cache must match the 1.6.0 release.");
 assert(app.includes("SmartCloset.canWearTogether"), "Pair-rule candidates must use wearable-slot compatibility.");
 assert(app.includes('data-result-action="remove-belt"'), "Optional-belt removal control is missing.");
 assert(app.includes('data-result-action="remove-layer"'), "Optional-layer removal control is missing.");

@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, "..");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const context = fs.readFileSync(path.join(root, "context-engine.js"), "utf8");
 
-assert(app.includes('APP_VERSION = "1.5.4"'));
+assert(app.includes('APP_VERSION = "1.6.0"'));
 assert(app.includes('ensureAutomaticWeather("startup")'));
 assert(app.includes('ensureAutomaticWeather("visible-resume")'));
 assert(app.includes('ensureAutomaticWeather("pageshow")'));
@@ -24,7 +24,7 @@ assert(app.includes("renderColorChoiceButtons(\"secondary\")"));
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.5.4",
+  appVersion: "1.6.0",
   schemaVersion: 5,
   weatherBackoffSeconds: 30,
   lifecycleResolver: true,

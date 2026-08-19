@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.5.4 - Daily Workflow Field Fixes**
+Current release: **1.6.0 - Closet Insights Foundation**
 
 ## Run Locally
 
@@ -30,12 +30,14 @@ If Python is not available, any static file server works.
    - `styles.css`
    - `context-engine.js`
    - `smart-closet.js`
+   - `insights.js`
    - `app.js`
    - `manifest.json`
    - `sw.js`
    - `icons/`
    - `.nojekyll`
    - `README.md`
+   - `INSIGHTS.md`
    - `CHANGELOG.md`
 3. Commit and push to GitHub.
 4. In GitHub, open the repository settings.
@@ -55,7 +57,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.5.4`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.6.0`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -74,6 +76,16 @@ The Data screen stores daily-use preferences including:
 - `Temperature Unit` controls Fahrenheit/Celsius display without changing context scoring.
 
 Build Around uses a category selector followed by a short item selector. Reroll tracks combinations viewed only for the current in-memory generation context, prefers unseen fits first, and enables controlled repeats after the valid pool is exhausted. `Reset viewed fits` restarts that temporary session without changing outfit history.
+
+## Closet Insights
+
+Insights is the fifth top-level section. It keeps four evidence types separate: current closet inventory, explicitly logged history, metadata readiness, and current compatibility analysis. Data Readiness, Closet Composition, and Logged Activity are deterministic read-only summaries. Current Coverage and Closet Evaluation run only after an explicit user action. Opening, filtering, or running Insights does not write `fitRoulette.v1`, recovery keys, settings, timestamps, matching state, or analytical results.
+
+Logged Activity defaults to All logged history and offers transient 30-day and 90-day ranges. Multiple records on one date are multiple logged outfits but one logged day. Snapshot metadata is preferred for historical analysis; the current garment is only a fallback when a usable saved snapshot is absent, and unresolved references remain visible evidence. Invalid and future dates are flagged and excluded from time calculations without changing the saved date. Generated, viewed, rerolled, or suggested outfits receive no logged-use credit unless a history record exists.
+
+Current Coverage reuses the released availability, occasion, compatibility, pair-rule, exact-ban, belt, sock, single-layer, context, and Build Around rules. It deterministically evaluates at most 50,000 candidate tuples. Results within the budget are exact; a larger search stops and reports `At least N valid combinations` plus `Analysis capped for performance`, without extrapolation or random sampling. Coverage never recommends a purchase and never changes generation. Closet Evaluation composes the same evidence into optional cards with no grade, score, user comparison, or purchasing pressure.
+
+All analysis remains local. Insights does not request location, call Open-Meteo, send telemetry, load external analytics, or invoke an external model. Metric contracts, provenance, limitations, privacy guarantees, and deferred scope are documented in [`INSIGHTS.md`](INSIGHTS.md).
 
 ## Context And Weather
 
@@ -120,13 +132,13 @@ To restore:
 
 Import replaces the current local data on that device/browser.
 
-When a confirmed schema 1-4 backup is imported, v1.5.4 stores the exact untouched file text in a schema-5 protected-original slot before replacing primary storage. Existing schema-4 and schema-5 protected originals remain byte-for-byte unchanged, and every retained original is listed separately in Data. Import stops without changing primary or in-memory closet state if required recovery, migration, validation, or primary storage fails. Schema-5 imports do not create an unnecessary legacy recovery.
+When a confirmed schema 1-4 backup is imported, the schema-5 app stores the exact untouched file text in a schema-5 protected-original slot before replacing primary storage. Existing schema-4 and schema-5 protected originals remain byte-for-byte unchanged, and every retained original is listed separately in Data. Import stops without changing primary or in-memory closet state if required recovery, migration, validation, or primary storage fails. Schema-5 imports do not create an unnecessary legacy recovery.
 
 ## Add To iPhone Home Screen
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.5.4`.
+3. Open Data and confirm the app displays version `1.6.0`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.
@@ -141,7 +153,7 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
 - Closet and normalized context data stay local to the browser through `localStorage`; opt-in coordinates are sent directly to Open-Meteo and are never stored by Fit Roulette.
 
-The v1.5.4 release uses service-worker cache `fit-roulette-v1.5.4`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js` and `smart-closet.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
+The v1.6.0 release uses service-worker cache `fit-roulette-v1.6.0`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js`, `smart-closet.js`, and `insights.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
 
 ## Verify Smart Closet Release
 
@@ -150,15 +162,16 @@ With Node.js available, run:
 ```powershell
 node codex-tools/verify-fit-roulette-smart-closet.js
 node codex-tools/verify-fit-roulette-context-engine.js
-node codex-tools/verify-fit-roulette-v1.5.4-app.js
-node codex-tools/verify-fit-roulette-v1.5.4-static.js
-node codex-tools/verify-fit-roulette-v1.5.4-ui.js
+node codex-tools/verify-fit-roulette-v1.6-insights.js
+node codex-tools/verify-fit-roulette-v1.6-app.js
+node codex-tools/verify-fit-roulette-v1.6-static.js
+node codex-tools/verify-fit-roulette-v1.6-ui.js
 node codex-tools/verify-fit-roulette-deploy.js
 ```
 
-The rendered v1.5.4 UI verifier and retained responsive layout verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
+The rendered v1.6.0 UI verifier and retained responsive layout verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
 
-The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Detailed architecture, audit findings, thresholds, privacy behavior, and deferred scope are in `CONTEXT_ENGINE.md`.
+The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Context architecture is documented in `CONTEXT_ENGINE.md`; Insights contracts and limitations are documented in `INSIGHTS.md`.
 
 Release notes are maintained in `CHANGELOG.md`.
 

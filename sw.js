@@ -1,11 +1,12 @@
-const CACHE_NAME = "fit-roulette-v1.5.4";
-const ASSET_VERSION = "1.5.4";
+const CACHE_NAME = "fit-roulette-v1.6.0";
+const ASSET_VERSION = "1.6.0";
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./context-engine.js",
   "./smart-closet.js",
+  "./insights.js",
   "./app.js",
   "./manifest.json",
   "./icons/icon-180.png",
