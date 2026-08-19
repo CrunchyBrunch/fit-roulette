@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.5.4">
+    <link rel="stylesheet" href="./styles.css?v=1.6.0">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -196,6 +196,107 @@
           <div id="historyList" class="history-list"></div>
         </section>
 
+        <section id="screen-insights" class="screen" aria-labelledby="insightsTitle">
+          <div class="screen-title-row insights-title-row">
+            <div>
+              <p class="eyebrow">Local, read-only analysis</p>
+              <h2 id="insightsTitle">Insights</h2>
+            </div>
+          </div>
+          <p class="insights-intro">Insights separates current inventory, explicitly logged history, metadata readiness, and compatibility analysis. It does not change outfit generation or save analytical results.</p>
+
+          <section class="insights-group" aria-labelledby="readinessTitle">
+            <div class="insights-group-heading">
+              <div>
+                <p class="insight-type">Evidence</p>
+                <h3 id="readinessTitle">Data Readiness</h3>
+              </div>
+            </div>
+            <div id="insightsReadiness" class="insights-card-grid"></div>
+          </section>
+
+          <section class="insights-group" aria-labelledby="compositionTitle">
+            <div class="insights-group-heading">
+              <div>
+                <p class="insight-type">Current inventory</p>
+                <h3 id="compositionTitle">Closet Composition</h3>
+              </div>
+              <label class="field compact-field">
+                <span>Count</span>
+                <select id="insightsCompositionScope">
+                  <option value="all">All current garments</option>
+                  <option value="available">Currently Available</option>
+                </select>
+              </label>
+            </div>
+            <div id="insightsComposition" class="insights-breakdowns"></div>
+          </section>
+
+          <section class="insights-group" aria-labelledby="activityTitle">
+            <div class="insights-group-heading">
+              <div>
+                <p class="insight-type">Explicitly logged history</p>
+                <h3 id="activityTitle">Logged Activity</h3>
+              </div>
+              <label class="field compact-field">
+                <span>Date range</span>
+                <select id="insightsRangeSelect">
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="all" selected>All logged history</option>
+                </select>
+              </label>
+            </div>
+            <div id="insightsActivity" class="insights-card-grid"></div>
+          </section>
+
+          <section class="insights-group" aria-labelledby="coverageTitle">
+            <div class="insights-group-heading">
+              <div>
+                <p class="insight-type">Current compatibility</p>
+                <h3 id="coverageTitle">Current Coverage</h3>
+              </div>
+            </div>
+            <p class="small-meta">Run this analysis when you want it. It checks current availability and released compatibility rules without making purchase recommendations.</p>
+            <div class="insights-controls">
+              <label class="field">
+                <span>Occasion</span>
+                <select id="insightsCoverageOccasion"></select>
+              </label>
+              <label class="field">
+                <span>Context assumption</span>
+                <select id="insightsCoverageContext">
+                  <option value="neutral">Neutral context</option>
+                  <option value="cold">Cold, mostly outdoors</option>
+                  <option value="rain">Rain expected</option>
+                  <option value="wind">Windy, mostly outdoors</option>
+                  <option value="hot">Hot, mostly outdoors</option>
+                </select>
+              </label>
+              <label class="field insights-build-around-field">
+                <span>Build Around <span class="optional-label">Optional</span></span>
+                <select id="insightsCoverageBuildAround"></select>
+              </label>
+              <button id="runCoverageBtn" class="primary-button" type="button">Analyze Current Coverage</button>
+            </div>
+            <p id="coverageStatus" class="analysis-status small-meta" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="insightsCoverage"></div>
+          </section>
+
+          <section class="insights-group" aria-labelledby="evaluationTitle">
+            <div class="insights-group-heading">
+              <div>
+                <p class="insight-type">User-initiated evidence cards</p>
+                <h3 id="evaluationTitle">Closet Evaluation</h3>
+              </div>
+            </div>
+            <p class="small-meta">This concise evaluation has no grade, ranking, or purchasing pressure. Run Current Coverage first if you want the selected compatibility evidence included.</p>
+            <button id="runEvaluationBtn" class="secondary-button" type="button">Check My Closet</button>
+            <p id="evaluationStatus" class="analysis-status small-meta" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="insightsEvaluation" class="evaluation-results"></div>
+          </section>
+        </section>
+
         <section id="screen-settings" class="screen" aria-labelledby="settingsTitle">
           <div class="screen-title-row">
             <h2 id="settingsTitle">Settings</h2>
@@ -236,9 +337,10 @@
       </main>
 
       <nav class="tabbar" aria-label="Main navigation">
-        <button class="tab-button is-active" type="button" data-screen="generate">Generate</button>
+        <button class="tab-button is-active" type="button" data-screen="generate" aria-current="page">Generate</button>
         <button class="tab-button" type="button" data-screen="closet">Closet</button>
         <button class="tab-button" type="button" data-screen="history">History</button>
+        <button class="tab-button" type="button" data-screen="insights">Insights</button>
         <button class="tab-button" type="button" data-screen="settings">Data</button>
       </nav>
     </div>
@@ -506,7 +608,7 @@
 
         <div class="two-column">
           <label class="field">
-            <span>Date worn</span>
+            <span>Log date</span>
             <input id="manualLogDate" type="date" required>
           </label>
           <label class="field">
@@ -584,11 +686,12 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.5.4", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.6.0", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.5.4" defer></script>
-    <script src="./smart-closet.js?v=1.5.4" defer></script>
-    <script src="./app.js?v=1.5.4" defer></script>
+    <script src="./context-engine.js?v=1.6.0" defer></script>
+    <script src="./smart-closet.js?v=1.6.0" defer></script>
+    <script src="./insights.js?v=1.6.0" defer></script>
+    <script src="./app.js?v=1.6.0" defer></script>
   </body>
 </html>

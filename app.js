@@ -2,11 +2,12 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.5.4";
+  const APP_VERSION = "1.6.0";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
   if (!SmartCloset) throw new Error("Smart Closet module failed to load.");
+  const Insights = window.FitRouletteInsights || null;
   const SCHEMA_VERSION = SmartCloset.SCHEMA_VERSION;
   const RECOVERY_KEY = SmartCloset.RECOVERY_KEY;
   const LEGACY_RECOVERY_KEY = SmartCloset.LEGACY_RECOVERY_KEY;
@@ -162,6 +163,13 @@
   let generationPromise = null;
   let manualSelectedItemIds = new Set();
   let manualItemSearch = "";
+  let insightsRange = "all";
+  let insightsCompositionScope = "all";
+  let insightsCoverageResult = null;
+  let insightsEvaluationResult = null;
+  let insightsCoverageRunToken = 0;
+  let insightsSourceFingerprint = "";
+  let insightsAnalysisDate = "";
   const weatherNow = typeof window.__FIT_ROULETTE_NOW__ === "function" ? window.__FIT_ROULETTE_NOW__ : () => Date.now();
   const weatherClient = ContextEngine.createWeatherClient({
     fetchImpl: typeof window.fetch === "function" ? window.fetch.bind(window) : null,
@@ -276,6 +284,24 @@
     $("#afterLoggingSelect").addEventListener("change", (event) => updateAfterLogging(event.target.value));
     $("#defaultOccasionSelect").addEventListener("change", (event) => updateDefaultOccasion(event.target.value));
 
+    $("#insightsRangeSelect")?.addEventListener("change", (event) => {
+      insightsRange = Insights?.RANGE_VALUES?.includes(event.target.value) ? event.target.value : "all";
+      insightsEvaluationResult = null;
+      renderInsights();
+    });
+    $("#insightsCompositionScope")?.addEventListener("change", (event) => {
+      insightsCompositionScope = event.target.value === "available" ? "available" : "all";
+      renderInsights();
+    });
+    ["#insightsCoverageOccasion", "#insightsCoverageContext", "#insightsCoverageBuildAround"].forEach((selector) => {
+      $(selector)?.addEventListener("change", () => {
+        if (selector === "#insightsCoverageOccasion") renderInsightsBuildAroundOptions();
+        invalidateInsightsCoverage();
+      });
+    });
+    $("#runCoverageBtn")?.addEventListener("click", runInsightsCoverage);
+    $("#runEvaluationBtn")?.addEventListener("click", runClosetEvaluation);
+
     $("#itemForm").addEventListener("submit", saveItemFromForm);
     $("#itemForm").addEventListener("click", handleItemFormClick);
     $("#itemForm").addEventListener("input", handleItemFormMutation);
@@ -323,7 +349,10 @@
       continueDuplicateEditing();
     });
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") ensureAutomaticWeather("visible-resume");
+      if (document.visibilityState === "visible") {
+        ensureAutomaticWeather("visible-resume");
+        renderInsights();
+      }
     });
     window.addEventListener("pageshow", () => ensureAutomaticWeather("pageshow"));
     window.addEventListener("online", () => ensureAutomaticWeather("online"));
@@ -367,6 +396,7 @@
     }).join("");
 
     renderDefaultOccasionOptions();
+    renderInsightsOptions();
 
     $("#feedbackChoices").innerHTML = FEEDBACK_REASONS.map(([value, label]) => {
       return `
@@ -392,6 +422,7 @@
     renderResult();
     renderTodayLoggedNotice();
     renderRerollSessionStatus();
+    renderInsights();
   }
 
   function renderSubtypeOptions(selectedValue = "") {
@@ -449,7 +480,10 @@
     });
 
     $$(".tab-button").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.screen === screenName);
+      const active = button.dataset.screen === screenName;
+      button.classList.toggle("is-active", active);
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
     });
   }
 
@@ -995,8 +1029,10 @@
     ].join("");
 
     const status = isAvailable(item) ? "" : `<span class="chip">${escapeHtml(SmartCloset.titleCase(item.status))}</span>`;
-    const lastWornDate = lastItemWornDate(item);
-    const lastWorn = lastWornDate ? `Last worn ${formatShortDate(lastWornDate)}` : "Not logged yet";
+    const lastLoggedDate = latestHistoryDateForItem(item.id);
+    const recency = lastLoggedDate
+      ? `Last logged use ${formatShortDate(lastLoggedDate)}`
+      : (item.lastWorn ? `Legacy recency ${formatShortDate(item.lastWorn)}` : "Not logged yet");
     const review = item.review?.status === "needs_review" ? `<span class="chip warning">Needs review</span>` : "";
 
     return `
@@ -1004,7 +1040,7 @@
         <div class="card-topline">
           <div class="card-title-wrap">
             <h3>${escapeHtml(item.name)}</h3>
-            <p class="small-meta">${escapeHtml(lastWorn)} - ${escapeHtml(SmartCloset.FORMALITY_LABELS[item.formality])}</p>
+            <p class="small-meta">${escapeHtml(recency)} - ${escapeHtml(SmartCloset.FORMALITY_LABELS[item.formality])}</p>
           </div>
           <div class="status-chips">${review}${status}</div>
         </div>
@@ -1055,6 +1091,292 @@
     return `${temperature}${source} · ${SmartCloset.titleCase(context.condition)}${layer}`;
   }
 
+  function renderInsightsOptions() {
+    const occasionSelect = $("#insightsCoverageOccasion");
+    if (!occasionSelect) return;
+    const previous = occasionSelect.value;
+    const includeLegacy = appState.wardrobe.some((item) => item.occasions.includes("gym"));
+    const ids = includeLegacy ? [...OCCASION_ORDER, "gym"] : OCCASION_ORDER;
+    occasionSelect.innerHTML = ids.map((id) => `<option value="${escapeAttribute(id)}">${escapeHtml(OCCASIONS[id].label)}${id === "gym" ? " (legacy closet only)" : ""}</option>`).join("");
+    occasionSelect.value = ids.includes(previous) ? previous : (ids.includes(appState.settings.defaultOccasion) ? appState.settings.defaultOccasion : "work");
+    renderInsightsBuildAroundOptions();
+  }
+
+  function renderInsightsBuildAroundOptions() {
+    const select = $("#insightsCoverageBuildAround");
+    const occasionSelect = $("#insightsCoverageOccasion");
+    if (!select || !occasionSelect) return;
+    const previous = select.value;
+    const occasionId = occasionSelect.value;
+    const items = appState.wardrobe
+      .filter((item) => isAvailable(item) && item.occasions.includes(occasionId))
+      .sort((a, b) => (CATEGORIES[a.category] || a.category).localeCompare(CATEGORIES[b.category] || b.category) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    select.innerHTML = `<option value="">No Build Around item</option>${items.map((item) => `<option value="${escapeAttribute(item.id)}">${escapeHtml(`${CATEGORIES[item.category] || item.category}: ${item.name}`)}</option>`).join("")}`;
+    select.value = items.some((item) => item.id === previous) ? previous : "";
+  }
+
+  function renderInsights() {
+    const readinessRoot = $("#insightsReadiness");
+    if (!readinessRoot) return;
+    if (!Insights) {
+      readinessRoot.innerHTML = insightCard("Data quality", "Insights unavailable", "The local analysis module did not load.", "No analytical claim was calculated.", "Reload when the complete application shell is available.");
+      return;
+    }
+
+    const fingerprint = insightsFingerprint();
+    if (insightsSourceFingerprint && insightsSourceFingerprint !== fingerprint) {
+      insightsCoverageRunToken += 1;
+      insightsCoverageResult = null;
+      insightsEvaluationResult = null;
+    }
+    insightsSourceFingerprint = fingerprint;
+    const now = new Date(weatherNow());
+    const analysisDate = Insights.normalizeHistoryDate(now, now).dateKey;
+    if (insightsAnalysisDate && insightsAnalysisDate !== analysisDate) {
+      insightsCoverageRunToken += 1;
+      insightsCoverageResult = null;
+      insightsEvaluationResult = null;
+    }
+    insightsAnalysisDate = analysisDate;
+
+    const analysis = readOnlyAnalysis(() => Insights.analyzeInsights(appState, {
+      now,
+      range: insightsRange,
+      scope: insightsCompositionScope
+    }));
+    if ($("#insightsRangeSelect")) $("#insightsRangeSelect").value = insightsRange;
+    if ($("#insightsCompositionScope")) $("#insightsCompositionScope").value = insightsCompositionScope;
+    renderInsightsReadiness(analysis.readiness);
+    renderInsightsComposition(analysis.composition);
+    renderInsightsActivity(analysis.activity);
+    renderInsightsCoverage();
+    renderInsightsEvaluation();
+  }
+
+  function renderInsightsReadiness(readiness) {
+    const closet = readiness.currentCloset;
+    const history = readiness.history;
+    const referenceLimitation = history.brokenReferenceCount || closet.unresolvedRecords
+      ? `${history.brokenReferenceCount} broken garment reference${history.brokenReferenceCount === 1 ? "" : "s"}; ${closet.unresolvedRecords} unresolved imported record${closet.unresolvedRecords === 1 ? "" : "s"}.`
+      : "No unresolved imported records or broken garment references were found.";
+    $("#insightsReadiness").innerHTML = [
+      insightCard("Current inventory", "Availability", `${closet.total} current garment${closet.total === 1 ? "" : "s"}`, `${closet.available} Currently Available · ${closet.unavailable} unavailable · ${closet.archived} archived.`, "Status describes the current closet and does not rewrite historical logs."),
+      insightCard("Metadata", "Review readiness", `${closet.reviewed} reviewed · ${closet.needsReview} need review`, closet.availableReviewText, `${closet.legacyFallback} legacy-fallback garment${closet.legacyFallback === 1 ? "" : "s"}. Some metadata is incomplete until reviewed.`),
+      insightCard("Logged history", "Available evidence", history.evidenceText, history.earliestDate ? `Usable dates span ${history.earliestDate} through ${history.latestDate}.` : "No usable history date range is available.", readiness.dataQuality.blankDateText),
+      insightCard("Provenance", "Log sources and snapshots", `${history.manual} manual · ${history.generated} generated`, `${history.logsWithUsableSnapshots} logs contain a usable item snapshot; ${history.snapshotCompleteLogs} have usable snapshots for every logged item; ${history.currentFallbackLogs} rely on current-item fallback.`, history.legacySourceCaveat ? "Some older records may have been normalized as generated." : "All stored source values are explicit manual logs."),
+      insightCard("Context", "Weather evidence", `${history.contextLogs} of ${history.totalLogs} logs`, `${history.ignoredContextLogs} explicitly ignored context · ${history.manualWithoutContext} manual logs without context.`, history.contextText),
+      insightCard("Data quality", "References and dates", `${closet.unresolvedRecords + history.brokenReferenceCount + history.futureDateCount + history.invalidDateCount} flagged item${closet.unresolvedRecords + history.brokenReferenceCount + history.futureDateCount + history.invalidDateCount === 1 ? "" : "s"}`, referenceLimitation, [...history.limitations, readiness.dataQuality.customColorText].join(" "))
+    ].join("");
+  }
+
+  function renderInsightsComposition(composition) {
+    const root = $("#insightsComposition");
+    const sections = [
+      ["Status", composition.status, "All current garments", true],
+      ["Review readiness", composition.review, composition.denominatorLabel, true],
+      ["Category", composition.category, composition.denominatorLabel, true],
+      ["Subtype", composition.subtype, composition.denominatorLabel],
+      ["Exact saved Primary Color", composition.primaryColor, composition.denominatorLabel],
+      ["Applicable exact saved Secondary Color", composition.secondaryColor, composition.denominatorLabel],
+      ["Color families", composition.colorFamily, composition.denominatorLabel],
+      ["Pattern", composition.pattern, composition.denominatorLabel],
+      ["Formality", composition.formality, composition.denominatorLabel],
+      ["Occasion", composition.occasion, composition.denominatorLabel],
+      ["Layer role", composition.layerRole, composition.denominatorLabel],
+      ["Warmth", composition.warmth, composition.denominatorLabel],
+      ["Rain protection", composition.rainProtection, composition.denominatorLabel],
+      ["Wind protection", composition.windProtection, composition.denominatorLabel],
+      ["Item preference", composition.preference, composition.denominatorLabel]
+    ];
+    root.innerHTML = `
+      <p class="insight-denominator"><strong>Denominator:</strong> ${escapeHtml(composition.denominatorLabel)} (${composition.denominator}). Counts describe current inventory, not closet quality.</p>
+      <div class="insights-breakdown-grid">${sections.map(([title, rows, denominator, open]) => renderBreakdown(title, rows, denominator, open)).join("")}</div>
+      ${insightCard("Compatibility metadata", "Pair rules in this scope", `${composition.pairRules.total} pair rule${composition.pairRules.total === 1 ? "" : "s"}`, `${composition.pairRules.prefer} Prefer Together · ${composition.pairRules.never} Never Pair.`, `Both referenced garments must be inside ${composition.pairRules.denominatorLabel}. Pair-rule count is not a quality judgment.`)}
+      <p class="insight-limitations">${composition.limitations.map(escapeHtml).join(" ")}</p>
+    `;
+  }
+
+  function renderInsightsActivity(activity) {
+    const range = activity.rangeLabel;
+    const sourceText = activity.source.length ? activity.source.map((row) => `${row.count} ${row.label.toLowerCase()}`).join(" · ") : "No source records in this range";
+    const occasionText = activity.occasion.length ? activity.occasion.map((row) => `${row.label}: ${row.count}`).join(" · ") : "No occasion records in this range";
+    const categoryText = activity.categoryUse.length ? activity.categoryUse.map((row) => `${row.label}: ${row.count}`).join(" · ") : "No resolved category appearances in this range";
+    const most = renderGarmentMetricList(activity.mostLogged, "No currently available garments are in scope.");
+    const least = renderGarmentMetricList(activity.leastLogged, "No currently available garments are in scope.");
+    const garmentRows = activity.garmentActivity.slice(0, 50).map((item) => `<li><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.countText)}${item.lastLoggedDate ? ` Last logged use: ${escapeHtml(item.lastLoggedDate)}.` : ""} ${escapeHtml(item.lastLoggedText)}${item.legacyLastWorn ? ` Legacy recency: ${escapeHtml(item.legacyLastWorn)}.` : ""}</span></li>`).join("");
+    const repetitionRows = activity.exactRepetition.slice(0, 10).map((entry) => `<li><strong>${entry.count} logged outfits</strong><span>${entry.labels.map(escapeHtml).join(" + ")}</span></li>`).join("");
+    const pairRows = activity.coWear.slice(0, 10).map((entry) => `<li><strong>${entry.count} logged outfits</strong><span>${entry.labels.map(escapeHtml).join(" + ")}</span></li>`).join("");
+    $("#insightsActivity").innerHTML = [
+      insightCard("Logged history", "Logged outfits", String(activity.totalLoggedOutfits), activity.evidenceText, "Multiple records on one date remain multiple logged outfits.", "", range),
+      insightCard("Logged history", "Logged days", String(activity.loggedDays), `Distinct analytical dates in ${range}.`, "A blank day means no outfit was logged, not that none was used.", "", range),
+      insightCard("Current inventory + logged history", "Current utilization", `${activity.currentUtilization.numerator} of ${activity.currentUtilization.denominator}`, activity.currentUtilization.text, "Unavailable and archived garments are excluded from this denominator; their logged occurrences remain in history totals.", "", range),
+      insightCard("Logged provenance", "Source distribution", sourceText, `Based on ${activity.totalLoggedOutfits} logged outfits.`, "Some legacy missing sources may normalize as generated.", "", range),
+      insightCard("Logged context", "Context coverage", `${activity.context.contextLogs} of ${activity.totalLoggedOutfits}`, `${activity.context.ignoredLogs} logs explicitly ignored context.`, "Weather is not inferred for logs without a context snapshot.", "", range),
+      insightCard("Date quality", "Excluded from time calculations", `${activity.excludedDateRecords.future} future · ${activity.excludedDateRecords.invalid} invalid`, `The active range is ${range}.`, "Flagged records remain logged evidence but do not enter date-based metrics.", "", range),
+      insightCard("Current inventory + logged history", "Highest logged counts", most, `Ties are retained among ${activity.currentUtilization.denominator} currently available garments.`, "This is logged activity, not proof of total real-world use.", "", range),
+      insightCard("Current inventory + logged history", "Lowest logged counts", least, `Ties are retained among ${activity.currentUtilization.denominator} currently available garments, including zero-log items.`, "Zero means no logged appearances in this range.", "", range),
+      insightCard("Logged metadata", "Occasion distribution", occasionText, `Saved normalized occasions from ${activity.totalLoggedOutfits} logged outfits.`, "Legacy Gym / Errands remains explicitly labeled and is not inferred from garments.", "", range),
+      insightCard("Logged metadata", "Category appearances", categoryText, `${activity.unresolvedCategoryAppearances} appearances have unresolved category metadata.`, "Counts use snapshots first, then current-item fallback; they count garment appearances, not outfits.", "", range),
+      insightCard("Logged items", "Layers, belts, and socks", `${activity.layerLoggedAppearances} layer · ${activity.beltLoggedAppearances} belt · ${activity.sockLoggedAppearances} sock`, `Only garments actually present in ${activity.totalLoggedOutfits} logged outfits are counted.`, "Removed optional garments are not reconstructed.", "", range),
+      insightCard("Logged repetition", "Repeated exact sets", activity.exactRepetition.length ? `${activity.exactRepetition.length} repeated set${activity.exactRepetition.length === 1 ? "" : "s"}` : "No repeated exact sets", `Each normalized exact item set is compared across ${activity.totalLoggedOutfits} logged outfits.`, "This reports logged repetition only.", repetitionRows ? `<ul class="insight-ranked-list">${repetitionRows}</ul>` : "", range),
+      insightCard("Logged co-appearance", "Frequent pairs", activity.coWear.length ? `${activity.coWear.length} pair${activity.coWear.length === 1 ? "" : "s"}` : "No logged pairs", "Each unordered pair counts at most once per logged outfit.", "Co-appearance is not preference or compatibility proof.", pairRows ? `<ul class="insight-ranked-list">${pairRows}</ul>` : "", range),
+      insightCard("Logged garments", "Garment detail", `${activity.garmentActivity.length} currently available garment${activity.garmentActivity.length === 1 ? "" : "s"}`, `Showing ${Math.min(50, activity.garmentActivity.length)} in stable logged-count order.`, "Last logged use is recomputed from selected history; lower-confidence legacy recency is labeled separately.", garmentRows ? `<ul class="insight-ranked-list garment-activity-list">${garmentRows}</ul>` : "", range)
+    ].join("");
+  }
+
+  function renderInsightsCoverage() {
+    const root = $("#insightsCoverage");
+    if (!root) return;
+    if (!insightsCoverageResult) {
+      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">Current compatibility</p><h4>Not analyzed yet</h4><p>Choose explicit assumptions and run Current Coverage. No compatibility work runs merely because Insights opened.</p></article>`;
+      return;
+    }
+    const result = insightsCoverageResult;
+    const slots = result.requiredSlotInventory.map((slot) => `<li><strong>${escapeHtml(slot.label)}</strong><span>${slot.count} currently eligible</span></li>`).join("");
+    const missing = result.missingRequiredSlots.length
+      ? result.missingRequiredSlots.map((slot) => `<li>No currently available ${escapeHtml(slot.label.toLowerCase())} items are eligible for ${escapeHtml(result.occasionLabel)}.</li>`).join("")
+      : "<li>No missing required-slot evidence under the selected assumptions.</li>";
+    const bottlenecks = result.lowBuildAround.length
+      ? result.lowBuildAround.slice(0, 20).map((item) => `<li><strong>${escapeHtml(item.name)}</strong><span>${item.count === 0 ? "No valid current combinations" : `${item.count} current valid combination${item.count === 1 ? "" : "s"}`}</span></li>`).join("")
+      : `<li>${result.capped ? "Per-garment bottlenecks are not classified after a capped analysis." : "No zero-or-few Build Around results were found in this analysis."}</li>`;
+    root.innerHTML = `
+      <div class="insights-card-grid">
+        ${insightCard("Compatibility", "Valid combinations", result.countText, `${result.occasionLabel} · ${result.contextLabel}${result.buildAroundName ? ` · Build Around ${result.buildAroundName}` : ""}.`, result.capText)}
+        ${insightCard("Inventory", "Required-slot availability", `${result.missingRequiredSlots.length} missing required slot${result.missingRequiredSlots.length === 1 ? "" : "s"}`, `Counts use currently available, occasion-eligible garments.`, "An empty slot is inventory evidence, not a purchase recommendation.", `<ul class="insight-ranked-list">${slots}</ul>`)}
+        ${insightCard("Inventory", "Missing-slot evidence", result.missingRequiredSlots.length ? "Current constraints found" : "Required slots represented", `Selected occasion: ${result.occasionLabel}.`, "This does not claim a wardrobe deficiency.", `<ul class="insight-plain-list">${missing}</ul>`)}
+        ${insightCard("Compatibility", "Build Around bottlenecks", result.lowBuildAround.length ? `${result.lowBuildAround.length} item${result.lowBuildAround.length === 1 ? "" : "s"} with zero or few` : "No classified bottlenecks", result.capped ? "Analysis stopped at the deterministic cap." : "Exact counts within the selected analysis.", "Few valid combinations describe current compatibility only.", `<ul class="insight-ranked-list">${bottlenecks}</ul>`)}
+        ${insightCard("Metadata", "Analysis limitations", `${result.metadataLimitations.needsReview} need review`, `${result.metadataLimitations.legacyFallback} legacy fallback · ${result.metadataLimitations.unresolvedRecords} unresolved imported records.`, result.limitations.join(" "))}
+      </div>
+    `;
+  }
+
+  function renderInsightsEvaluation() {
+    const root = $("#insightsEvaluation");
+    if (!root) return;
+    if (!insightsEvaluationResult) {
+      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">User-initiated report</p><h4>Not evaluated yet</h4><p>Run the evaluation when you want a concise set of evidence cards.</p></article>`;
+      return;
+    }
+    const result = insightsEvaluationResult;
+    root.innerHTML = `
+      <div class="insights-card-grid">${result.cards.map((card) => insightCard(card.type, card.title, card.value, card.evidence, card.limitation, "", card.type === "Logged-history evidence" ? (insightsRange === "all" ? "All logged history" : `Last ${insightsRange} days`) : "")).join("")}</div>
+      <article class="evaluation-conclusion"><p class="insight-type">Conclusion</p><h4>${escapeHtml(result.conclusion)}</h4><p>${result.limitations.map(escapeHtml).join(" ")}</p></article>
+    `;
+  }
+
+  function runInsightsCoverage() {
+    if (!Insights || !$("#runCoverageBtn")) return;
+    const token = ++insightsCoverageRunToken;
+    const button = $("#runCoverageBtn");
+    const status = $("#coverageStatus");
+    button.disabled = true;
+    $("#insightsCoverage")?.setAttribute("aria-busy", "true");
+    status.textContent = "Analyzing current compatibility…";
+    window.setTimeout(() => {
+      const occasionId = $("#insightsCoverageOccasion").value;
+      const contextValue = $("#insightsCoverageContext").value;
+      const buildAroundId = $("#insightsCoverageBuildAround").value;
+      const result = readOnlyAnalysis(() => Insights.analyzeCoverage(appState, {
+        occasion: OCCASIONS[occasionId],
+        context: Insights.coverageContextPreset(contextValue),
+        buildAroundId,
+        tupleLimit: Insights.COVERAGE_TUPLE_LIMIT
+      }));
+      if (token !== insightsCoverageRunToken) return;
+      insightsCoverageResult = result;
+      insightsEvaluationResult = null;
+      button.disabled = false;
+      $("#insightsCoverage").removeAttribute("aria-busy");
+      renderInsightsCoverage();
+      renderInsightsEvaluation();
+      status.textContent = result.capped ? `${result.countText} ${result.capText}` : `Analysis complete. ${result.countText}`;
+    }, 0);
+  }
+
+  function runClosetEvaluation() {
+    if (!Insights || !$("#runEvaluationBtn")) return;
+    const button = $("#runEvaluationBtn");
+    const status = $("#evaluationStatus");
+    button.disabled = true;
+    $("#insightsEvaluation")?.setAttribute("aria-busy", "true");
+    status.textContent = "Preparing evidence cards…";
+    window.setTimeout(() => {
+      insightsEvaluationResult = readOnlyAnalysis(() => Insights.evaluateCloset(appState, {
+        range: insightsRange,
+        coverage: insightsCoverageResult,
+        now: new Date(weatherNow())
+      }));
+      button.disabled = false;
+      $("#insightsEvaluation").removeAttribute("aria-busy");
+      renderInsightsEvaluation();
+      status.textContent = "Closet Evaluation complete.";
+    }, 0);
+  }
+
+  function invalidateInsightsCoverage() {
+    insightsCoverageRunToken += 1;
+    insightsCoverageResult = null;
+    insightsEvaluationResult = null;
+    const button = $("#runCoverageBtn");
+    if (button) button.disabled = false;
+    $("#insightsCoverage")?.removeAttribute("aria-busy");
+    if ($("#coverageStatus")) $("#coverageStatus").textContent = "Assumptions changed. Run Current Coverage again.";
+    if ($("#evaluationStatus")) $("#evaluationStatus").textContent = "";
+    renderInsightsCoverage();
+    renderInsightsEvaluation();
+  }
+
+  function insightCard(type, title, value, evidence, limitation, body = "", range = "") {
+    return `
+      <article class="insight-card">
+        <p class="insight-type">${escapeHtml(type)}</p>
+        <h4>${escapeHtml(title)}</h4>
+        ${range ? `<p class="insight-range">Range: ${escapeHtml(range)}</p>` : ""}
+        <p class="insight-value">${escapeHtml(value)}</p>
+        <p class="insight-evidence">${escapeHtml(evidence)}</p>
+        ${body}
+        <p class="insight-limitation"><strong>Limitation:</strong> ${escapeHtml(limitation)}</p>
+      </article>
+    `;
+  }
+
+  function renderBreakdown(title, rows, denominator, open = false) {
+    const list = rows.length
+      ? rows.map((row) => `<div><dt>${escapeHtml(row.label)}</dt><dd>${row.count}</dd></div>`).join("")
+      : `<div><dt>No saved values</dt><dd>0</dd></div>`;
+    return `
+      <details class="insight-breakdown"${open ? " open" : ""}>
+        <summary><span>${escapeHtml(title)}</span><span>${rows.length} value${rows.length === 1 ? "" : "s"}</span></summary>
+        <p class="small-meta">Denominator: ${escapeHtml(denominator)}.</p>
+        <dl>${list}</dl>
+      </details>
+    `;
+  }
+
+  function renderGarmentMetricList(items, emptyText) {
+    if (!items.length) return emptyText;
+    const visible = items.slice(0, 12);
+    const text = visible.map((item) => `${item.name}: ${item.count}`).join(" · ");
+    return items.length > visible.length ? `${text} · ${items.length - visible.length} more tied` : text;
+  }
+
+  function insightsFingerprint() {
+    return JSON.stringify({
+      wardrobe: appState.wardrobe,
+      history: appState.history,
+      pairRelationships: appState.pairRelationships,
+      bannedCombos: appState.bannedCombos,
+      unresolvedRecords: appState.unresolvedRecords
+    });
+  }
+
+  function readOnlyAnalysis(analyzer) {
+    const before = JSON.stringify(appState);
+    const result = analyzer();
+    if (JSON.stringify(appState) !== before) throw new Error("Insights analysis mutated application state.");
+    return result;
+  }
+
   function renderSettings() {
     const activeCount = appState.wardrobe.filter(isAvailable).length;
     const unavailableCount = appState.wardrobe.filter((item) => item.status === "unavailable").length;
@@ -1069,7 +1391,7 @@
       <div class="stat-card"><strong>${activeCount}</strong><span>Available</span></div>
       <div class="stat-card"><strong>${unavailableCount}</strong><span>Unavailable</span></div>
       <div class="stat-card"><strong>${archivedCount}</strong><span>Archived</span></div>
-      <div class="stat-card"><strong>${appState.history.length}</strong><span>Outfits logged</span></div>
+      <div class="stat-card"><strong>${appState.history.length}</strong><span>Logged outfits</span></div>
       <div class="stat-card"><strong>${appState.bannedCombos.length}</strong><span>Banned combos</span></div>
     `;
   }
@@ -3993,7 +4315,11 @@
   }
 
   function formatLongDate(value) {
-    return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+    const normalized = Insights?.normalizeHistoryDate(value, new Date());
+    if (normalized && !normalized.valid) return "Invalid saved date";
+    const date = normalized?.valid ? new Date(`${normalized.dateKey}T12:00:00`) : new Date(value);
+    if (Number.isNaN(date.getTime())) return "Invalid saved date";
+    return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(date);
   }
 
   function itemInitials(item) {
@@ -4298,6 +4624,13 @@
   if (window.__FIT_ROULETTE_TESTING__ === true) {
     window.__fitRouletteTest = {
       getState: () => appState,
+      getInsightsState: () => ({
+        range: insightsRange,
+        compositionScope: insightsCompositionScope,
+        coverage: insightsCoverageResult,
+        evaluation: insightsEvaluationResult,
+        fingerprint: insightsSourceFingerprint
+      }),
       getCurrentOutfit: () => currentOutfit,
       getRerollSession: () => ({
         contextKey: rerollSession.contextKey,
@@ -4367,6 +4700,10 @@
       getLoadIssue: () => loadIssue,
       isStorageWriteLocked: () => storageWriteLocked,
       importBackupText,
+      renderInsights,
+      runInsightsCoverage,
+      runClosetEvaluation,
+      readOnlyAnalysis,
       setContextSession(value) {
         contextSession = { ...contextSession, ...(value || {}) };
         renderWeatherControls();

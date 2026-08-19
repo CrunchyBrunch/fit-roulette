@@ -386,10 +386,13 @@
     if (!record || typeof record !== "object" || Array.isArray(record)) return null;
     const itemIds = uniqueStrings(record.itemIds || record.items);
     if (!itemIds.length) return null;
+    const savedDate = Object.hasOwn(record, "date") ? String(record.date ?? "") : now;
     return {
       ...deepClone(record),
       id: stringOr(record.id, `log_${stableToken(now, itemIds.join("_"))}`),
-      date: validDateTime(record.date) || now,
+      // Preserve the saved value so read-only analysis can report invalid or
+      // future dates instead of silently turning them into a current log.
+      date: savedDate,
       occasion: normalizeOccasion(record.occasion) || "casual",
       itemIds,
       itemSnapshots: Array.isArray(record.itemSnapshots) ? deepClone(record.itemSnapshots) : [],
