@@ -171,6 +171,8 @@ async function verifyInsights(browser, baseUrl, options) {
     assert.deepEqual(await tabs.allTextContents(), ["Generate", "Closet", "History", "Insights", "Data"]);
     await page.getByRole("button", { name: "Insights", exact: true }).click();
     assert.equal(await page.locator('[data-screen="insights"]').getAttribute("aria-current"), "page");
+    const activeBorderWidth = await page.locator('[data-screen="insights"]').evaluate((node) => parseFloat(getComputedStyle(node).borderTopWidth));
+    assert.equal(activeBorderWidth, options.forcedColors === "active" ? 2 : 1, "Forced-color boundaries must not leak into ordinary layouts.");
     assert.equal(await page.locator("#screen-insights").isVisible(), true);
     assert.equal(await page.getByRole("heading", { name: "Data Readiness" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Closet Composition" }).count(), 1);

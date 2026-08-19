@@ -443,6 +443,11 @@ summary:focus-visible {
     border: 2px solid CanvasText;
     forced-color-adjust: none;
   }
+
+  .tab-button.is-active,
+  .evaluation-conclusion {
+    border: 2px solid Highlight;
+  }
 }
 
 .success-button {
@@ -1156,10 +1161,6 @@ summary:focus-visible {
     grid-column: 1 / -1;
   }
 
-  .tab-button.is-active,
-  .evaluation-conclusion {
-    border: 2px solid Highlight;
-  }
 }
 
 .item-dialog {

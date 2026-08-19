@@ -46,6 +46,9 @@ assert(css.includes("@media (max-width: 359px)"));
 assert(css.includes("@media (forced-colors: active)"));
 assert(css.includes(".tab-button.is-active"));
 assert(css.includes("min-height: 46px"));
+const forcedColorsBlock = css.match(/@media \(forced-colors: active\) \{([\s\S]*?)\n\}/)?.[1] || "";
+assert(forcedColorsBlock.includes(".tab-button.is-active"), "Active navigation forced-color boundary escaped its media query.");
+assert(forcedColorsBlock.includes(".evaluation-conclusion"), "Evaluation forced-color boundary escaped its media query.");
 
 for (const unsafe of ["Never worn", "Neglected", "Donate", "Bad purchase", "You need to buy", "Your closet score", "Clothing Personality", "Why This Fit?"]) {
   assert(!html.includes(unsafe), `Deferred or unsafe Insights language found in UI: ${unsafe}`);
