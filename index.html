@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.6.0">
+    <link rel="stylesheet" href="./styles.css?v=1.6.1">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -51,9 +51,9 @@
             </div>
 
             <div class="context-state-overview" aria-live="polite">
-              <p id="weatherPreferenceStatus"><strong>Automatic Weather:</strong> Off</p>
-              <p id="weatherAvailabilityStatus"><strong>Current conditions:</strong> Not enabled</p>
               <p id="weatherEffectiveStatus"><strong>Next roll will use:</strong> Neutral context</p>
+              <p id="weatherGenerateStatus" class="small-meta"></p>
+              <button id="manageWeatherBtn" class="text-button compact weather-settings-link" type="button">Weather settings</button>
             </div>
 
             <details id="weatherDetails" class="inline-details">
@@ -62,19 +62,11 @@
                 <span id="weatherSummary" class="small-meta">Off</span>
               </summary>
               <div class="inline-details-content context-controls">
-                <p class="small-meta">Location is optional and requested only after you choose <strong>Use Current Location</strong>. Coordinates go directly to Open-Meteo for current conditions and are never saved by Fit Roulette.</p>
-                <div class="context-action-row">
-                  <button id="useCurrentLocationBtn" class="secondary-button compact" type="button">Use Current Location</button>
-                  <button id="refreshWeatherBtn" class="secondary-button compact" type="button" hidden>Refresh</button>
-                  <button id="disableWeatherBtn" class="text-button compact" type="button" hidden>Disable Automatic Weather</button>
-                </div>
-                <p id="weatherStatus" class="context-status small-meta" role="status"></p>
-
                 <label class="field">
-                  <span>Context source</span>
+                  <span>Context for the next fit</span>
                   <select id="contextMode">
-                    <option value="automatic">Automatic weather</option>
-                    <option value="manual">Manual</option>
+                    <option value="automatic">Automatic Weather</option>
+                    <option value="manual">Manual Context</option>
                   </select>
                 </label>
 
@@ -104,23 +96,14 @@
                   </label>
                 </div>
 
-                <div class="two-column">
-                  <label class="field">
-                    <span>Temperature unit</span>
-                    <select id="temperatureUnit">
-                      <option value="f">Fahrenheit</option>
-                      <option value="c">Celsius</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Feels to you</span>
-                    <select id="feelsAdjustment">
-                      <option value="same">As reported</option>
-                      <option value="colder">Colder than reported</option>
-                      <option value="warmer">Warmer than reported</option>
-                    </select>
-                  </label>
-                </div>
+                <label class="field">
+                  <span>Feels to you</span>
+                  <select id="feelsAdjustment">
+                    <option value="same">As reported</option>
+                    <option value="colder">Colder than reported</option>
+                    <option value="warmer">Warmer than reported</option>
+                  </select>
+                </label>
 
                 <label class="field">
                   <span>Day plan</span>
@@ -137,7 +120,6 @@
                   <input id="ignoreWeather" type="checkbox">
                   <span>Ignore weather for this roll</span>
                 </label>
-                <p class="provider-attribution"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather data by Open-Meteo</a></p>
               </div>
             </details>
 
@@ -203,52 +185,74 @@
               <h2 id="insightsTitle">Insights</h2>
             </div>
           </div>
-          <p class="insights-intro">Insights separates current inventory, explicitly logged history, metadata readiness, and compatibility analysis. It does not change outfit generation or save analytical results.</p>
+          <p class="insights-intro">A clear look at your current closet and explicitly logged outfits. Analysis stays on this device and never changes outfit generation.</p>
 
-          <section class="insights-group" aria-labelledby="readinessTitle">
+          <section class="insights-overview" aria-labelledby="insightsOverviewTitle">
             <div class="insights-group-heading">
               <div>
-                <p class="insight-type">Evidence</p>
-                <h3 id="readinessTitle">Data Readiness</h3>
+                <p class="insight-type">At a glance</p>
+                <h3 id="insightsOverviewTitle">Your closet right now</h3>
               </div>
             </div>
-            <div id="insightsReadiness" class="insights-card-grid"></div>
+            <div id="insightsHero" class="insights-hero-grid"></div>
+            <div id="insightsVisuals" class="insights-visual-grid"></div>
           </section>
 
-          <section class="insights-group" aria-labelledby="compositionTitle">
-            <div class="insights-group-heading">
-              <div>
-                <p class="insight-type">Current inventory</p>
-                <h3 id="compositionTitle">Closet Composition</h3>
-              </div>
-              <label class="field compact-field">
-                <span>Count</span>
-                <select id="insightsCompositionScope">
-                  <option value="all">All current garments</option>
-                  <option value="available">Currently Available</option>
-                </select>
-              </label>
+          <details class="insights-disclosure insights-group">
+            <summary>
+              <span><h3>Data Readiness</h3><small>Sources, snapshots, metadata, and date quality</small></span>
+              <span class="details-affordance">See details</span>
+            </summary>
+            <div class="insights-disclosure-content">
+              <p class="insight-type">Evidence and provenance</p>
+              <div id="insightsReadiness" class="insights-card-grid"></div>
             </div>
-            <div id="insightsComposition" class="insights-breakdowns"></div>
-          </section>
+          </details>
 
-          <section class="insights-group" aria-labelledby="activityTitle">
-            <div class="insights-group-heading">
-              <div>
-                <p class="insight-type">Explicitly logged history</p>
-                <h3 id="activityTitle">Logged Activity</h3>
+          <details class="insights-disclosure insights-group">
+            <summary>
+              <span><h3>Closet Composition</h3><small>All current inventory breakdowns</small></span>
+              <span class="details-affordance">See details</span>
+            </summary>
+            <div class="insights-disclosure-content">
+              <div class="insights-group-heading">
+                <div>
+                  <p class="insight-type">Current inventory</p>
+                </div>
+                <label class="field compact-field">
+                  <span>Count</span>
+                  <select id="insightsCompositionScope">
+                    <option value="all">All current garments</option>
+                    <option value="available">Currently Available</option>
+                  </select>
+                </label>
               </div>
-              <label class="field compact-field">
-                <span>Date range</span>
-                <select id="insightsRangeSelect">
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="all" selected>All logged history</option>
-                </select>
-              </label>
+              <div id="insightsComposition" class="insights-breakdowns"></div>
             </div>
-            <div id="insightsActivity" class="insights-card-grid"></div>
-          </section>
+          </details>
+
+          <details class="insights-disclosure insights-group">
+            <summary>
+              <span><h3>Logged Activity</h3><small>Detailed counts, provenance, and limitations</small></span>
+              <span class="details-affordance">See details</span>
+            </summary>
+            <div class="insights-disclosure-content">
+              <div class="insights-group-heading">
+                <div>
+                  <p class="insight-type">Explicitly logged history</p>
+                </div>
+                <label class="field compact-field">
+                  <span>Date range</span>
+                  <select id="insightsRangeSelect">
+                    <option value="30">Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="all" selected>All logged history</option>
+                  </select>
+                </label>
+              </div>
+              <div id="insightsActivity" class="insights-card-grid"></div>
+            </div>
+          </details>
 
           <section class="insights-group" aria-labelledby="coverageTitle">
             <div class="insights-group-heading">
@@ -299,7 +303,7 @@
 
         <section id="screen-settings" class="screen" aria-labelledby="settingsTitle">
           <div class="screen-title-row">
-            <h2 id="settingsTitle">Settings</h2>
+            <h2 id="settingsTitle">Data &amp; Settings</h2>
           </div>
 
           <div id="settingsStats" class="stats-grid"></div>
@@ -325,8 +329,38 @@
                 <option value="clear">Clear outfit</option>
               </select>
             </label>
+            <section id="weatherSettingsPanel" class="settings-section" aria-labelledby="weatherSettingsTitle">
+              <div>
+                <p class="eyebrow">Generation context</p>
+                <h3 id="weatherSettingsTitle" tabindex="-1">Automatic Weather</h3>
+              </div>
+              <div class="context-state-overview" aria-live="polite">
+                <p id="weatherPreferenceStatus"><strong>Automatic Weather:</strong> Off</p>
+                <p id="weatherAvailabilityStatus"><strong>Current conditions:</strong> Not enabled</p>
+              </div>
+              <label class="field">
+                <span>Temperature unit</span>
+                <select id="temperatureUnit">
+                  <option value="f">Fahrenheit</option>
+                  <option value="c">Celsius</option>
+                </select>
+              </label>
+              <p class="small-meta">Location is requested only after you choose <strong>Use Current Location</strong>. Coordinates go directly to Open-Meteo and are never saved by Fit Roulette.</p>
+              <div class="context-action-row">
+                <button id="useCurrentLocationBtn" class="secondary-button compact" type="button">Use Current Location</button>
+                <button id="refreshWeatherBtn" class="secondary-button compact" type="button" hidden>Refresh</button>
+                <button id="disableWeatherBtn" class="text-button compact" type="button" hidden>Disable Automatic Weather</button>
+              </div>
+              <p id="weatherStatus" class="context-status small-meta" role="status"></p>
+              <p class="provider-attribution"><a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Weather data by Open-Meteo</a></p>
+            </section>
             <p id="appVersion" class="small-meta"></p>
             <button id="exportBtn" class="secondary-button" type="button">Export JSON Backup</button>
+            <aside class="backup-guidance" aria-label="Backup retention guidance">
+              <strong>Keep external backups somewhere intentional.</strong>
+              <p>Downloaded JSON files are separate from protected originals kept inside this browser. Consider a dedicated backup folder and retain the newest verified export, the previous known-good release, major milestones, and any clearly labeled archives.</p>
+              <p>Fit Roulette cannot rotate, rename, or delete files already downloaded to your computer.</p>
+            </aside>
             <div id="recoveryDownloads" class="recovery-downloads" aria-label="Protected originals"></div>
             <button id="importBtn" class="secondary-button" type="button">Import JSON Backup</button>
             <input id="importFile" type="file" accept="application/json" hidden>
@@ -411,25 +445,25 @@
           <div class="section-heading">
             <h3 id="appearanceTitle">Appearance</h3>
           </div>
-          <div class="two-column">
-            <label class="field">
-              <span>Primary color</span>
-              <select id="itemPrimaryColor" required></select>
+          <div class="two-column appearance-heading-fields">
+            <div id="primaryColorField" class="field">
+              <span id="primaryColorLabel">Primary color</span>
+              <select id="itemPrimaryColor" class="color-state-control" aria-hidden="true" tabindex="-1" required></select>
+              <div id="primaryColorChips" class="color-choice-grid" role="group" aria-labelledby="primaryColorLabel" tabindex="-1"></div>
               <input id="itemPrimaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom color, such as Cerulean" aria-label="Custom primary color" hidden>
-            </label>
-            <label class="field">
+            </div>
+            <label class="field pattern-field">
               <span>Pattern</span>
               <select id="itemPattern"></select>
             </label>
           </div>
-          <div id="primaryColorChips" class="quick-row" aria-label="Primary color shortcuts"></div>
-          <label id="secondaryColorField" class="field">
-            <span>Secondary color <span class="optional-label">Optional</span></span>
-            <select id="itemSecondaryColor"></select>
+          <div id="secondaryColorField" class="field">
+            <span id="secondaryColorLabel">Secondary color <span class="optional-label">Optional</span></span>
+            <select id="itemSecondaryColor" class="color-state-control" aria-hidden="true" tabindex="-1"></select>
+            <div id="secondaryColorChips" class="color-choice-grid" role="group" aria-labelledby="secondaryColorLabel" tabindex="-1" hidden></div>
             <input id="itemSecondaryColorCustom" class="color-custom-input" type="text" inputmode="text" autocomplete="off" placeholder="Custom secondary color" aria-label="Custom secondary color" hidden>
             <small id="secondaryColorHint" class="field-hint">Choose a non-solid pattern to add a secondary color.</small>
-          </label>
-          <div id="secondaryColorChips" class="quick-row" aria-label="Secondary color shortcuts" hidden></div>
+          </div>
         </section>
 
         <fieldset id="itemOccasionFieldset" class="fieldset" tabindex="-1">
@@ -686,12 +720,12 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.6.0", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.6.1", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.6.0" defer></script>
-    <script src="./smart-closet.js?v=1.6.0" defer></script>
-    <script src="./insights.js?v=1.6.0" defer></script>
-    <script src="./app.js?v=1.6.0" defer></script>
+    <script src="./context-engine.js?v=1.6.1" defer></script>
+    <script src="./smart-closet.js?v=1.6.1" defer></script>
+    <script src="./insights.js?v=1.6.1" defer></script>
+    <script src="./app.js?v=1.6.1" defer></script>
   </body>
 </html>

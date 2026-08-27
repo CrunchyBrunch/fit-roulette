@@ -28,7 +28,7 @@ assert(!html.includes("fit-roulette-v1.5.3"));
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.6.0",
+  appVersion: "1.6.1",
   schemaVersion: 5,
   colorControls: ["primary", "secondary"],
   focusPolicy: "programmatic-title-with-keyboard-indicator",

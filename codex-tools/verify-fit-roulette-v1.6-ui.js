@@ -180,6 +180,15 @@ async function verifyInsights(browser, baseUrl, options) {
     assert.equal(await page.getByRole("heading", { name: "Current Coverage" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Closet Evaluation" }).count(), 1);
     assert.equal(await page.locator("canvas, svg").count(), 0, "Insights should remain text-first.");
+    assert.equal(await page.locator("#insightsHero .insights-hero-card").count(), 4);
+    assert.equal(await page.locator("#insightsVisuals .insight-visual-card").count(), 4);
+    assert.equal(await page.locator(".insights-disclosure[open]").count(), 0, "Technical detail groups should use progressive disclosure by default.");
+    assert.match(await page.locator("#insightsHero").textContent(), /Available garments/);
+    assert.match(await page.locator("#insightsHero").textContent(), /Logged outfits/);
+    assert.match(await page.locator("#insightsVisuals").textContent(), /Closet mix/);
+    assert.match(await page.locator("#insightsVisuals").textContent(), /Top saved colors/);
+    assert((await page.locator("#insightsVisuals .insight-visual-label").count()) > 0, "Visual bars require visible textual labels and counts.");
+    assert.equal(await page.locator("#insightsVisuals .insight-visual-track:not([aria-hidden='true'])").count(), 0, "Decorative bars must stay out of the accessibility tree.");
 
     const readiness = await page.locator("#insightsReadiness").textContent();
     assert.match(readiness, /4 logged outfits/);
@@ -198,6 +207,8 @@ async function verifyInsights(browser, baseUrl, options) {
     const composition = await page.locator("#insightsComposition").textContent();
     assert.match(composition, /Moonlit Aubergine With An Intentionally Long Saved Name/);
     assert.match(composition, /Custom \/ Unclassified/);
+    await page.locator(".insights-disclosure").nth(1).locator(":scope > summary").click();
+    await page.locator(".insights-disclosure").nth(2).locator(":scope > summary").click();
     await page.locator("#insightsCompositionScope").selectOption("available");
     await page.locator("#insightsRangeSelect").selectOption("30");
     assert.match(await page.locator("#insightsActivity").textContent(), /Range: Last 30 days/);
@@ -224,6 +235,18 @@ async function verifyInsights(browser, baseUrl, options) {
       await page.getByRole("button", { name: "Insights", exact: true }).click();
     }
     assert.equal(await page.locator("#screen-insights .insight-card").count(), countBeforeVisits);
+
+    await page.getByRole("button", { name: "Data", exact: true }).click();
+    assert.equal(await page.locator("#weatherSettingsPanel").isVisible(), true);
+    assert.equal(await page.locator("#useCurrentLocationBtn").isVisible(), true);
+    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    assert.equal(await page.locator("#weatherEffectiveStatus").isVisible(), true);
+    assert.equal(await page.locator("#manageWeatherBtn").isVisible(), true);
+    assert.equal(await page.locator("#useCurrentLocationBtn").isVisible(), false, "Persistent Automatic Weather controls must not crowd Generate.");
+    await page.getByRole("button", { name: "Closet", exact: true }).click();
+    assert((await page.locator(".closet-visual").count()) > 0);
+    assert.match(await page.locator(".closet-card").first().textContent(), /Top|Bottom|Shoes|Layer|Belt|Socks|Accessory/);
+    await page.getByRole("button", { name: "Insights", exact: true }).click();
 
     await page.evaluate(() => {
       document.querySelector("#runCoverageBtn").click();
