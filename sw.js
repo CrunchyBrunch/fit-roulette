@@ -1,5 +1,5 @@
-const CACHE_NAME = "fit-roulette-v1.6.0";
-const ASSET_VERSION = "1.6.0";
+const CACHE_NAME = "fit-roulette-v1.6.1";
+const ASSET_VERSION = "1.6.1";
 const APP_ASSETS = [
   "./",
   "./index.html",

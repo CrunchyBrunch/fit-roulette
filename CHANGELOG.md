@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.6.1 &mdash; Insights Experience &amp; Daily Polish
+
+- Reframed Insights around plain-language hero statistics and compact text-equivalent visual summaries, while keeping detailed sources, denominators, provenance, and limitations available through accessible progressive disclosure.
+- Moved persistent Automatic Weather setup, unit, provider status, refresh, and disable actions to Data; Generate retains the effective next-roll context, attention-only fallback status, and session-only Manual Context and Ignore Weather controls.
+- Replaced redundant visible native color dropdowns with accessible text-labeled swatch selection, retaining one hidden authoritative state control, canonical and custom values, independent Primary/Secondary behavior, validation, and all editor entry modes.
+- Added small category marks plus saved-color/pattern swatches to Closet cards without replacing textual category or color information.
+- Hardened Manual Log date sizing with explicit logical-width containment and added narrow rendered regression coverage.
+- Added concise Data-screen backup guidance that distinguishes browser-local protected originals from downloaded JSON files and makes clear that the browser cannot manage arbitrary downloaded files.
+- Preserved the released automatic-refresh state machine after deterministic startup, Generate/Reroll, resume, `pageshow`, online, throttle, backoff, permission, failure, deduplication, reload, and fallback verification found no bounded implementation defect.
+- Retained schema 5, `fitRoulette.v1`, every recovery key/prefix, import/export shape, local-only read-only Insights, current-observation weather, matching behavior, and all deferred v1.7+ boundaries.
+
+This release uses app version `1.6.1`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.6.1`.
+
 ## Fit Roulette v1.6.0 &mdash; Closet Insights Foundation
 
 - Added a fifth top-level Insights section with separate Data Readiness, current Closet Composition, explicitly Logged Activity, Current Coverage, and user-initiated Closet Evaluation groups.

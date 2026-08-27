@@ -1,5 +1,13 @@
 # Fit Roulette v1.5.1 Context Engine
 
+## v1.6.1 Placement And Reliability Recheck
+
+Persistent Automatic Weather setup, Fahrenheit/Celsius preference, current-condition availability, provider status, Refresh, and Disable live in Data. Generate retains the effective context the next roll will use, an attention-only fallback message, and the session-only controls that directly change the next generation: Automatic versus Manual Context, stale-cache awareness, warmer/colder adjustment, exposure, expected rain, and Ignore Weather. This is a presentation-only move; saved settings, provider calls, context derivation, history snapshots, and scoring are unchanged.
+
+The v1.6.1 deterministic recheck covers startup, Generate/Reroll, visible resume, `pageshow`, `online`, fresh/stale/expired/missing cache, 15-minute success throttle, 30-second failure backoff, prompt/granted/denied/unsupported permission states, location maximum age, in-flight deduplication, rapid generation, provider and persistence failures, reload, and offline fallback. No bounded defect was reproduced, so no state-machine change, polling, stored coordinates, alternate provider, or browser-permission workaround was added.
+
+The provider request still asks only for the `current` block. Fit Roulette does not yet model a wear window or the remainder of the day. A future whole-day contract would require explicit hourly fields and provider timezone handling, deterministic window aggregation, request/cache and offline rules, revised scoring/explanation tests, and a product decision about the expected wear window. It must not silently reinterpret current-observation history snapshots as forecasts.
+
 ## v1.5.4 Foreground Weather And Daily Workflow
 
 Automatic Weather now uses one foreground resolver for startup, Generate/Reroll, visible resume, `pageshow`, and `online`. Concurrent triggers share the in-flight request. A successful automatic refresh starts the existing 15-minute success throttle only after provider validation and successful local persistence. Location, provider, timeout, or persistence failures instead start a separate 30-second failure backoff; they preserve the saved opt-in and last valid cache, generate at most one explicit fallback outfit, and may recover later in the same session. Explicit Refresh and Use Current Location bypass both guards. There is no repeating timer, background polling, fallback provider, or stored location data.

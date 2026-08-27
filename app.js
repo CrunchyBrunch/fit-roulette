@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.6.1";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -110,6 +110,15 @@
     brown: "brown", tan: "tan", khaki: "khaki", olive: "olive", green: "green", red: "red",
     burgundy: "burgundy", pink: "pink", purple: "purple", orange: "orange", yellow: "yellow",
     multicolor: "multicolor"
+  });
+  const CATEGORY_MARKS = Object.freeze({
+    top: "T",
+    bottom: "B",
+    shoes: "S",
+    layer: "L",
+    belt: "BL",
+    socks: "SK",
+    accessory: "A"
   });
   const CUSTOM_COLOR_VALUE = "__custom__";
   const OCCASION_PRESETS = {
@@ -240,6 +249,10 @@
     $("#useCurrentLocationBtn").addEventListener("click", () => ensureAutomaticWeather("use-current-location", { force: true, userInitiated: true }));
     $("#refreshWeatherBtn").addEventListener("click", () => ensureAutomaticWeather("explicit-refresh", { force: true, userInitiated: true }));
     $("#disableWeatherBtn").addEventListener("click", disableAutomaticWeather);
+    $("#manageWeatherBtn").addEventListener("click", () => {
+      setActiveScreen("settings");
+      $("#weatherSettingsTitle")?.focus?.({ preventScroll: false });
+    });
     $("#contextMode").addEventListener("change", handleContextControlChange);
     $("#acceptStaleWeather").addEventListener("change", handleContextControlChange);
     $("#manualTemperature").addEventListener("input", handleContextControlChange);
@@ -1038,6 +1051,7 @@
     return `
       <article class="closet-card ${isAvailable(item) ? "" : "is-inactive"}" data-item-id="${escapeAttribute(item.id)}">
         <div class="card-topline">
+          ${renderClosetVisual(item)}
           <div class="card-title-wrap">
             <h3>${escapeHtml(item.name)}</h3>
             <p class="small-meta">${escapeHtml(recency)} - ${escapeHtml(SmartCloset.FORMALITY_LABELS[item.formality])}</p>
@@ -1051,6 +1065,18 @@
         </div>
       </article>
     `;
+  }
+
+  function renderClosetVisual(item) {
+    const category = CATEGORIES[item.category] || SmartCloset.titleCase(item.category) || "Garment";
+    const mark = CATEGORY_MARKS[item.category] || "G";
+    const token = COLOR_SWATCH_TOKENS[normalizeTag(item.primaryColor)] || "custom";
+    const pattern = item.pattern && item.pattern !== "solid" ? item.pattern : "solid";
+    return `
+      <span class="closet-visual" aria-hidden="true">
+        <span class="closet-category-icon" title="${escapeAttribute(category)}">${escapeHtml(mark)}</span>
+        <span class="closet-color-swatch color-swatch-${escapeAttribute(token)} pattern-${escapeAttribute(pattern)}"></span>
+      </span>`;
   }
 
   function renderHistory() {
@@ -1146,11 +1172,75 @@
     }));
     if ($("#insightsRangeSelect")) $("#insightsRangeSelect").value = insightsRange;
     if ($("#insightsCompositionScope")) $("#insightsCompositionScope").value = insightsCompositionScope;
+    renderInsightsOverview(analysis);
     renderInsightsReadiness(analysis.readiness);
     renderInsightsComposition(analysis.composition);
     renderInsightsActivity(analysis.activity);
     renderInsightsCoverage();
     renderInsightsEvaluation();
+  }
+
+  function renderInsightsOverview(analysis) {
+    const { readiness, composition, activity } = analysis;
+    const closet = readiness.currentCloset;
+    const range = activity.rangeLabel;
+    const utilization = activity.currentUtilization;
+    const reviewText = closet.total === 0
+      ? "No current garments"
+      : (closet.needsReview ? `${closet.needsReview} still need review` : "Metadata reviewed");
+    $("#insightsHero").innerHTML = [
+      overviewCard("Available garments", String(closet.available), `${closet.available} of ${closet.total} current garments are Currently Available.`, "Current inventory status only; it does not describe historical availability."),
+      overviewCard("Logged outfits", String(activity.totalLoggedOutfits), `Based on ${activity.totalLoggedOutfits} logged outfits across ${activity.loggedDays} logged days.`, `Range: ${range}. A blank day means no outfit was logged, not that none was used.`),
+      overviewCard("Current utilization", `${utilization.numerator} of ${utilization.denominator}`, utilization.text, `Range: ${range}. This is logged activity, not proof of total real-world use.`),
+      overviewCard("Review readiness", reviewText, closet.availableReviewText, `${closet.legacyFallback} legacy-fallback garment${closet.legacyFallback === 1 ? "" : "s"}; some metadata may be incomplete.`)
+    ].join("");
+
+    const topColors = composition.primaryColor.slice(0, 6);
+    const topCategories = composition.category.slice(0, 6);
+    const topLogged = activity.garmentActivity
+      .filter((item) => item.count > 0)
+      .slice(0, 6)
+      .map((item) => ({ label: item.name, count: item.count }));
+    const occasionMix = activity.occasion.slice(0, 6);
+    $("#insightsVisuals").innerHTML = [
+      visualSummary("Closet mix", topCategories, composition.denominator, composition.denominatorLabel, "Current inventory categories are descriptive, not a balance target."),
+      visualSummary("Top saved colors", topColors, composition.denominator, composition.denominatorLabel, "Custom colors keep their exact saved names and are not assigned an invented family."),
+      visualSummary("Most logged pieces", topLogged, activity.totalLoggedOutfits, range, "Appears in logged outfits only; ties and unlogged real-world use may not be visible."),
+      visualSummary("Occasion mix", occasionMix, activity.totalLoggedOutfits, range, "Uses saved log occasions; occasions are not inferred from garments.")
+    ].join("");
+  }
+
+  function overviewCard(title, value, evidence, limitation) {
+    return `
+      <article class="insights-hero-card">
+        <h4>${escapeHtml(title)}</h4>
+        <p class="insights-hero-value">${escapeHtml(value)}</p>
+        <details class="insights-card-details">
+          <summary>See details</summary>
+          <p>${escapeHtml(evidence)}</p>
+          <p><strong>Limitation:</strong> ${escapeHtml(limitation)}</p>
+        </details>
+      </article>`;
+  }
+
+  function visualSummary(title, rows, denominator, scope, limitation) {
+    const maximum = Math.max(1, ...rows.map((row) => Number(row.count) || 0));
+    const body = rows.length
+      ? rows.map((row) => {
+        const percent = Math.max(4, Math.round(((Number(row.count) || 0) / maximum) * 100));
+        return `<li><span class="insight-visual-label"><strong>${escapeHtml(row.label)}</strong><span>${row.count}</span></span><span class="insight-visual-track" aria-hidden="true"><span style="width:${percent}%"></span></span></li>`;
+      }).join("")
+      : `<li class="insight-visual-empty">Not enough logged or saved data to show this summary.</li>`;
+    return `
+      <article class="insight-visual-card">
+        <h4>${escapeHtml(title)}</h4>
+        <ul>${body}</ul>
+        <details class="insights-card-details">
+          <summary>See details</summary>
+          <p>Denominator: ${escapeHtml(scope)} (${denominator}).</p>
+          <p><strong>Limitation:</strong> ${escapeHtml(limitation)}</p>
+        </details>
+      </article>`;
   }
 
   function renderInsightsReadiness(readiness) {
@@ -1485,6 +1575,16 @@
     $("#weatherPreferenceStatus").textContent = `Automatic Weather: ${preference}`;
     $("#weatherAvailabilityStatus").textContent = `Current conditions: ${availability}`;
     $("#weatherEffectiveStatus").textContent = `${generated ? "This outfit used" : "Next roll will use"}: ${effectiveContextCommunication(effective)}`;
+    let generateStatus = "";
+    const automaticForNextRoll = contextSession.mode === "automatic" && !contextSession.ignore;
+    if (weather.automatic && automaticForNextRoll && ["missing", "expired"].includes(freshness)) {
+      generateStatus = "Automatic Weather needs attention; generation will use the available fallback.";
+    } else if (weather.automatic && automaticForNextRoll && freshness === "stale" && !nextContext?.active) {
+      generateStatus = "Cached conditions are stale; Fit Roulette will try to refresh before generation.";
+    } else if (!weather.automatic && nextContext?.source === "none") {
+      generateStatus = "No weather context is active. Manual Context remains available.";
+    }
+    $("#weatherGenerateStatus").textContent = generateStatus;
   }
 
   function effectiveContextCommunication(context) {
@@ -2134,7 +2234,7 @@
     if (!item.category) add("category", "Choose a category", "Choose the garment category.", "#itemCategory");
     if (!item.subtype) add("subtype", "Choose a subtype", "Choose the closest garment subtype.", "#itemSubtype");
     if (!item.primaryColor) {
-      add("primary-color", "Primary color is required", "Primary color is required. Choose a listed color or enter a custom color.", "#itemPrimaryColor");
+      add("primary-color", "Primary color is required", "Primary color is required. Choose a listed color or enter a custom color.", "#itemPrimaryColor", "#primaryColorField");
     } else if (!validColorValue(item.primaryColor, "primary")) {
       add("primary-color", "Check the primary color", "Use a clear color name with letters, numbers, spaces, hyphens, slashes, apostrophes, or parentheses.", "#itemPrimaryColorCustom");
     }
@@ -2173,8 +2273,14 @@
     const colorButton = event.target.closest("[data-color][data-color-kind]");
     if (colorButton) {
       const kind = colorButton.dataset.colorKind === "secondary" ? "secondary" : "primary";
-      const selected = normalizeTag(colorControlValue(kind)) === normalizeTag(colorButton.dataset.color);
-      setColorControl(kind, selected ? "" : colorButton.dataset.color);
+      if (colorButton.dataset.color === CUSTOM_COLOR_VALUE) {
+        const control = $(`#item${capitalize(kind)}Color`);
+        control.value = CUSTOM_COLOR_VALUE;
+        updateColorControl(kind, true);
+      } else {
+        const selected = normalizeTag(colorControlValue(kind)) === normalizeTag(colorButton.dataset.color);
+        setColorControl(kind, selected && kind === "primary" ? "" : colorButton.dataset.color);
+      }
       handleItemFormMutation();
       return;
     }
@@ -2508,11 +2614,16 @@
   function renderColorChoiceButtons(kind) {
     const container = $(`#${kind}ColorChips`);
     if (!container) return;
-    container.innerHTML = COLOR_OPTIONS.map((color) => {
+    const choices = COLOR_OPTIONS.map((color) => {
       const label = SmartCloset.titleCase(color);
       const token = COLOR_SWATCH_TOKENS[normalizeTag(color)] || "multicolor";
       return `<button class="mini-button selection-button color-choice" type="button" data-color-kind="${kind}" data-color="${escapeAttribute(label)}" aria-label="${escapeAttribute(`${label} ${kind} color`)}" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span><span class="color-swatch color-swatch-${escapeAttribute(token)}" aria-hidden="true"></span><span>${escapeHtml(label)}</span></button>`;
-    }).join("");
+    });
+    if (kind === "secondary") {
+      choices.unshift(`<button class="mini-button selection-button color-choice color-choice-none" type="button" data-color-kind="secondary" data-color="" aria-label="No secondary color" aria-pressed="true"><span class="selection-indicator" aria-hidden="true">&#10003;</span><span class="color-swatch color-swatch-none" aria-hidden="true"></span><span>None</span></button>`);
+    }
+    choices.push(`<button class="mini-button selection-button color-choice color-choice-custom" type="button" data-color-kind="${kind}" data-color="${CUSTOM_COLOR_VALUE}" aria-label="Custom ${kind} color" aria-pressed="false"><span class="selection-indicator" aria-hidden="true">&#10003;</span><span class="color-swatch color-swatch-custom" aria-hidden="true"></span><span>Custom…</span></button>`);
+    container.innerHTML = choices.join("");
   }
 
   function setColorControl(kind, value) {
@@ -2603,6 +2714,10 @@
       container.classList?.add("has-error");
       target.setAttribute?.("aria-invalid", "true");
       target.setAttribute?.("aria-describedby", messageId);
+      if (issue.id === "primary-color") {
+        $("#primaryColorChips")?.setAttribute?.("aria-invalid", "true");
+        $("#primaryColorChips")?.setAttribute?.("aria-describedby", messageId);
+      }
       container.appendChild?.(inline);
       (issue.disclosureSelectors || []).forEach((selector) => {
         const disclosure = $(selector);
@@ -2612,7 +2727,10 @@
     });
 
     if (options.focusFirst === false) return;
-    const first = $(issues[0].selector) || error;
+    const firstIssue = issues[0];
+    const first = firstIssue.id === "primary-color"
+      ? ($("#primaryColorChips") || $(firstIssue.selector) || error)
+      : ($(firstIssue.selector) || error);
     const reveal = () => {
       first.scrollIntoView?.({ behavior: "smooth", block: "center" });
       first.focus?.({ preventScroll: true });
@@ -2671,8 +2789,10 @@
   function updateSelectedColorChips() {
     $$("[data-color][data-color-kind]").forEach((button) => {
       const kind = button.dataset.colorKind === "secondary" ? "secondary" : "primary";
-      const selected = normalizeTag(colorControlValue(kind));
-      const pressed = Boolean(selected && normalizeTag(button.dataset.color) === selected);
+      const control = $(`#item${capitalize(kind)}Color`);
+      const selected = control.value === CUSTOM_COLOR_VALUE ? CUSTOM_COLOR_VALUE : normalizeTag(colorControlValue(kind));
+      const candidate = button.dataset.color === CUSTOM_COLOR_VALUE ? CUSTOM_COLOR_VALUE : normalizeTag(button.dataset.color);
+      const pressed = candidate === selected;
       button.classList.toggle("is-selected", pressed);
       button.setAttribute("aria-pressed", pressed ? "true" : "false");
     });

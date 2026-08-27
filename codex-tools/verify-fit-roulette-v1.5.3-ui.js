@@ -103,7 +103,7 @@ async function verifyWorkflow(browser, baseUrl) {
     assert.equal(await navy.getAttribute("aria-pressed"), "true");
     assert.notEqual(await navy.locator(".selection-indicator").evaluate((node) => getComputedStyle(node).display), "none");
     await page.locator("#itemPrimaryColor").selectOption("__custom__");
-    assert.equal(await page.locator('[data-color-kind="primary"][aria-pressed="true"]').count(), 0);
+    assert.equal(await page.locator('[data-color-kind="primary"][data-color="__custom__"][aria-pressed="true"]').count(), 1);
     await page.locator("#itemPrimaryColorCustom").fill("Cerulean");
 
     const casual = page.locator('[data-occasion-preset="casual"]');
@@ -120,7 +120,8 @@ async function verifyWorkflow(browser, baseUrl) {
     const beforeInvalidSave = await page.evaluate(() => window.__fitRouletteTest.getState().wardrobe.length);
     await page.locator('#itemForm button[type="submit"]').click();
     assert.equal(await page.locator(".field-error").count(), 4);
-    assert.equal(await page.locator('[aria-invalid="true"]').count(), 4);
+    assert.equal(await page.locator('[aria-invalid="true"]').count(), 5);
+    assert.equal(await page.locator("#primaryColorChips").getAttribute("aria-invalid"), "true");
     assert.equal(await page.locator("#itemName").evaluate((node) => document.activeElement === node), true);
     assert.equal(await page.evaluate(() => window.__fitRouletteTest.getState().wardrobe.length), beforeInvalidSave);
     for (const id of ["itemName", "itemPrimaryColor", "itemOccasionFieldset", "layerRoleFieldset"]) {
@@ -327,10 +328,23 @@ async function verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme) {
     assert.equal(await page.locator("#itemName").evaluate((node) => document.activeElement === node), false);
     assert.equal(await page.locator("#itemDialog").evaluate((node) => node.classList.contains("keyboard-open")), false);
     assert.equal(await page.locator("#itemDialogTitle").evaluate((node) => getComputedStyle(node).outlineStyle), "none");
+    const nativeColorState = await page.locator("#itemPrimaryColor").evaluate((node) => ({
+      width: node.getBoundingClientRect().width,
+      height: node.getBoundingClientRect().height,
+      clipPath: getComputedStyle(node).clipPath,
+      tabIndex: node.tabIndex
+    }));
+    assert(nativeColorState.width <= 1 && nativeColorState.height <= 1, `Native color state control entered layout: ${JSON.stringify(nativeColorState)}`);
+    assert.match(nativeColorState.clipPath, /inset/);
+    assert.equal(nativeColorState.tabIndex, -1);
+    assert.equal(await page.locator("#itemPrimaryColor").getAttribute("aria-hidden"), "true");
+    assert.equal(await page.locator("#primaryColorChips").isVisible(), true);
 
-    assert.equal(await page.locator('[data-color-kind="primary"]').count(), 22);
-    assert.equal(await page.locator('[data-color-kind="secondary"]').count(), 22);
-    assert.equal(await page.locator(".color-swatch").count(), 44);
+    assert.equal(await page.locator('[data-color-kind="primary"]:not([data-color="__custom__"])').count(), 22);
+    assert.equal(await page.locator('[data-color-kind="primary"]').count(), 23);
+    assert.equal(await page.locator('[data-color-kind="secondary"]:not([data-color=""]):not([data-color="__custom__"])').count(), 22);
+    assert.equal(await page.locator('[data-color-kind="secondary"]').count(), 24);
+    assert.equal(await page.locator(".color-swatch").count(), 47);
     await page.locator("#itemPattern").selectOption("striped");
     assert.equal(await page.locator("#secondaryColorChips").isVisible(), true);
     await page.locator('[data-color-kind="primary"][data-color="Navy"]').click();
@@ -374,6 +388,20 @@ async function verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme) {
 
     await page.locator('[data-screen="generate"]').click();
     await page.locator("#manualLogGenerateBtn").click();
+    const manualDateSize = await page.locator("#manualLogDate").evaluate((node) => {
+      const input = node.getBoundingClientRect();
+      const field = node.closest(".field").getBoundingClientRect();
+      const dialog = node.closest("dialog");
+      return {
+        inputWidth: input.width,
+        fieldWidth: field.width,
+        dialogOverflow: dialog.scrollWidth - dialog.clientWidth,
+        minInlineSize: getComputedStyle(node).minInlineSize
+      };
+    });
+    assert(manualDateSize.inputWidth <= manualDateSize.fieldWidth + 1, `Manual date input overflowed its field: ${JSON.stringify(manualDateSize)}`);
+    assert(manualDateSize.dialogOverflow <= 1, `Manual Log dialog overflowed: ${JSON.stringify(manualDateSize)}`);
+    assert.equal(manualDateSize.minInlineSize, "0px");
     assert.match(await page.locator("#manualSelectedCount").textContent(), /^0 garments/);
     await page.locator("#manualItemSearch").fill("navy");
     const navyChoice = page.locator('input[name="manualItem"]').first();

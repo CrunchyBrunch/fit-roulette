@@ -1,6 +1,12 @@
 # Closet Insights Foundation
 
-Fit Roulette v1.6.0 adds a local-only, read-only analytical boundary without changing schema 5, storage keys, import/export shape, recovery behavior, matching, or generation. `insights.js` contains deterministic pure functions; `app.js` owns transient controls and accessible rendering. Derived results are never persisted.
+Fit Roulette v1.6.0 added a local-only, read-only analytical boundary without changing schema 5, storage keys, import/export shape, recovery behavior, matching, or generation. Fit Roulette v1.6.1 keeps that analytical contract intact while simplifying presentation. `insights.js` contains deterministic pure functions; `app.js` owns transient controls and accessible rendering. Derived results are never persisted.
+
+## Presentation boundary
+
+The default Insights surface presents a small set of plain-language hero statistics plus text-equivalent summaries for closet mix, exact saved colors, most-logged pieces, and saved occasion mix. These are alternate renderings of the same v1.6 results, not new metrics. Detailed evidence type, denominator, selected range, snapshots, provenance, data-quality flags, and limitations remain available through accessible details disclosures.
+
+Visual bars are decorative and always paired with visible labels and counts. They never use color as the only signal. Empty and sparse states say that there is not enough saved or logged evidence for a summary rather than implying a closet problem. The presentation layer does not cache, persist, transmit, or feed results into generation.
 
 ## Evidence and provenance
 
