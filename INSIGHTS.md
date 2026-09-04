@@ -1,6 +1,6 @@
 # Closet Insights Foundation
 
-Fit Roulette v1.6.0 added a local-only, read-only analytical boundary without changing schema 5, storage keys, import/export shape, recovery behavior, matching, or generation. Fit Roulette v1.6.1 keeps that analytical contract intact while simplifying presentation. `insights.js` contains deterministic pure functions; `app.js` owns transient controls and accessible rendering. Derived results are never persisted.
+Fit Roulette v1.6.0 added a local-only, read-only analytical boundary without changing schema 5, storage keys, import/export shape, recovery behavior, matching, or generation. Fit Roulette v1.6.1 simplified presentation, and v1.6.2 retains those contracts while stabilizing adjacent daily workflows. `insights.js` contains deterministic pure functions; `app.js` owns transient controls and accessible rendering. Derived results are never persisted.
 
 ## Presentation boundary
 

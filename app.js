@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.6.1";
+  const APP_VERSION = "1.6.2";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -111,14 +111,14 @@
     burgundy: "burgundy", pink: "pink", purple: "purple", orange: "orange", yellow: "yellow",
     multicolor: "multicolor"
   });
-  const CATEGORY_MARKS = Object.freeze({
-    top: "T",
-    bottom: "B",
-    shoes: "S",
-    layer: "L",
-    belt: "BL",
-    socks: "SK",
-    accessory: "A"
+  const CATEGORY_ICON_PATHS = Object.freeze({
+    top: `<path d="M4 5.5 7.5 3h5L16 5.5l-2 3-2-1V17H8V7.5l-2 1-2-3Z"/>`,
+    bottom: `<path d="M6 3h8l-1 14-3-6-3 6L6 3Z"/>`,
+    shoes: `<path d="M4 5v6l4 2h8v3H5a2 2 0 0 1-2-2V5h1Z"/>`,
+    layer: `<path d="m6 4 2-1h4l2 1 3 3-2 3-2-1v8H7V9l-2 1-2-3 3-3Z"/><path d="M10 3v14"/>`,
+    belt: `<path d="M2.5 7.5h15v5h-15z"/><path d="M8 6.5h4v7H8z"/>`,
+    socks: `<path d="M7 3h6v8l3 2-2 4H8l-2-3 1-3V3Z"/>`,
+    accessory: `<circle cx="10" cy="10" r="6"/><path d="M10 4v12M4 10h12"/>`
   });
   const CUSTOM_COLOR_VALUE = "__custom__";
   const OCCASION_PRESETS = {
@@ -170,8 +170,19 @@
   let weatherSessionFetchedAt = "";
   let locationPermission = "unknown";
   let generationPromise = null;
+  let generationIndexes = null;
   let manualSelectedItemIds = new Set();
   let manualItemSearch = "";
+  let editingHistoryId = null;
+  let historyEditorBaseline = "";
+  let historyEditorOriginalRecord = null;
+  let historyEditorInvoker = null;
+  let pendingHistoryExit = null;
+  let historySaveInProgress = false;
+  let manualRetainedItemIds = new Set();
+  let manualCategoryOpenState = new Map();
+  let swapInvoker = null;
+  let itemNameSuggestionState = null;
   let insightsRange = "all";
   let insightsCompositionScope = "all";
   let insightsCoverageResult = null;
@@ -188,7 +199,12 @@
   let closetFilters = {
     search: "",
     category: "all",
-    showInactive: false
+    subtype: "all",
+    color: "all",
+    pattern: "all",
+    formality: "all",
+    occasion: "all",
+    status: "available"
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -229,10 +245,20 @@
     $("#todayLoggedNotice").addEventListener("click", (event) => {
       if (event.target.closest("[data-today-log-id]")) setActiveScreen("history");
     });
-    $("#manualLogGenerateBtn").addEventListener("click", openManualLogDialog);
-    $("#manualLogHistoryBtn").addEventListener("click", openManualLogDialog);
+    $("#manualLogGenerateBtn").addEventListener("click", (event) => openManualLogDialog({ invoker: event.currentTarget }));
+    $("#manualLogHistoryBtn").addEventListener("click", (event) => openManualLogDialog({ invoker: event.currentTarget }));
     $("#manualLogForm").addEventListener("submit", saveManualLog);
-    $("#closeManualLogBtn").addEventListener("click", () => closeDialog($("#manualLogDialog")));
+    $("#closeManualLogBtn").addEventListener("click", () => requestHistoryEditorExit("close"));
+    $("#manualLogDialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      requestHistoryEditorExit("escape");
+    });
+    $("#manualLogDialog").addEventListener("click", (event) => {
+      if (event.target === $("#manualLogDialog")) requestHistoryEditorExit("backdrop");
+    });
+    $("#manualLogForm").addEventListener("input", handleHistoryEditorMutation);
+    $("#manualLogForm").addEventListener("change", handleHistoryEditorMutation);
+    $("#manualLogDate").addEventListener("change", renderManualContextNotice);
     $("#manualIncludeUnavailable").addEventListener("change", handleManualAvailabilityChange);
     $("#manualItemSearch").addEventListener("input", (event) => {
       manualItemSearch = event.target.value;
@@ -241,7 +267,14 @@
     $("#manualItemPicker").addEventListener("change", handleManualItemSelection);
     $("#manualSelectedSummary").addEventListener("click", handleManualSelectedSummaryClick);
     $("#swapChoices").addEventListener("click", handleSwapChoice);
-    $("#closeSwapDialogBtn").addEventListener("click", () => closeDialog($("#swapDialog")));
+    $("#closeSwapDialogBtn").addEventListener("click", () => closeSwapDialog({ restoreFocus: true }));
+    $("#swapDialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeSwapDialog({ restoreFocus: true });
+    });
+    $("#swapDialog").addEventListener("click", (event) => {
+      if (event.target === $("#swapDialog")) closeSwapDialog({ restoreFocus: true });
+    });
     $("#feedbackForm").addEventListener("submit", saveBanFeedback);
     $("#feedbackForm").addEventListener("change", updateFeedbackOtherVisibility);
     $("#dismissFeedbackBtn").addEventListener("click", finishBanFeedback);
@@ -272,15 +305,13 @@
       renderCloset();
     });
 
-    $("#closetCategory").addEventListener("change", (event) => {
-      closetFilters.category = event.target.value;
-      renderCloset();
+    ["category", "subtype", "color", "pattern", "formality", "occasion", "status"].forEach((key) => {
+      $(`#closet${capitalize(key)}`).addEventListener("change", (event) => {
+        closetFilters[key] = event.target.value;
+        renderCloset();
+      });
     });
-
-    $("#showInactive").addEventListener("change", (event) => {
-      closetFilters.showInactive = event.target.checked;
-      renderCloset();
-    });
+    $("#clearClosetFiltersBtn").addEventListener("click", clearClosetFilters);
 
     $("#closetList").addEventListener("click", handleClosetAction);
     $("#freshSetup").addEventListener("click", handleFreshSetupAction);
@@ -344,7 +375,7 @@
     $("#closeItemDialogBtn").addEventListener("click", () => requestEditorExit("close"));
     $("#addSimilarBtn").addEventListener("click", addSimilarFromDialog);
     $("#permanentDeleteBtn").addEventListener("click", permanentlyDeleteFromDialog);
-    $("#itemName").addEventListener("input", updateEditorTitle);
+    $("#itemName").addEventListener("input", handleItemNameInput);
     $("#itemDialog").addEventListener("cancel", handleItemDialogCancel);
     $("#itemDialog").addEventListener("click", handleItemDialogBackdrop);
     $("#saveItemExitBtn").addEventListener("click", savePendingEditorExit);
@@ -353,6 +384,13 @@
     $("#itemExitDialog").addEventListener("cancel", (event) => {
       event.preventDefault();
       continuePendingEditorExit();
+    });
+    $("#saveHistoryExitBtn").addEventListener("click", savePendingHistoryExit);
+    $("#discardHistoryExitBtn").addEventListener("click", discardPendingHistoryExit);
+    $("#continueHistoryExitBtn").addEventListener("click", continuePendingHistoryExit);
+    $("#historyExitDialog").addEventListener("cancel", (event) => {
+      event.preventDefault();
+      continuePendingHistoryExit();
     });
     $("#reviewDuplicateBtn").addEventListener("click", reviewDuplicateCandidate);
     $("#saveDuplicateAnywayBtn").addEventListener("click", saveDuplicateAnyway);
@@ -381,6 +419,13 @@
 
     $("#itemCategory").innerHTML = categoryOptions;
     $("#closetCategory").innerHTML = `<option value="all">All categories</option>${categoryOptions}`;
+    $("#closetPattern").innerHTML = `<option value="all">All patterns</option>${SmartCloset.PATTERNS.map((value) => `<option value="${escapeAttribute(value)}">${escapeHtml(SmartCloset.titleCase(value))}</option>`).join("")}`;
+    $("#closetStatus").innerHTML = [
+      ["available", "Currently Available"],
+      ["unavailable", "Unavailable"],
+      ["archived", "Archived"],
+      ["all", "All statuses"]
+    ].map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
     renderSubtypeOptions();
 
     renderItemOccasionOptions(false);
@@ -404,9 +449,7 @@
     $("#itemRainProtection").innerHTML = protectionOptions;
     $("#itemWindProtection").innerHTML = protectionOptions;
 
-    $("#manualLogOccasion").innerHTML = OCCASION_ORDER.map((id) => {
-      return `<option value="${id}">${escapeHtml(OCCASIONS[id].label)}</option>`;
-    }).join("");
+    renderManualLogOccasionOptions(false);
 
     renderDefaultOccasionOptions();
     renderInsightsOptions();
@@ -965,7 +1008,7 @@
     } else if (button.dataset.resultAction === "reroll") {
       generateAndRender({ mode: "reroll" });
     } else if (button.dataset.resultAction === "swap") {
-      openSwapDialog(button.dataset.itemId);
+      openSwapDialog(button.dataset.itemId, button);
     } else if (button.dataset.resultAction === "remove-belt") {
       removeOptionalBelt();
     } else if (button.dataset.resultAction === "remove-layer") {
@@ -990,18 +1033,25 @@
 
   function renderCloset() {
     const list = $("#closetList");
+    renderClosetFilterOptions();
     const matchingItems = appState.wardrobe
-      .filter((item) => closetFilters.showInactive || isAvailable(item))
+      .filter((item) => closetFilters.status === "all" || item.status === closetFilters.status)
       .filter((item) => closetFilters.category === "all" || item.category === closetFilters.category)
+      .filter((item) => closetFilters.subtype === "all" || item.subtype === closetFilters.subtype)
+      .filter((item) => closetFilters.color === "all" || SmartCloset.itemColors(item).includes(closetFilters.color))
+      .filter((item) => closetFilters.pattern === "all" || item.pattern === closetFilters.pattern)
+      .filter((item) => closetFilters.formality === "all" || String(item.formality) === closetFilters.formality)
+      .filter((item) => closetFilters.occasion === "all" || item.occasions.includes(closetFilters.occasion))
       .filter((item) => matchesClosetSearch(item, closetFilters.search))
       .sort(sortItems);
 
     if (!matchingItems.length) {
-      list.innerHTML = `<article class="closet-card"><p class="small-meta">No matching items.</p></article>`;
+      const hasFilters = closetFilterCount() > 0 || Boolean(closetFilters.search.trim());
+      list.innerHTML = `<article class="closet-card"><p class="small-meta">${hasFilters ? "No garments match the current search and filters." : "No garments are currently available."}</p>${hasFilters ? `<button class="secondary-button compact" type="button" data-action="clear-filters">Clear search and filters</button>` : ""}</article>`;
       return;
     }
 
-    if (!closetFilters.showInactive) {
+    if (closetFilters.status !== "all") {
       list.innerHTML = matchingItems.map(renderClosetCard).join("");
       return;
     }
@@ -1019,6 +1069,55 @@
       ? renderClosetGroup("Unavailable", unavailableItems, "unavailable")
       : "";
     list.innerHTML = `${archivedSection}${unavailableSection}${activeSection}`;
+  }
+
+  function renderManualLogOccasionOptions(includeLegacy) {
+    const ids = includeLegacy ? [...OCCASION_ORDER, "gym"] : OCCASION_ORDER;
+    $("#manualLogOccasion").innerHTML = ids.map((id) => {
+      const suffix = id === "gym" ? " (legacy)" : "";
+      return `<option value="${id}">${escapeHtml(OCCASIONS[id].label + suffix)}</option>`;
+    }).join("");
+  }
+
+  function renderClosetFilterOptions() {
+    const values = (items) => unique(items.filter((value) => value !== null && value !== undefined && String(value).trim() !== ""))
+      .map(String)
+      .sort((a, b) => a.localeCompare(b));
+    setFilterOptions("closetSubtype", "All subtypes", values(appState.wardrobe.map((item) => item.subtype)), closetFilters.subtype, SmartCloset.titleCase);
+    setFilterOptions("closetColor", "All saved colors", values(appState.wardrobe.flatMap((item) => SmartCloset.itemColors(item))), closetFilters.color);
+    setFilterOptions("closetFormality", "All formality levels", values(appState.wardrobe.map((item) => item.formality)).sort((a, b) => Number(a) - Number(b)), closetFilters.formality, (value) => `${value}. ${SmartCloset.FORMALITY_LABELS[value] || "Unknown"}`);
+    const occasionValues = values(appState.wardrobe.flatMap((item) => item.occasions));
+    setFilterOptions("closetOccasion", "All occasions", occasionValues, closetFilters.occasion, (value) => OCCASIONS[value]?.label || SmartCloset.titleCase(value));
+    ["category", "pattern", "status"].forEach((key) => {
+      const control = $(`#closet${capitalize(key)}`);
+      if (control && [...control.options].some((option) => option.value === closetFilters[key])) control.value = closetFilters[key];
+    });
+    $("#closetSearch").value = closetFilters.search;
+    const count = closetFilterCount();
+    $("#closetFilterCount").textContent = `${count} active`;
+    $("#clearClosetFiltersBtn").disabled = count === 0 && !closetFilters.search.trim();
+  }
+
+  function setFilterOptions(id, allLabel, values, selected, labelFor = (value) => value) {
+    const control = $(`#${id}`);
+    if (!control) return;
+    control.innerHTML = `<option value="all">${escapeHtml(allLabel)}</option>${values.map((value) => `<option value="${escapeAttribute(value)}">${escapeHtml(labelFor(value))}</option>`).join("")}`;
+    const retained = values.includes(String(selected)) ? String(selected) : "all";
+    control.value = retained;
+    const key = id.replace(/^closet/, "");
+    closetFilters[key.charAt(0).toLowerCase() + key.slice(1)] = retained;
+  }
+
+  function closetFilterCount() {
+    return ["category", "subtype", "color", "pattern", "formality", "occasion"]
+      .filter((key) => closetFilters[key] !== "all").length
+      + (closetFilters.status === "available" ? 0 : 1);
+  }
+
+  function clearClosetFilters() {
+    closetFilters = { search: "", category: "all", subtype: "all", color: "all", pattern: "all", formality: "all", occasion: "all", status: "available" };
+    renderCloset();
+    $("#closetSearch").focus({ preventScroll: true });
   }
 
   function renderClosetGroup(title, items, tone) {
@@ -1069,12 +1168,12 @@
 
   function renderClosetVisual(item) {
     const category = CATEGORIES[item.category] || SmartCloset.titleCase(item.category) || "Garment";
-    const mark = CATEGORY_MARKS[item.category] || "G";
+    const icon = CATEGORY_ICON_PATHS[item.category] || `<path d="M5 4h10v12H5z"/>`;
     const token = COLOR_SWATCH_TOKENS[normalizeTag(item.primaryColor)] || "custom";
     const pattern = item.pattern && item.pattern !== "solid" ? item.pattern : "solid";
     return `
       <span class="closet-visual" aria-hidden="true">
-        <span class="closet-category-icon" title="${escapeAttribute(category)}">${escapeHtml(mark)}</span>
+        <span class="closet-category-icon" title="${escapeAttribute(category)}"><svg viewBox="0 0 20 20" focusable="false">${icon}</svg></span>
         <span class="closet-color-swatch color-swatch-${escapeAttribute(token)} pattern-${escapeAttribute(pattern)}"></span>
       </span>`;
   }
@@ -1097,7 +1196,10 @@
               <h3>${escapeHtml(formatLongDate(record.date))}</h3>
               <p class="small-meta">${escapeHtml(OCCASIONS[record.occasion]?.label || record.occasion)}${record.source === "manual" ? " - Manual log" : ""}</p>
             </div>
-            <button class="secondary-button" type="button" data-action="delete-log">Delete</button>
+            <div class="history-actions">
+              <button class="secondary-button" type="button" data-action="edit-log">Edit</button>
+              <button class="secondary-button" type="button" data-action="delete-log">Delete</button>
+            </div>
           </div>
           <div class="chip-row">
             ${items.map((item) => renderChip(item.name)).join("")}
@@ -1804,6 +1906,10 @@
   function handleClosetAction(event) {
     const button = event.target.closest("[data-action]");
     if (!button) return;
+    if (button.dataset.action === "clear-filters") {
+      clearClosetFilters();
+      return;
+    }
     const card = button.closest("[data-item-id]");
     const itemId = card?.dataset.itemId;
     if (!itemId) return;
@@ -1816,12 +1922,13 @@
   }
 
   function handleHistoryAction(event) {
-    const button = event.target.closest("[data-action='delete-log']");
+    const button = event.target.closest("[data-action]");
     if (!button) return;
     const card = button.closest("[data-log-id]");
     const logId = card?.dataset.logId;
     if (!logId) return;
-    deleteHistoryRecord(logId);
+    if (button.dataset.action === "edit-log") openManualLogDialog({ historyId: logId, invoker: button });
+    else if (button.dataset.action === "delete-log") deleteHistoryRecord(logId);
   }
 
   function openItemDialog(itemId = null, options = {}) {
@@ -1835,6 +1942,12 @@
     itemValidationAttempted = false;
     pendingDuplicateDecision = null;
     duplicateWarningBypassSignature = "";
+    itemNameSuggestionState = {
+      enabled: !editingItemId && !addSimilarSourceId,
+      explicit: { primary: false, secondary: false, pattern: false },
+      applied: { primary: undefined, secondary: undefined, pattern: undefined },
+      defaults: { primary: item.primaryColor || "", secondary: item.secondaryColor || "", pattern: item.pattern || "solid" }
+    };
 
     $("#itemDialogMode").textContent = editingItemId ? "Edit Item" : (addSimilarSourceId ? "Add Similar" : "Add Item");
     $("#itemId").value = editingItemId || "";
@@ -1864,6 +1977,8 @@
     $("#itemImageUrl").value = item.imageUrl || "";
     $("#itemImageField").hidden = !item.imageUrl;
     $("#itemNotes").value = item.notes || "";
+    $("#itemNameSuggestion").hidden = true;
+    $("#itemNameSuggestion").textContent = "";
     clearValidationErrors();
     itemSaveInProgress = false;
 
@@ -1938,6 +2053,7 @@
     pendingEditorExit = null;
     pendingDuplicateDecision = null;
     duplicateWarningBypassSignature = "";
+    itemNameSuggestionState = null;
     updateBeforeUnloadGuard(false);
     return true;
   }
@@ -1991,6 +2107,7 @@
 
   function handleEditorNavigation() {
     if ($("#itemDialog").open) requestEditorExit("navigation");
+    if ($("#manualLogDialog").open) requestHistoryEditorExit("navigation");
   }
 
   function isItemEditorDirty() {
@@ -2001,7 +2118,8 @@
     updateBeforeUnloadGuard(isItemEditorDirty());
   }
 
-  function handleItemFormMutation() {
+  function handleItemFormMutation(event) {
+    markItemSuggestionExplicit(event?.target);
     if (duplicateWarningBypassSignature && duplicateIdentity(collectItemFromForm()) !== duplicateWarningBypassSignature) {
       duplicateWarningBypassSignature = "";
     }
@@ -2012,8 +2130,91 @@
     if (itemValidationAttempted) renderValidationIssues(validateItemIssues(collectItemFromForm()), { focusFirst: false });
   }
 
-  function updateBeforeUnloadGuard(active) {
-    const shouldBeActive = active === true;
+  function handleItemNameInput() {
+    updateEditorTitle();
+    applyItemNameSuggestions($("#itemName").value);
+  }
+
+  function suggestFromItemName(name) {
+    const text = normalizeTag(name).replace(/[_/]+/g, " ");
+    const colorTerms = [
+      ["off-white", ["off white", "off-white"]], ["dark gray", ["dark gray", "dark grey"]],
+      ["light blue", ["light blue"]], ["multicolor", ["multi color", "multi-color", "multicolor", "multicolored"]],
+      ...COLOR_OPTIONS.filter((color) => !["off-white", "dark gray", "light blue", "multicolor"].includes(color))
+        .map((color) => [color, color === "gray" ? ["gray", "grey"] : [color]])
+    ];
+    const matches = [];
+    colorTerms.forEach(([value, terms]) => terms.forEach((term) => {
+      const expression = new RegExp(`(^|\\s)${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\ /g, "[ -]")}($|\\s)`, "g");
+      let match;
+      while ((match = expression.exec(text))) {
+        const start = match.index + match[1].length;
+        matches.push({ value, start, end: start + term.length });
+        if (expression.lastIndex === match.index) expression.lastIndex += 1;
+      }
+    }));
+    matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start) || a.value.localeCompare(b.value));
+    const occupied = [];
+    const colors = [];
+    matches.forEach((match) => {
+      if (occupied.some(([start, end]) => match.start < end && match.end > start) || colors.includes(match.value)) return;
+      occupied.push([match.start, match.end]);
+      colors.push(match.value);
+    });
+    const patternMatchers = [
+      ["striped", /\b(striped|stripe|stripes)\b/],
+      ["plaid", /\b(plaid|checked|checkered|gingham)\b/],
+      ["graphic", /\bgraphic\b/],
+      ["multicolored", /\b(multicolored|multicolor|multi-color)\b/],
+      ["other", /\b(floral|dotted|polka[ -]?dot)\b/]
+    ];
+    const pattern = patternMatchers.find(([, expression]) => expression.test(text))?.[0] || "";
+    return { colors, pattern };
+  }
+
+  function applyItemNameSuggestions(name) {
+    const state = itemNameSuggestionState;
+    if (!state?.enabled) return;
+    const suggestion = suggestFromItemName(name);
+    applySuggestedEditorField("pattern", suggestion.pattern || state.defaults.pattern);
+    applySuggestedEditorField("primary", suggestion.colors[0] || state.defaults.primary);
+    const secondary = suggestion.pattern && suggestion.colors.length >= 2 ? suggestion.colors[1] : state.defaults.secondary;
+    applySuggestedEditorField("secondary", secondary);
+    updateSecondaryColorAvailability();
+    updateSelectedColorChips();
+    const labels = [...suggestion.colors.map(SmartCloset.titleCase), ...(suggestion.pattern ? [SmartCloset.titleCase(suggestion.pattern)] : [])];
+    const status = $("#itemNameSuggestion");
+    status.hidden = !labels.length;
+    status.textContent = labels.length ? `Suggested from item name: ${labels.join(", ")}. Review before saving.` : "";
+  }
+
+  function applySuggestedEditorField(field, value) {
+    const state = itemNameSuggestionState;
+    if (!state || state.explicit[field]) return;
+    const current = field === "pattern" ? $("#itemPattern").value : colorControlValue(field);
+    const previous = state.applied[field];
+    if (previous !== undefined && current !== previous) {
+      state.explicit[field] = true;
+      return;
+    }
+    if (field === "pattern") $("#itemPattern").value = value;
+    else setColorControl(field, value);
+    state.applied[field] = value;
+  }
+
+  function markItemSuggestionExplicit(target) {
+    const state = itemNameSuggestionState;
+    if (!state?.enabled || !target) return;
+    const field = {
+      itemPrimaryColor: "primary", itemPrimaryColorCustom: "primary",
+      itemSecondaryColor: "secondary", itemSecondaryColorCustom: "secondary",
+      itemPattern: "pattern"
+    }[target.id];
+    if (field) state.explicit[field] = true;
+  }
+
+  function updateBeforeUnloadGuard() {
+    const shouldBeActive = isItemEditorDirty() || isHistoryEditorDirty();
     if (shouldBeActive === unloadGuardActive) return;
     if (shouldBeActive) window.addEventListener("beforeunload", handleItemBeforeUnload);
     else window.removeEventListener?.("beforeunload", handleItemBeforeUnload);
@@ -2021,7 +2222,7 @@
   }
 
   function handleItemBeforeUnload(event) {
-    if (!isItemEditorDirty()) return;
+    if (!isItemEditorDirty() && !isHistoryEditorDirty()) return;
     event.preventDefault();
     event.returnValue = "";
   }
@@ -2265,6 +2466,7 @@
   function handleItemFormClick(event) {
     const templateButton = event.target.closest("[data-template-id]");
     if (templateButton) {
+      if (itemNameSuggestionState) itemNameSuggestionState.enabled = false;
       applyTemplate(templateButton.dataset.templateId, { presetInteraction: true });
       if (typeof templateButton.focus === "function") templateButton.focus({ preventScroll: true });
       return;
@@ -2273,6 +2475,7 @@
     const colorButton = event.target.closest("[data-color][data-color-kind]");
     if (colorButton) {
       const kind = colorButton.dataset.colorKind === "secondary" ? "secondary" : "primary";
+      if (itemNameSuggestionState?.enabled) itemNameSuggestionState.explicit[kind] = true;
       if (colorButton.dataset.color === CUSTOM_COLOR_VALUE) {
         const control = $(`#item${capitalize(kind)}Color`);
         control.value = CUSTOM_COLOR_VALUE;
@@ -2766,16 +2969,7 @@
   }
 
   function resetItemEditorScroll() {
-    const form = $("#itemForm");
-    const dialog = $("#itemDialog");
-    const reset = () => {
-      form.scrollTop = 0;
-      dialog.scrollTop = 0;
-      if (typeof form.scrollTo === "function") form.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      if (typeof dialog.scrollTo === "function") dialog.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    };
-    reset();
-    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(reset);
+    resetDialogScroll($("#itemDialog"));
   }
 
   function itemEditorSnapshot() {
@@ -2812,7 +3006,7 @@
     generateAndRender({ mode: "generate" });
   }
 
-  function openSwapDialog(itemId) {
+  function openSwapDialog(itemId, invoker = document.activeElement) {
     if (!currentOutfit || currentOutfit.error || currentOutfit.buildAroundId === itemId) return;
     const currentItem = currentOutfit.items.find((item) => item.id === itemId);
     if (!currentItem) return;
@@ -2825,6 +3019,7 @@
     }
 
     swapTargetItemId = currentItem.id;
+    swapInvoker = invoker;
     const swapLabel = currentOutfit.automaticLayerId === currentItem.id ? "Layer" : (CATEGORIES[currentItem.category] || "Item");
     $("#swapDialogTitle").textContent = `Swap ${swapLabel}`;
     $("#swapSummary").textContent = `${choices.length} eligible replacement${choices.length === 1 ? "" : "s"}. ${report.excludedSummary}`;
@@ -2841,6 +3036,8 @@
       `;
     }).join("");
     openDialog($("#swapDialog"));
+    resetDialogScroll($("#swapDialog"));
+    $("#swapDialogTitle").focus?.({ preventScroll: true });
   }
 
   function validSwapChoices(currentItem) {
@@ -2904,7 +3101,7 @@
       ? validSwapChoices(currentItem).find((candidate) => candidate.replacementId === button.dataset.replacementId)
       : null;
     if (!choice) {
-      closeDialog($("#swapDialog"));
+      closeSwapDialog({ restoreFocus: true });
       showToast("That swap is no longer available.");
       return;
     }
@@ -2930,14 +3127,25 @@
     };
     resultState = "outfit";
     swapTargetItemId = null;
-    closeDialog($("#swapDialog"));
+    closeSwapDialog({ restoreFocus: false });
     trackCurrentOutfitInSession();
     renderResult();
     renderRerollSessionStatus();
     scrollResultIntoView();
     flashChangedRows();
     const changedItem = currentOutfit.items.find((item) => item.id === choice.replacementId);
+    const replacementRow = $$('[data-result-item-id]').find((row) => row.dataset.resultItemId === choice.replacementId);
+    const replacementAction = replacementRow?.querySelector?.('[data-result-action="swap"]');
+    (replacementAction || $("#outfitResult"))?.focus?.({ preventScroll: true });
     showToast(changedItem ? `Swapped to ${changedItem.name}.` : "Item swapped.");
+  }
+
+  function closeSwapDialog(options = {}) {
+    const restoreTarget = swapInvoker;
+    closeDialog($("#swapDialog"));
+    swapTargetItemId = null;
+    swapInvoker = null;
+    if (options.restoreFocus) restoreTarget?.focus?.({ preventScroll: true });
   }
 
   function addSimilarFromDialog() {
@@ -2969,21 +3177,38 @@
   // any prior logged/confirmation state and make the next result loggable once.
   function generateAndRender(options = {}) {
     if (generationPromise) return generationPromise;
-    const resolution = resolveAutomaticContextForGeneration();
-    $("#generateBtn").disabled = true;
-    $("#rerollBtn").disabled = true;
-    generationPromise = Promise.resolve(resolution)
+    setGenerationBusy(true, options.mode === "reroll" ? "Finding another fit…" : "Building your fit…");
+    generationPromise = Promise.resolve()
+      .then(() => resolveAutomaticContextForGeneration())
       .catch((error) => {
         weatherMessage = `${error?.message || "Weather could not be resolved."} Automatic weather remains enabled; using the available fallback.`;
         renderWeatherControls();
       })
+      .then(yieldForGenerationPaint)
       .then(() => performGenerationAndRender(options))
+      .then((outfit) => {
+        $("#generationStatus").textContent = outfit?.error ? "No fit matched these settings." : "Fit ready.";
+        return outfit;
+      })
       .finally(() => {
         generationPromise = null;
-        $("#generateBtn").disabled = false;
-        $("#rerollBtn").disabled = false;
+        setGenerationBusy(false);
       });
     return generationPromise;
+  }
+
+  function setGenerationBusy(busy, message = "") {
+    $("#generateBtn").disabled = busy;
+    $("#rerollBtn").disabled = busy;
+    $("#outfitResult").setAttribute("aria-busy", busy ? "true" : "false");
+    if (message) $("#generationStatus").textContent = message;
+  }
+
+  function yieldForGenerationPaint() {
+    return new Promise((resolve) => {
+      if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
   }
 
   function performGenerationAndRender(options = {}) {
@@ -3122,8 +3347,7 @@
       sockScorePenalty: sockResolution.scorePenalty
     }];
     if (ContextEngine.shouldConsiderLayer(sockResolution.items, context)) {
-      const layerChoice = appState.wardrobe
-        .filter((item) => isAutomaticLayerCandidate(item) && matchesOccasion(item, occasionId))
+      const layerChoice = (getGenerationIndexes().automaticLayersByOccasion.get(occasionId) || [])
         .filter((item) => !sockResolution.items.some((selected) => selected.id === item.id))
         .map((layer) => sortOutfitItems([...sockResolution.items, layer]))
         .filter((items) => isCompatibleOutfit(items, occasionId, buildAroundId))
@@ -3365,9 +3589,8 @@
   }
 
   function candidateItems(slot, occasionId) {
-    return appState.wardrobe.filter((item) => {
-      return isAvailable(item) && slotAcceptsItem(slot, item) && matchesOccasion(item, occasionId);
-    });
+    const source = getGenerationIndexes().availableByOccasion.get(occasionId) || [];
+    return source.filter((item) => slotAcceptsItem(slot, item));
   }
 
   function footwearSockPolicy(shoes) {
@@ -3635,6 +3858,7 @@
         createdAt: new Date().toISOString()
       };
       appState.bannedCombos.push(bannedCombo);
+      invalidateGenerationIndexes();
     }
 
     pendingBanFeedback = {
@@ -3660,35 +3884,65 @@
       note: stringOr(note, ""),
       context: ContextEngine.normalizeHistoryContext(context)
     });
-
+    invalidateGenerationIndexes();
   }
 
-  function openManualLogDialog() {
-    $("#manualLogDate").value = dateOnly(new Date().toISOString());
-    $("#manualLogOccasion").value = $("#occasionSelect").value || "casual";
-    $("#manualIncludeUnavailable").checked = false;
+  function openManualLogDialog(options = {}) {
+    const record = options.historyId ? appState.history.find((entry) => entry.id === options.historyId) : null;
+    editingHistoryId = record?.id || null;
+    historyEditorOriginalRecord = record ? JSON.parse(JSON.stringify(record)) : null;
+    historyEditorInvoker = options.invoker || document.activeElement;
+    pendingHistoryExit = null;
+    historySaveInProgress = false;
+    $("#manualLogEyebrow").textContent = editingHistoryId ? "Edit Logged Outfit" : "History";
+    $("#manualLogDialogTitle").textContent = editingHistoryId ? "Edit Logged Outfit" : "Log Outfit Manually";
+    $("#manualLogSubmitBtn").textContent = editingHistoryId ? "Save Changes" : "Log Outfit";
+    renderManualLogOccasionOptions(record?.occasion === "gym");
+    $("#manualLogDate").value = record ? dateOnly(record.date) : dateOnly(new Date().toISOString());
+    $("#manualLogOccasion").value = record?.occasion || $("#occasionSelect").value || "casual";
+    const initialIds = record ? unique(record.itemIds.map(String)) : [];
+    manualSelectedItemIds = new Set(initialIds);
+    manualRetainedItemIds = new Set(initialIds);
+    const selectedInactive = initialIds.some((id) => {
+      const item = findItem(id);
+      return item && !isAvailable(item);
+    });
+    $("#manualIncludeUnavailable").checked = selectedInactive;
     $("#manualItemSearch").value = "";
     manualItemSearch = "";
-    manualSelectedItemIds = new Set();
-    $("#manualLogNote").value = "";
+    $("#manualLogNote").value = record?.note || "";
     $("#manualLogError").hidden = true;
+    manualCategoryOpenState = new Map(CATEGORY_ORDER.map((category, index) => [category, index === 0 || initialIds.some((id) => manualEditorItem(id)?.category === category)]));
     renderManualItemPicker();
+    renderManualContextNotice();
     openDialog($("#manualLogDialog"));
+    resetDialogScroll($("#manualLogDialog"));
+    historyEditorBaseline = historyEditorSnapshot();
+    updateBeforeUnloadGuard();
+    $("#manualLogDialogTitle").focus?.({ preventScroll: true });
   }
 
   function renderManualItemPicker() {
     const includeUnavailable = $("#manualIncludeUnavailable").checked;
     const items = appState.wardrobe
-      .filter((item) => includeUnavailable || isAvailable(item))
+      .filter((item) => includeUnavailable || isAvailable(item) || manualRetainedItemIds.has(item.id))
       .sort(sortItems);
     const filteredItems = items.filter((item) => matchesClosetSearch(item, manualItemSearch));
 
     $("#manualItemPicker").innerHTML = CATEGORY_ORDER.map((category) => {
       const categoryItems = filteredItems.filter((item) => item.category === category);
       if (!categoryItems.length) return "";
+      const selectedNames = categoryItems.filter((item) => manualSelectedItemIds.has(item.id)).map((item) => item.name);
+      const open = manualItemSearch.trim() ? true : manualCategoryOpenState.get(category) === true;
       return `
-        <fieldset class="manual-category">
-          <legend>${escapeHtml(CATEGORIES[category])}</legend>
+        <details class="manual-category" data-manual-category="${escapeAttribute(category)}" ${open ? "open" : ""}>
+          <summary>
+            <span class="manual-category-summary">
+              <span class="manual-category-title">${escapeHtml(CATEGORIES[category])}</span>
+              <span class="manual-category-selected" data-manual-category-selected="${escapeAttribute(category)}">${escapeHtml(selectedNames.length ? selectedNames.join(", ") : "None selected")}</span>
+            </span>
+            <span class="summary-count" data-manual-category-count="${escapeAttribute(category)}">${selectedNames.length} selected</span>
+          </summary>
           <div class="manual-choice-list">
             ${categoryItems.map((item) => `
               <label class="check-pill">
@@ -3697,9 +3951,14 @@
               </label>
             `).join("")}
           </div>
-        </fieldset>
+        </details>
       `;
     }).join("");
+    $$('[data-manual-category]', $("#manualItemPicker")).forEach((details) => {
+      details.addEventListener("toggle", () => {
+        if (!manualItemSearch.trim()) manualCategoryOpenState.set(details.dataset.manualCategory, details.open);
+      });
+    });
     $("#manualNoResults").hidden = Boolean(filteredItems.length || !manualItemSearch.trim());
     renderManualSelectionSummary();
   }
@@ -3710,11 +3969,12 @@
     if (input.checked) manualSelectedItemIds.add(input.value);
     else manualSelectedItemIds.delete(input.value);
     renderManualSelectionSummary();
+    renderManualCategorySummaries();
   }
 
   function handleManualAvailabilityChange() {
     if (!$("#manualIncludeUnavailable").checked) {
-      manualSelectedItemIds = new Set([...manualSelectedItemIds].filter((id) => isAvailable(findItem(id))));
+      manualSelectedItemIds = new Set([...manualSelectedItemIds].filter((id) => manualRetainedItemIds.has(id) || isAvailable(findItem(id))));
     }
     renderManualItemPicker();
   }
@@ -3727,43 +3987,177 @@
   }
 
   function renderManualSelectionSummary() {
-    const selectedItems = [...manualSelectedItemIds].map(findItem).filter(Boolean).sort(sortItems);
+    const selectedItems = [...manualSelectedItemIds].map(manualEditorItem).filter(Boolean);
     $("#manualSelectedCount").textContent = `${selectedItems.length} ${selectedItems.length === 1 ? "garment" : "garments"} selected`;
     $("#manualSelectedSummary").innerHTML = selectedItems.length
-      ? selectedItems.map((item) => `<button class="selected-item-pill" type="button" data-remove-manual-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.name)} from manual outfit"><span>${escapeHtml(item.name)}</span><span aria-hidden="true">×</span></button>`).join("")
+      ? selectedItems.map((item) => `<button class="selected-item-pill" type="button" data-remove-manual-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.name)} from logged outfit"><span>${escapeHtml(item.name)}${item.missing ? " (missing reference)" : ""}</span><span aria-hidden="true">×</span></button>`).join("")
       : `<span class="small-meta">Selected garments stay visible here while you search.</span>`;
+  }
+
+  function renderManualCategorySummaries() {
+    CATEGORY_ORDER.forEach((category) => {
+      const names = [...manualSelectedItemIds].map(manualEditorItem).filter((item) => item?.category === category).map((item) => item.name);
+      const label = $(`[data-manual-category-selected="${category}"]`);
+      const count = $(`[data-manual-category-count="${category}"]`);
+      if (label) label.textContent = names.length ? names.join(", ") : "None selected";
+      if (count) count.textContent = `${names.length} selected`;
+    });
+  }
+
+  function manualEditorItem(itemId) {
+    if (historyEditorOriginalRecord) {
+      const snapshot = historyEditorOriginalRecord.itemSnapshots?.find((item) => item?.id === itemId);
+      if (snapshot) return { ...snapshot, id: itemId, name: snapshot.name || "Unnamed saved garment" };
+    }
+    return findItem(itemId) || { id: itemId, name: "Missing garment reference", category: "", missing: true };
+  }
+
+  function historyEditorSnapshot() {
+    return JSON.stringify({
+      date: $("#manualLogDate").value,
+      occasion: $("#manualLogOccasion").value,
+      itemIds: [...manualSelectedItemIds],
+      note: $("#manualLogNote").value
+    });
+  }
+
+  function isHistoryEditorDirty() {
+    return Boolean(historyEditorBaseline && historyEditorSnapshot() !== historyEditorBaseline);
+  }
+
+  function handleHistoryEditorMutation() {
+    renderManualContextNotice();
+    updateBeforeUnloadGuard();
+  }
+
+  function renderManualContextNotice() {
+    const notice = $("#manualContextNotice");
+    if (!notice || !editingHistoryId || !historyEditorOriginalRecord?.context) {
+      if (notice) notice.hidden = true;
+      return;
+    }
+    const originalDate = dateOnly(historyEditorOriginalRecord.date);
+    const dateChanged = $("#manualLogDate").value !== originalDate;
+    notice.hidden = false;
+    notice.textContent = dateChanged
+      ? "Changing the date will remove the saved context snapshot because it belongs to the original log date."
+      : "The saved context snapshot will be preserved. It is historical evidence and is not recalculated.";
   }
 
   function saveManualLog(event) {
     event.preventDefault();
+    if (historySaveInProgress || storageWriteLocked) return false;
     const itemIds = [...manualSelectedItemIds];
-    const items = itemIds.map(findItem).filter(Boolean);
-    if (!items.length) {
+    if (!itemIds.length) {
       $("#manualLogError").textContent = "Choose at least one item.";
       $("#manualLogError").hidden = false;
-      return;
+      return false;
     }
 
     const selectedDate = validDateOnly($("#manualLogDate").value);
     if (!selectedDate) {
       $("#manualLogError").textContent = "Choose a valid date.";
       $("#manualLogError").hidden = false;
-      return;
+      return false;
     }
 
-    addHistoryRecord({
-      date: `${selectedDate}T12:00:00`,
-      occasion: $("#manualLogOccasion").value,
-      items,
-      source: "manual",
-      note: $("#manualLogNote").value.trim()
-    });
-    rerollSession = createRerollSession();
-    saveState();
+    historySaveInProgress = true;
+    try {
+      const nextState = JSON.parse(JSON.stringify(appState));
+      const original = editingHistoryId ? nextState.history.find((entry) => entry.id === editingHistoryId) : null;
+      if (editingHistoryId && !original) {
+        $("#manualLogError").textContent = "This logged outfit no longer exists. Close the editor and try again.";
+        $("#manualLogError").hidden = false;
+        return false;
+      }
+      const originalDateKey = original ? dateOnly(original.date) : "";
+      const date = original && selectedDate === originalDateKey ? original.date : `${selectedDate}T12:00:00`;
+      const snapshotsById = new Map((original?.itemSnapshots || []).filter((item) => item?.id).map((item) => [String(item.id), item]));
+      const originalItemIds = new Set((original?.itemIds || []).map(String));
+      const itemSnapshots = itemIds.flatMap((id) => {
+        if (snapshotsById.has(id)) return [snapshotsById.get(id)];
+        if (originalItemIds.has(id)) return [];
+        const live = findItem(id);
+        return live ? [snapshotItem(live)] : [];
+      });
+      const nextRecord = {
+        ...(original || {}),
+        id: original?.id || uid("log"),
+        date,
+        occasion: normalizeOccasionToken($("#manualLogOccasion").value) || "casual",
+        itemIds,
+        itemSnapshots,
+        source: original?.source === "generated" ? "generated" : "manual",
+        note: $("#manualLogNote").value.trim(),
+        context: original && selectedDate === originalDateKey ? original.context : null
+      };
+      if (original) nextState.history[nextState.history.findIndex((entry) => entry.id === editingHistoryId)] = nextRecord;
+      else nextState.history.unshift(nextRecord);
+      if (!persistEditorState(nextState)) {
+        $("#manualLogError").textContent = "Changes were not saved. Local storage may be full or unavailable.";
+        $("#manualLogError").hidden = false;
+        return false;
+      }
+      appState = nextState;
+      invalidateGenerationState();
+      const wasEditing = Boolean(editingHistoryId);
+      finalizeHistoryEditorClose({ restoreFocus: false });
+      renderAll();
+      setActiveScreen("history");
+      $("#historyTitle").setAttribute("tabindex", "-1");
+      $("#historyTitle").focus?.({ preventScroll: true });
+      showToast(wasEditing ? "Logged outfit updated." : "Outfit logged.");
+      return true;
+    } finally {
+      historySaveInProgress = false;
+    }
+  }
+
+  function requestHistoryEditorExit(reason = "close") {
+    const dialog = $("#manualLogDialog");
+    if (!dialog?.open) return true;
+    if (!isHistoryEditorDirty()) return finalizeHistoryEditorClose({ restoreFocus: true });
+    pendingHistoryExit = { reason, invoker: document.activeElement };
+    $("#historyExitDescription").textContent = editingHistoryId
+      ? "Save or discard these changes to the logged outfit."
+      : "Save or discard this manual log before closing.";
+    openDialog($("#historyExitDialog"));
+    return false;
+  }
+
+  function savePendingHistoryExit() {
+    closeDialog($("#historyExitDialog"));
+    pendingHistoryExit = null;
+    saveManualLog({ preventDefault() {} });
+  }
+
+  function discardPendingHistoryExit() {
+    finalizeHistoryEditorClose({ restoreFocus: true });
+  }
+
+  function continuePendingHistoryExit() {
+    const invoker = pendingHistoryExit?.invoker || $("#manualLogDialogTitle");
+    pendingHistoryExit = null;
+    closeDialog($("#historyExitDialog"));
+    updateBeforeUnloadGuard();
+    invoker?.focus?.({ preventScroll: true });
+  }
+
+  function finalizeHistoryEditorClose(options = {}) {
+    const restoreTarget = historyEditorInvoker;
+    closeDialog($("#historyExitDialog"));
     closeDialog($("#manualLogDialog"));
-    renderAll();
-    setActiveScreen("history");
-    showToast("Outfit logged.");
+    editingHistoryId = null;
+    historyEditorBaseline = "";
+    historyEditorOriginalRecord = null;
+    historyEditorInvoker = null;
+    pendingHistoryExit = null;
+    manualSelectedItemIds = new Set();
+    manualRetainedItemIds = new Set();
+    manualCategoryOpenState = new Map();
+    updateBeforeUnloadGuard();
+    if (options.restoreFocus) restoreTarget?.focus?.({ preventScroll: true });
+    return true;
   }
 
   function openFeedbackDialog() {
@@ -3975,6 +4369,7 @@
     }
 
     appState = incoming;
+    invalidateGenerationIndexes();
     storageWriteLocked = false;
     loadIssue = null;
     currentOutfit = null;
@@ -4012,6 +4407,7 @@
     const confirmed = window.confirm("Replace this closet, history, pair preferences, and banned outfits with the generalized sample closet? This cannot be undone from inside the app.");
     if (!confirmed) return;
     appState = createDefaultState();
+    invalidateGenerationIndexes();
     appState.wardrobe = sampleWardrobe();
     appState.setup = { completed: true, choice: "sample" };
     currentOutfit = null;
@@ -4034,6 +4430,7 @@
     const confirmed = window.confirm("Clear all banned combos?");
     if (!confirmed) return;
     appState.bannedCombos = [];
+    invalidateGenerationIndexes();
     saveState();
     renderAll();
     showToast("Banned combos cleared.");
@@ -4045,7 +4442,7 @@
 
   function isComboBanned(items) {
     const key = comboKey(items.map((item) => item.id));
-    return appState.bannedCombos.some((combo) => comboKey(combo.itemIds) === key);
+    return getGenerationIndexes().bannedSignatures.has(key);
   }
 
   function comboKey(ids) {
@@ -4054,20 +4451,14 @@
 
   function lastExactOutfitDate(items) {
     const key = comboKey(items.map((item) => item.id));
-    const record = appState.history
-      .filter((entry) => comboKey(entry.itemIds) === key)
-      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    return record ? dateOnly(record.date) : null;
+    return getGenerationIndexes().latestExactDate.get(key) || null;
   }
 
   function lastTopBottomPairDate(items) {
     const top = items.find((item) => item.category === "top");
     const bottom = items.find((item) => item.category === "bottom");
     if (!top || !bottom) return null;
-    const record = appState.history
-      .filter((entry) => entry.itemIds.includes(top.id) && entry.itemIds.includes(bottom.id))
-      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    return record ? dateOnly(record.date) : null;
+    return getGenerationIndexes().latestPairDate.get(comboKey([top.id, bottom.id])) || null;
   }
 
   function lastItemWornDate(item) {
@@ -4076,10 +4467,57 @@
   }
 
   function latestHistoryDateForItem(itemId) {
-    const record = appState.history
-      .filter((entry) => entry.itemIds.includes(itemId))
-      .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    return record ? dateOnly(record.date) : null;
+    return getGenerationIndexes().latestItemDate.get(String(itemId)) || null;
+  }
+
+  function getGenerationIndexes() {
+    if (generationIndexes) return generationIndexes;
+    const exactGroups = new Map();
+    const pairGroups = new Map();
+    const itemGroups = new Map();
+    const topIds = new Set(appState.wardrobe.filter((item) => item.category === "top").map((item) => item.id));
+    const bottomIds = new Set(appState.wardrobe.filter((item) => item.category === "bottom").map((item) => item.id));
+    appState.history.forEach((record) => {
+      const ids = unique((record.itemIds || []).map(String));
+      pushGenerationIndex(exactGroups, comboKey(ids), record);
+      ids.forEach((id) => pushGenerationIndex(itemGroups, id, record));
+      const tops = ids.filter((id) => topIds.has(id));
+      const bottoms = ids.filter((id) => bottomIds.has(id));
+      tops.forEach((topId) => bottoms.forEach((bottomId) => pushGenerationIndex(pairGroups, comboKey([topId, bottomId]), record)));
+    });
+    const available = appState.wardrobe.filter(isAvailable);
+    const availableByOccasion = new Map(Object.keys(OCCASIONS).map((occasionId) => [
+      occasionId,
+      available.filter((item) => matchesOccasion(item, occasionId))
+    ]));
+    const automaticLayersByOccasion = new Map(Object.keys(OCCASIONS).map((occasionId) => [
+      occasionId,
+      available.filter((item) => hasAutomaticLayerRole(item) && matchesOccasion(item, occasionId))
+    ]));
+    generationIndexes = {
+      availableByOccasion,
+      automaticLayersByOccasion,
+      bannedSignatures: new Set(appState.bannedCombos.map((combo) => comboKey(combo.itemIds))),
+      latestExactDate: finishGenerationDateIndex(exactGroups),
+      latestPairDate: finishGenerationDateIndex(pairGroups),
+      latestItemDate: finishGenerationDateIndex(itemGroups)
+    };
+    return generationIndexes;
+  }
+
+  function pushGenerationIndex(index, key, record) {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(record);
+  }
+
+  function finishGenerationDateIndex(groups) {
+    const result = new Map();
+    groups.forEach((records, key) => {
+      const latest = [...records].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+      const value = latest ? dateOnly(latest.date) : "";
+      if (value) result.set(key, value);
+    });
+    return result;
   }
 
   function itemSignals(item) {
@@ -4232,12 +4670,18 @@
   }
 
   function invalidateGenerationState(options = {}) {
+    invalidateGenerationIndexes();
     rerollSession = createRerollSession();
     swapTargetItemId = null;
+    swapInvoker = null;
     if (options.preserveCurrent) return;
     currentOutfit = null;
     resultState = "empty";
     logInProgress = false;
+  }
+
+  function invalidateGenerationIndexes() {
+    generationIndexes = null;
   }
 
   function openDialog(dialog) {
@@ -4260,6 +4704,19 @@
     } else {
       dialog.removeAttribute("open");
     }
+  }
+
+  function resetDialogScroll(dialog) {
+    if (!dialog) return;
+    const ownerSelector = { itemDialog: "#itemForm", manualLogDialog: "#manualLogForm", swapDialog: "#swapDialogScroll" }[dialog.id];
+    const scrollOwner = ownerSelector ? $(ownerSelector) : dialog;
+    const reset = () => {
+      scrollOwner.scrollTop = 0;
+      dialog.scrollTop = 0;
+      scrollOwner.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
+    };
+    reset();
+    window.requestAnimationFrame?.(reset);
   }
 
   function changedItemIds(previousItems, nextItems) {
@@ -4743,7 +5200,10 @@
 
   if (window.__FIT_ROULETTE_TESTING__ === true) {
     window.__fitRouletteTest = {
-      getState: () => appState,
+      getState: () => {
+        invalidateGenerationIndexes();
+        return appState;
+      },
       getInsightsState: () => ({
         range: insightsRange,
         compositionScope: insightsCompositionScope,
@@ -4777,6 +5237,7 @@
       relationshipCandidates,
       syncPairRelationships,
       matchesClosetSearch,
+      suggestFromItemName,
       pickOutfit,
       isCompatibleOutfit,
       validSwapChoices,
@@ -4811,6 +5272,10 @@
       findLikelyDuplicate,
       duplicateIdentity,
       renderManualItemPicker,
+      openManualLogDialog,
+      saveManualLog,
+      requestHistoryEditorExit,
+      isHistoryEditorDirty,
       getManualSelectedItemIds: () => [...manualSelectedItemIds],
       getWeatherRefreshState: () => weatherClient.refreshState?.() || {},
       protectedOriginals,
@@ -4834,6 +5299,7 @@
       },
       replaceState(raw) {
         appState = normalizeState(raw);
+        invalidateGenerationIndexes();
         currentOutfit = null;
         resultState = "empty";
         logInProgress = false;

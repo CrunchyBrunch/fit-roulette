@@ -802,6 +802,40 @@ summary:focus-visible {
   margin-bottom: 12px;
 }
 
+.closet-filter-details {
+  min-width: 0;
+}
+
+.closet-filter-details > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.closet-filter-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.closet-filter-grid .secondary-button {
+  width: 100%;
+}
+
+.generation-status {
+  min-height: 1.25em;
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
 .toggle-row {
   min-height: var(--tap);
   display: flex;
@@ -908,8 +942,22 @@ summary:focus-visible {
 .closet-category-icon {
   background: var(--surface-soft);
   color: var(--text);
-  font-size: 0.62rem;
-  font-weight: 900;
+}
+
+.history-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.closet-category-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .closet-color-swatch {
@@ -1415,6 +1463,7 @@ summary:focus-visible {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
 .item-dialog::backdrop {
@@ -1425,20 +1474,23 @@ summary:focus-visible {
   display: grid;
   gap: 10px;
   max-height: min(92dvh, 780px);
-  overflow: auto;
+  overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  scroll-padding-block: 68px 88px;
 }
 
 .dialog-header {
   position: sticky;
-  top: -14px;
+  top: 0;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: -14px -14px 0;
+  margin: 0 -14px;
   padding: 11px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
@@ -1945,11 +1997,11 @@ textarea::placeholder {
 
 .dialog-actions {
   position: sticky;
-  bottom: -14px;
+  bottom: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 0 -14px -14px;
+  margin: 0 -14px;
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--line);
@@ -2032,6 +2084,10 @@ textarea::placeholder {
   max-height: min(88dvh, 720px);
 }
 
+.compact-dialog .item-form {
+  max-height: min(88dvh, 720px);
+}
+
 .manual-item-picker {
   display: grid;
   gap: 12px;
@@ -2079,22 +2135,48 @@ textarea::placeholder {
 
 .manual-category {
   min-width: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
 }
 
-.manual-category legend {
-  margin-bottom: 6px;
+.manual-category > summary {
+  min-height: var(--tap);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 10px;
+}
+
+.manual-category-summary {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.manual-category-title {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
+.manual-category-selected {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .manual-choice-list {
   display: grid;
   gap: 6px;
+  border-top: 1px solid var(--line);
+  padding: 8px;
 }
 
 .swap-choices,
@@ -2371,6 +2453,19 @@ textarea::placeholder {
     align-items: flex-start;
     flex-direction: column;
   }
+
+  .history-topline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-actions {
+    width: 100%;
+  }
+
+  .history-actions button {
+    flex: 1 1 0;
+  }
 }
 
 @media (min-width: 560px) {
@@ -2394,11 +2489,15 @@ textarea::placeholder {
   }
 
   .filter-bar {
-    grid-template-columns: 1.25fr 0.85fr;
+    grid-template-columns: 1fr;
   }
 
-  .filter-bar .toggle-row {
-    grid-column: 1 / -1;
+  .closet-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .closet-filter-grid .secondary-button {
+    align-self: end;
   }
 
   .action-grid {

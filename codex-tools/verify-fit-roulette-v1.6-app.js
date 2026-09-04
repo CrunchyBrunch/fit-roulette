@@ -10,7 +10,7 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const insights = fs.readFileSync(path.join(root, "insights.js"), "utf8");
 const smart = fs.readFileSync(path.join(root, "smart-closet.js"), "utf8");
 
-assert(app.includes('APP_VERSION = "1.6.1"'));
+assert(app.includes('APP_VERSION = "1.6.2"'));
 assert(app.includes("const Insights = window.FitRouletteInsights"));
 assert(app.includes("readOnlyAnalysis(() => Insights.analyzeInsights"));
 assert(app.includes("readOnlyAnalysis(() => Insights.analyzeCoverage"));
@@ -36,7 +36,7 @@ assert(smart.includes("date: savedDate"), "History normalization must preserve s
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.6.1",
+  appVersion: "1.6.2",
   schemaVersion: 5,
   pureAnalysis: true,
   stateEquivalenceGuard: true,

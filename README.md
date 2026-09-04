@@ -2,7 +2,7 @@
 
 Fit Roulette is a free, static, local-first outfit picker PWA. It uses vanilla HTML, CSS, and JavaScript, stores closet data in `localStorage`, and works without a backend, account, paid API, or database server.
 
-Current release: **1.6.1 - Insights Experience & Daily Polish**
+Current release: **1.6.2 - Daily Workflow Stabilization**
 
 ## Run Locally
 
@@ -57,7 +57,7 @@ The app uses relative paths (`./index.html`, `icons/...`, `app.js`, `styles.css`
 ## Update The App
 
 1. Edit the static files.
-2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.6.1`.
+2. If you change cached files, update `APP_VERSION` in `app.js` and keep `CACHE_NAME` in `sw.js` synchronized, for example `fit-roulette-v1.6.2`.
 3. Commit and push.
 4. Open the deployed app once while online so the service worker can cache the new version.
 
@@ -101,7 +101,11 @@ The item editor is one shared workflow across Add Item, Edit, Add Similar, and S
 
 The editor follows the same user-facing order in every mode: identity, garment details, appearance, occasions and formality, weather and layering, matching preferences, then advanced/administrative details. Pattern precedes its conditional Secondary Color. Primary and applicable Secondary Color use text-labeled swatches as the visible selection interaction. The visually hidden native controls retain one authoritative state path without duplicate announcements; canonical values, independent primary/secondary state, validation, custom color strings, and stored semantics are unchanged. Warmth, rainwear, protection, and eligible layer roles remain grouped without changing stored data or matching semantics.
 
-Manual outfit logging retains date, occasion, partial outfits, notes, provenance, and history behavior while adding structured garment search, a live selected count, and a removable selected-garment summary. Filtering never clears selections, and disabling unavailable items removes only selections that are no longer eligible under the existing control.
+Manual outfit logging retains date, occasion, partial outfits, notes, provenance, and history behavior with structured garment search, a live selected count, and a removable selected-garment summary. Category disclosures keep selected names visible while collapsed, and search never clears selections. History Edit uses the same form transactionally: it preserves record identity, source, saved item snapshots, missing references, and same-date context; changing the date removes the old context snapshot with an explicit warning because the app cannot reconstruct historical conditions.
+
+Closet keeps Search prominent and places exact saved color, subtype, pattern, formality, occasion, and status filters in a transient disclosure. Garment cards use small dependency-free category icons plus color/pattern swatches while keeping category and color text. New Add Item drafts may recognize conservative canonical color and explicit pattern words in the name, such as `Navy Striped Polo`; suggestions are editable, local, and disabled for Edit and Add Similar.
+
+Generation announces a visible busy state before expensive work and uses in-memory indexes for wardrobe eligibility, exact bans, and logged-recency lookups. These indexes are invalidated after relevant data changes and are never exported or persisted. Candidate order, scoring, random selection, matching, weather behavior, and history semantics are unchanged.
 
 Fresh cached current conditions are at most 60 minutes old. A reading older than 60 minutes and no more than 6 hours old is labeled stale and requires explicit awareness before it affects a roll. Older readings are expired and cannot influence generation. Failed refreshes retain the last valid normalized cache. Provider readings are modeled current conditions, not live sensors or safety advice.
 
@@ -140,7 +144,7 @@ When a confirmed schema 1-4 backup is imported, the schema-5 app stores the exac
 
 1. Deploy the app to an HTTPS URL, such as GitHub Pages.
 2. Open the deployed URL in Safari on iPhone.
-3. Open Data and confirm the app displays version `1.6.1`.
+3. Open Data and confirm the app displays version `1.6.2`.
 4. If an older Fit Roulette icon is already installed, remove that Home Screen copy before reinstalling; iOS may retain its old icon.
 5. Return to Safari, tap the Share button, then tap `Add to Home Screen`.
 6. Confirm the name `Fit Roulette` and add it.
@@ -155,7 +159,7 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 - `sw.js` caches the static app shell and serves `index.html` for navigation while offline.
 - Closet and normalized context data stay local to the browser through `localStorage`; opt-in coordinates are sent directly to Open-Meteo and are never stored by Fit Roulette.
 
-The v1.6.1 release uses service-worker cache `fit-roulette-v1.6.1`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js`, `smart-closet.js`, and `insights.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
+The v1.6.2 release uses service-worker cache `fit-roulette-v1.6.2`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js`, `smart-closet.js`, and `insights.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
 
 ## Verify Smart Closet Release
 
@@ -168,10 +172,12 @@ node codex-tools/verify-fit-roulette-v1.6-insights.js
 node codex-tools/verify-fit-roulette-v1.6-app.js
 node codex-tools/verify-fit-roulette-v1.6-static.js
 node codex-tools/verify-fit-roulette-v1.6-ui.js
+node codex-tools/verify-fit-roulette-v1.6.2-app.js
+node codex-tools/verify-fit-roulette-v1.6.2-ui.js
 node codex-tools/verify-fit-roulette-deploy.js
 ```
 
-The rendered v1.6.1 UI verifier and retained responsive layout verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
+The rendered v1.6.2 UI verifier and retained responsive layout verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location.
 
 The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Context architecture is documented in `CONTEXT_ENGINE.md`; Insights contracts and limitations are documented in `INSIGHTS.md`.
 

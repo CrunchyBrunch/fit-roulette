@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.6.2 &mdash; Daily Workflow Stabilization
+
+- Added transactional History Edit for date, occasion, logged garments, and notes while preserving record identity, source provenance, same-date context snapshots, retained item snapshots, missing references, and multiple same-day records. Date changes explicitly remove the old context snapshot rather than reconstructing it.
+- Reworked Manual Log and History Edit garment groups as accessible disclosures with selected counts and names that remain visible when collapsed; search remains transient and never clears selections.
+- Added compact, transient Closet filters for subtype, exact saved color, pattern, formality, occasion, and status while keeping Search prominent and leaving stored closet data untouched.
+- Replaced letter category marks with dependency-free garment icons while retaining textual category labels and independent saved-color/pattern swatches.
+- Added conservative, deterministic new-item name suggestions for canonical colors and explicit pattern words. Suggestions remain editable, never run during Edit or Add Similar, never persist separately, and never invent custom-color families.
+- Stabilized long dialogs around one scroll owner with sticky header/actions, safe-area padding, predictable reset, and Swap focus restoration.
+- Added an announced generation progress state and transient history/candidate indexes that remove repeated recency scans without changing candidate order, scores, randomness, matching rules, or persisted state.
+- Retained the v1.6.1 Automatic Weather foreground resolver and precipitation fields without provider, permission, schema, storage, or background-behavior changes.
+
+This release uses app version `1.6.2`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.6.2`.
+
 ## Fit Roulette v1.6.1 &mdash; Insights Experience &amp; Daily Polish
 
 - Reframed Insights around plain-language hero statistics and compact text-equivalent visual summaries, while keeping detailed sources, denominators, provenance, and limitations available through accessible progressive disclosure.

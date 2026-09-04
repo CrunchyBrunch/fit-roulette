@@ -413,6 +413,7 @@ async function verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme) {
     assert.equal(await page.locator(`[data-remove-manual-item="${navyId}"]`).count(), 1, "Selected garments must stay discoverable while filtered out.");
     await page.locator("#manualItemSearch").fill("");
     assert.equal(await page.locator(`input[name="manualItem"][value="${navyId}"]`).isChecked(), true);
+    await page.locator("#manualItemPicker details.manual-category").evaluateAll((nodes) => nodes.forEach((node) => { node.open = true; }));
     const remaining = page.locator('input[name="manualItem"]:not(:checked)');
     for (let index = 0; index < 5; index += 1) await remaining.nth(index).check();
     assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/);

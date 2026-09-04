@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.6.1">
+    <link rel="stylesheet" href="./styles.css?v=1.6.2">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -125,6 +125,7 @@
 
             <button id="generateBtn" class="primary-button" type="button">Generate Fit</button>
             <button id="manualLogGenerateBtn" class="text-button" type="button">Log Outfit Manually</button>
+            <p id="generationStatus" class="generation-status" role="status" aria-live="polite"></p>
             <p class="generator-trust-copy">Fit Roulette ranks valid outfits using occasion, compatibility, your preferences, current context, and wear history.</p>
           </div>
 
@@ -155,14 +156,19 @@
               <span>Search</span>
               <input id="closetSearch" type="search" autocomplete="off" placeholder="polo, navy, shoes">
             </label>
-            <label class="field">
-              <span>Category</span>
-              <select id="closetCategory"></select>
-            </label>
-            <label class="toggle-row">
-              <input id="showInactive" type="checkbox">
-              <span>Show archived</span>
-            </label>
+            <details id="closetFilterDetails" class="closet-filter-details">
+              <summary><span>Filters</span><span id="closetFilterCount" class="summary-count">0 active</span></summary>
+              <div class="closet-filter-grid">
+                <label class="field"><span>Category</span><select id="closetCategory"></select></label>
+                <label class="field"><span>Subtype</span><select id="closetSubtype"></select></label>
+                <label class="field"><span>Color</span><select id="closetColor"></select></label>
+                <label class="field"><span>Pattern</span><select id="closetPattern"></select></label>
+                <label class="field"><span>Formality</span><select id="closetFormality"></select></label>
+                <label class="field"><span>Occasion</span><select id="closetOccasion"></select></label>
+                <label class="field"><span>Status</span><select id="closetStatus"></select></label>
+                <button id="clearClosetFiltersBtn" class="secondary-button compact" type="button">Clear filters</button>
+              </div>
+            </details>
           </div>
 
           <section id="freshSetup" class="setup-card" aria-labelledby="freshSetupTitle" hidden></section>
@@ -404,6 +410,7 @@
         <label class="field item-name-field">
           <span>Item name</span>
           <input id="itemName" type="text" required autocomplete="off" placeholder="Example: &quot;Navy Chinos&quot;">
+          <small id="itemNameSuggestion" class="field-hint" role="status" aria-live="polite" hidden></small>
         </label>
 
         <div class="two-column">
@@ -630,12 +637,12 @@
       </div>
     </dialog>
 
-    <dialog id="manualLogDialog" class="item-dialog compact-dialog">
+    <dialog id="manualLogDialog" class="item-dialog compact-dialog" aria-labelledby="manualLogDialogTitle">
       <form id="manualLogForm" class="item-form" method="dialog">
         <div class="dialog-header">
           <div>
-            <p class="eyebrow">History</p>
-            <h2>Log Outfit Manually</h2>
+            <p id="manualLogEyebrow" class="eyebrow">History</p>
+            <h2 id="manualLogDialogTitle" tabindex="-1">Log Outfit Manually</h2>
           </div>
           <button id="closeManualLogBtn" class="icon-button" type="button" aria-label="Close">x</button>
         </div>
@@ -668,6 +675,7 @@
 
         <div id="manualItemPicker" class="manual-item-picker"></div>
         <p id="manualNoResults" class="small-meta" hidden>No garments match this search.</p>
+        <p id="manualContextNotice" class="review-notice" hidden></p>
         <p id="manualLogError" class="form-error" role="alert" hidden></p>
 
         <label class="field">
@@ -676,17 +684,29 @@
         </label>
 
         <div class="dialog-actions single-action">
-          <button class="primary-button" type="submit">Log Outfit</button>
+          <button id="manualLogSubmitBtn" class="primary-button" type="submit">Log Outfit</button>
         </div>
       </form>
     </dialog>
 
+    <dialog id="historyExitDialog" class="decision-dialog" aria-labelledby="historyExitTitle" aria-describedby="historyExitDescription">
+      <div class="decision-dialog-content">
+        <h2 id="historyExitTitle">Save history changes?</h2>
+        <p id="historyExitDescription">This logged outfit has unsaved changes.</p>
+        <div class="decision-actions">
+          <button id="saveHistoryExitBtn" class="primary-button" type="button">Save Changes</button>
+          <button id="discardHistoryExitBtn" class="danger-button" type="button">Discard</button>
+          <button id="continueHistoryExitBtn" class="secondary-button" type="button">Continue Editing</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="swapDialog" class="item-dialog compact-dialog">
-      <div class="item-form">
+      <div id="swapDialogScroll" class="item-form">
         <div class="dialog-header">
           <div>
             <p class="eyebrow">Keep the rest</p>
-            <h2 id="swapDialogTitle">Swap Item</h2>
+            <h2 id="swapDialogTitle" tabindex="-1">Swap Item</h2>
           </div>
           <button id="closeSwapDialogBtn" class="icon-button" type="button" aria-label="Close">x</button>
         </div>
@@ -720,12 +740,12 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.6.1", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.6.2", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.6.1" defer></script>
-    <script src="./smart-closet.js?v=1.6.1" defer></script>
-    <script src="./insights.js?v=1.6.1" defer></script>
-    <script src="./app.js?v=1.6.1" defer></script>
+    <script src="./context-engine.js?v=1.6.2" defer></script>
+    <script src="./smart-closet.js?v=1.6.2" defer></script>
+    <script src="./insights.js?v=1.6.2" defer></script>
+    <script src="./app.js?v=1.6.2" defer></script>
   </body>
 </html>

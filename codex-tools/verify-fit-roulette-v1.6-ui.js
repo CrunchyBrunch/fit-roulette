@@ -179,7 +179,7 @@ async function verifyInsights(browser, baseUrl, options) {
     assert.equal(await page.getByRole("heading", { name: "Logged Activity" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Current Coverage" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Closet Evaluation" }).count(), 1);
-    assert.equal(await page.locator("canvas, svg").count(), 0, "Insights should remain text-first.");
+    assert.equal(await page.locator("#screen-insights canvas, #screen-insights svg").count(), 0, "Insights should remain text-first.");
     assert.equal(await page.locator("#insightsHero .insights-hero-card").count(), 4);
     assert.equal(await page.locator("#insightsVisuals .insight-visual-card").count(), 4);
     assert.equal(await page.locator(".insights-disclosure[open]").count(), 0, "Technical detail groups should use progressive disclosure by default.");

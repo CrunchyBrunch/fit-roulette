@@ -1,5 +1,9 @@
 # Fit Roulette v1.5.1 Context Engine
 
+## v1.6.2 Stability Boundary
+
+Fit Roulette v1.6.2 retains the v1.6.1 foreground Automatic Weather resolver, provider request, permission behavior, current-condition fields (including precipitation), cache freshness, success throttle, failure backoff, deduplication, and offline fallback unchanged. The release adds no polling, background location, stored coordinates, alternate provider, or forecast window. Generation performance work is limited to local closet/history indexes and does not alter context scoring.
+
 ## v1.6.1 Placement And Reliability Recheck
 
 Persistent Automatic Weather setup, Fahrenheit/Celsius preference, current-condition availability, provider status, Refresh, and Disable live in Data. Generate retains the effective context the next roll will use, an attention-only fallback message, and the session-only controls that directly change the next generation: Automatic versus Manual Context, stale-cache awareness, warmer/colder adjustment, exposure, expected rain, and Ignore Weather. This is a presentation-only move; saved settings, provider calls, context derivation, history snapshots, and scoring are unchanged.
