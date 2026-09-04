@@ -35,10 +35,10 @@ assert.equal((html.match(/class="insights-disclosure insights-group"/g) || []).l
 assert(html.includes('option value="all" selected>All logged history'));
 assert(html.includes('role="status" aria-live="polite" aria-atomic="true"'));
 
-assert(html.indexOf('src="./smart-closet.js?v=1.6.1"') < html.indexOf('src="./insights.js?v=1.6.1"'));
-assert(html.indexOf('src="./insights.js?v=1.6.1"') < html.indexOf('src="./app.js?v=1.6.1"'));
+assert(html.indexOf('src="./smart-closet.js?v=1.6.2"') < html.indexOf('src="./insights.js?v=1.6.2"'));
+assert(html.indexOf('src="./insights.js?v=1.6.2"') < html.indexOf('src="./app.js?v=1.6.2"'));
 assert(sw.includes('"./insights.js"'));
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.6.1"'));
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.6.2"'));
 
 assert(css.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert(css.includes(".insights-card-grid"));
@@ -81,9 +81,9 @@ assert(!insights.includes("fitRoulette.v1"), "Pure analysis must not know the st
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.6.1",
+  appVersion: "1.6.2",
   topLevelSections: tabs.length,
   schemaVersion: 5,
-  cacheName: "fit-roulette-v1.6.1",
+  cacheName: "fit-roulette-v1.6.2",
   renderedStatusRegions: 2
 }));
