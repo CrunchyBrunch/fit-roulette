@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "fitRoulette.v1";
-  const APP_VERSION = "1.6.2";
+  const APP_VERSION = "1.6.3";
   const ContextEngine = window.FitRouletteContextEngine;
   if (!ContextEngine) throw new Error("Context Engine module failed to load.");
   const SmartCloset = window.FitRouletteSmartCloset;
@@ -236,7 +236,12 @@
       openItemDialog();
     });
 
-    $("#addItemBtn").addEventListener("click", () => openItemDialog());
+    $("#closetDensityBtn").addEventListener("click", () => {
+      const detailed = $("#closetDensityBtn").getAttribute("aria-pressed") !== "true";
+      $("#closetDensityBtn").setAttribute("aria-pressed", String(detailed));
+      $("#closetDensityBtn").textContent = detailed ? "Hide details" : "Show details";
+      $("#closetList").classList.toggle("is-detailed", detailed);
+    });
     $("#generateBtn").addEventListener("click", () => generateAndRender({ mode: "generate" }));
     $("#rerollBtn").addEventListener("click", () => generateAndRender({ mode: "reroll" }));
     $("#logBtn").addEventListener("click", logCurrentOutfit);
@@ -971,7 +976,7 @@
   function renderResultItem(item, outfit, isLogged = false) {
     const changed = toArray(outfit.changedItemIds).includes(item.id);
     const locked = outfit.buildAroundId === item.id;
-    const color = item.primaryColor ? `<span>${escapeHtml(item.primaryColor)}</span>` : "";
+    const color = `<span>${escapeHtml(SmartCloset.itemColors(item).join(" / ") || "Color not recorded")}${item.pattern ? ` · ${escapeHtml(SmartCloset.titleCase(item.pattern))}` : ""}</span>`;
     const bottom = outfit.items.find((candidate) => candidate.category === "bottom");
     const removableOptionalBelt = item.category === "belt" && bottom?.beltMode === "optional" && !locked && !isLogged;
     const removableAutomaticLayer = item.id === outfit.automaticLayerId && !locked && !isLogged;
@@ -981,6 +986,7 @@
 
     return `
       <div class="result-item ${changed ? "is-changed" : ""}" data-result-item-id="${escapeAttribute(item.id)}">
+        ${renderGarmentTile(item)}
         <div class="result-item-copy">
           <p class="item-kicker">${escapeHtml(CATEGORIES[item.category] || item.category)}</p>
           <h3>${escapeHtml(item.name)}</h3>
@@ -1136,8 +1142,9 @@
       renderChip(SmartCloset.titleCase(item.subtype)),
       ...(item.layerRoles || []).map((role) => renderChip(`${SmartCloset.titleCase(role)} layer`, "accent")),
       ...SmartCloset.itemColors(item).map(renderChip),
-      ...item.labels.slice(0, 3).map(renderChip),
-      ...occasionLabels.slice(0, 2).map((label) => renderChip(label, "accent"))
+      renderChip(SmartCloset.titleCase(item.pattern)),
+      ...item.labels.slice(0, 3).map((label) => `<span class="closet-optional-detail">${renderChip(label)}</span>`),
+      ...occasionLabels.slice(0, 2).map((label) => `<span class="closet-optional-detail">${renderChip(label, "accent")}</span>`)
     ].join("");
 
     const status = isAvailable(item) ? "" : `<span class="chip">${escapeHtml(SmartCloset.titleCase(item.status))}</span>`;
@@ -1150,7 +1157,7 @@
     return `
       <article class="closet-card ${isAvailable(item) ? "" : "is-inactive"}" data-item-id="${escapeAttribute(item.id)}">
         <div class="card-topline">
-          ${renderClosetVisual(item)}
+          ${renderGarmentTile(item)}
           <div class="card-title-wrap">
             <h3>${escapeHtml(item.name)}</h3>
             <p class="small-meta">${escapeHtml(recency)} - ${escapeHtml(SmartCloset.FORMALITY_LABELS[item.formality])}</p>
@@ -1166,15 +1173,15 @@
     `;
   }
 
-  function renderClosetVisual(item) {
+  function renderGarmentTile(item = {}) {
     const category = CATEGORIES[item.category] || SmartCloset.titleCase(item.category) || "Garment";
     const icon = CATEGORY_ICON_PATHS[item.category] || `<path d="M5 4h10v12H5z"/>`;
     const token = COLOR_SWATCH_TOKENS[normalizeTag(item.primaryColor)] || "custom";
     const pattern = item.pattern && item.pattern !== "solid" ? item.pattern : "solid";
     return `
-      <span class="closet-visual" aria-hidden="true">
+      <span class="closet-visual garment-tile" aria-hidden="true">
         <span class="closet-category-icon" title="${escapeAttribute(category)}"><svg viewBox="0 0 20 20" focusable="false">${icon}</svg></span>
-        <span class="closet-color-swatch color-swatch-${escapeAttribute(token)} pattern-${escapeAttribute(pattern)}"></span>
+        <span class="closet-color-swatch color-swatch-${escapeAttribute(token)} pattern-${escapeAttribute(pattern)}">${token === "custom" ? "?" : (pattern !== "solid" ? "≋" : "")}</span>
       </span>`;
   }
 
@@ -1289,12 +1296,12 @@
     const utilization = activity.currentUtilization;
     const reviewText = closet.total === 0
       ? "No current garments"
-      : (closet.needsReview ? `${closet.needsReview} still need review` : "Metadata reviewed");
+      : (closet.needsReview ? `${closet.needsReview} still need review` : "Details reviewed");
     $("#insightsHero").innerHTML = [
       overviewCard("Available garments", String(closet.available), `${closet.available} of ${closet.total} current garments are Currently Available.`, "Current inventory status only; it does not describe historical availability."),
       overviewCard("Logged outfits", String(activity.totalLoggedOutfits), `Based on ${activity.totalLoggedOutfits} logged outfits across ${activity.loggedDays} logged days.`, `Range: ${range}. A blank day means no outfit was logged, not that none was used.`),
-      overviewCard("Current utilization", `${utilization.numerator} of ${utilization.denominator}`, utilization.text, `Range: ${range}. This is logged activity, not proof of total real-world use.`),
-      overviewCard("Review readiness", reviewText, closet.availableReviewText, `${closet.legacyFallback} legacy-fallback garment${closet.legacyFallback === 1 ? "" : "s"}; some metadata may be incomplete.`)
+      overviewCard("Available pieces in your logs", `${utilization.numerator} of ${utilization.denominator}`, utilization.text, `Range: ${range}. This is logged activity, not proof of total real-world use.`),
+      overviewCard("Closet setup", reviewText, closet.availableReviewText, `${closet.legacyFallback} legacy-fallback garment${closet.legacyFallback === 1 ? "" : "s"}; some metadata may be incomplete.`)
     ].join("");
 
     const topColors = composition.primaryColor.slice(0, 6);
@@ -1420,7 +1427,7 @@
     const root = $("#insightsCoverage");
     if (!root) return;
     if (!insightsCoverageResult) {
-      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">Current compatibility</p><h4>Not analyzed yet</h4><p>Choose explicit assumptions and run Current Coverage. No compatibility work runs merely because Insights opened.</p></article>`;
+      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">Outfit possibilities</p><h4>Not analyzed yet</h4><p>Choose an occasion and weather, then run Current Coverage when you’re ready.</p></article>`;
       return;
     }
     const result = insightsCoverageResult;
@@ -1446,7 +1453,7 @@
     const root = $("#insightsEvaluation");
     if (!root) return;
     if (!insightsEvaluationResult) {
-      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">User-initiated report</p><h4>Not evaluated yet</h4><p>Run the evaluation when you want a concise set of evidence cards.</p></article>`;
+      root.innerHTML = `<article class="insight-card empty-state"><p class="insight-type">Your closet summary</p><h4>Not evaluated yet</h4><p>Choose Check My Closet when you’d like a closer look.</p></article>`;
       return;
     }
     const result = insightsEvaluationResult;
@@ -3201,6 +3208,7 @@
     $("#generateBtn").disabled = busy;
     $("#rerollBtn").disabled = busy;
     $("#outfitResult").setAttribute("aria-busy", busy ? "true" : "false");
+    $("#generationStatus").classList.toggle("is-pending", busy);
     if (message) $("#generationStatus").textContent = message;
   }
 
@@ -3912,9 +3920,11 @@
     manualItemSearch = "";
     $("#manualLogNote").value = record?.note || "";
     $("#manualLogError").hidden = true;
+    $("#manualSlotStatus").textContent = "";
     manualCategoryOpenState = new Map(CATEGORY_ORDER.map((category, index) => [category, index === 0 || initialIds.some((id) => manualEditorItem(id)?.category === category)]));
     renderManualItemPicker();
     renderManualContextNotice();
+    $("#manualLogDialog").classList.toggle("keyboard-open", lastInputWasKeyboard);
     openDialog($("#manualLogDialog"));
     resetDialogScroll($("#manualLogDialog"));
     historyEditorBaseline = historyEditorSnapshot();
@@ -3966,8 +3976,18 @@
   function handleManualItemSelection(event) {
     const input = event.target.closest?.("input[name='manualItem']");
     if (!input) return;
-    if (input.checked) manualSelectedItemIds.add(input.value);
-    else manualSelectedItemIds.delete(input.value);
+    if (input.checked) {
+      const incoming = manualEditorItem(input.value);
+      const result = window.FitRouletteManualSlots.select([...manualSelectedItemIds].map(manualEditorItem), incoming);
+      manualSelectedItemIds = new Set(result.itemIds);
+      $("#manualSlotStatus").textContent = result.removedIds.length
+        ? `${incoming.name} replaced ${result.removedIds.map((id) => manualEditorItem(id).name).join(", ")} in the selection.`
+        : `${incoming.name} selected.`;
+    } else {
+      manualSelectedItemIds.delete(input.value);
+      $("#manualSlotStatus").textContent = `${manualEditorItem(input.value).name} removed from the selection.`;
+    }
+    $$("input[name='manualItem']").forEach((checkbox) => { checkbox.checked = manualSelectedItemIds.has(checkbox.value); });
     renderManualSelectionSummary();
     renderManualCategorySummaries();
   }
@@ -3992,6 +4012,12 @@
     $("#manualSelectedSummary").innerHTML = selectedItems.length
       ? selectedItems.map((item) => `<button class="selected-item-pill" type="button" data-remove-manual-item="${escapeAttribute(item.id)}" aria-label="Remove ${escapeAttribute(item.name)} from logged outfit"><span>${escapeHtml(item.name)}${item.missing ? " (missing reference)" : ""}</span><span aria-hidden="true">×</span></button>`).join("")
       : `<span class="small-meta">Selected garments stay visible here while you search.</span>`;
+    const conflicts = window.FitRouletteManualSlots.conflicts(selectedItems);
+    const notice = $("#manualSlotNotice");
+    notice.hidden = !conflicts.length;
+    notice.textContent = conflicts.length
+      ? `Check the ${conflicts.map((conflict) => conflict.label).join(", ")} selection. This saved outfit contains overlapping slots. Note and date edits preserve these garments. Selecting a replacement resolves only its slot; use Remove to change saved evidence explicitly.`
+      : "";
   }
 
   function renderManualCategorySummaries() {
@@ -4048,6 +4074,12 @@
     event.preventDefault();
     if (historySaveInProgress || storageWriteLocked) return false;
     const itemIds = [...manualSelectedItemIds];
+    const slotConflicts = window.FitRouletteManualSlots.newConflicts(itemIds.map(manualEditorItem), [...manualRetainedItemIds].map(manualEditorItem));
+    if (slotConflicts.length) {
+      $("#manualLogError").textContent = `Choose one garment per slot: ${slotConflicts.map((conflict) => conflict.label).join(", ")}.`;
+      $("#manualLogError").hidden = false;
+      return false;
+    }
     if (!itemIds.length) {
       $("#manualLogError").textContent = "Choose at least one item.";
       $("#manualLogError").hidden = false;
@@ -4074,7 +4106,8 @@
       const date = original && selectedDate === originalDateKey ? original.date : `${selectedDate}T12:00:00`;
       const snapshotsById = new Map((original?.itemSnapshots || []).filter((item) => item?.id).map((item) => [String(item.id), item]));
       const originalItemIds = new Set((original?.itemIds || []).map(String));
-      const itemSnapshots = itemIds.flatMap((id) => {
+      const sameGarments = original && itemIds.length === originalItemIds.size && itemIds.every((id) => originalItemIds.has(id));
+      const itemSnapshots = sameGarments ? original.itemSnapshots : itemIds.flatMap((id) => {
         if (snapshotsById.has(id)) return [snapshotsById.get(id)];
         if (originalItemIds.has(id)) return [];
         const live = findItem(id);
@@ -4085,7 +4118,7 @@
         id: original?.id || uid("log"),
         date,
         occasion: normalizeOccasionToken($("#manualLogOccasion").value) || "casual",
-        itemIds,
+        itemIds: sameGarments ? original.itemIds : itemIds,
         itemSnapshots,
         source: original?.source === "generated" ? "generated" : "manual",
         note: $("#manualLogNote").value.trim(),
@@ -4101,11 +4134,14 @@
       appState = nextState;
       invalidateGenerationState();
       const wasEditing = Boolean(editingHistoryId);
+      const historyInvokerId = historyEditorInvoker?.id;
       finalizeHistoryEditorClose({ restoreFocus: false });
       renderAll();
       setActiveScreen("history");
       $("#historyTitle").setAttribute("tabindex", "-1");
       $("#historyTitle").focus?.({ preventScroll: true });
+      if (wasEditing) $$("[data-log-id]").find((node) => node.dataset.logId === nextRecord.id)?.querySelector("[data-action='edit-log']")?.focus?.({ preventScroll: true });
+      else if (historyInvokerId === "manualLogHistoryBtn") $("#manualLogHistoryBtn").focus?.({ preventScroll: true });
       showToast(wasEditing ? "Logged outfit updated." : "Outfit logged.");
       return true;
     } finally {
@@ -4147,6 +4183,7 @@
     const restoreTarget = historyEditorInvoker;
     closeDialog($("#historyExitDialog"));
     closeDialog($("#manualLogDialog"));
+    $("#manualLogDialog").classList.remove("keyboard-open");
     editingHistoryId = null;
     historyEditorBaseline = "";
     historyEditorOriginalRecord = null;
@@ -5277,6 +5314,7 @@
       requestHistoryEditorExit,
       isHistoryEditorDirty,
       getManualSelectedItemIds: () => [...manualSelectedItemIds],
+      renderGarmentTile,
       getWeatherRefreshState: () => weatherClient.refreshState?.() || {},
       protectedOriginals,
       preserveRecoveryPayload,

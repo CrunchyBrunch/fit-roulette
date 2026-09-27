@@ -1,4 +1,7 @@
 :root {
+  --brand-ink: #19191c;
+  --brand-paper: #fff9f2;
+  --brand-coral: #f47e70;
   color-scheme: light dark;
   --bg: #f7f8f5;
   --surface: #ffffff;
@@ -262,6 +265,22 @@ input[type="date"] {
 
 #manualLogDate {
   box-sizing: border-box;
+  width: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
+/* Explicit shrinkable tracks prevent WebKit's native date intrinsic width
+   from enlarging the form. Keep its native value and calendar affordance. */
+#manualLogDialog { min-inline-size: 0; }
+#manualLogForm { grid-template-columns: minmax(0, 1fr); min-inline-size: 0; max-inline-size: 100%; }
+#manualLogForm .manual-date-grid { grid-template-columns: minmax(0, 1fr); min-inline-size: 0; max-inline-size: 100%; }
+#manualLogForm .manual-date-grid > .field { min-inline-size: 0; max-inline-size: 100%; }
+#manualLogDate::-webkit-datetime-edit { min-inline-size: 0; padding: 0; }
+#manualLogDate::-webkit-calendar-picker-indicator { flex-shrink: 0; margin-inline-start: 2px; }
+
+@media (min-width: 560px) {
+  #manualLogForm .manual-date-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 input[type="date"]::-webkit-date-and-time-value {
@@ -324,11 +343,13 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
-#itemDialogTitle:focus {
+#itemDialogTitle:focus,
+#manualLogDialog:not(.keyboard-open) #manualLogDialogTitle:focus {
   outline: none;
 }
 
-#itemDialog.keyboard-open #itemDialogTitle:focus {
+#itemDialog.keyboard-open #itemDialogTitle:focus,
+#manualLogDialog.keyboard-open #manualLogDialogTitle:focus {
   outline: 3px solid var(--accent-strong);
   outline-offset: 3px;
   border-radius: 4px;
@@ -571,6 +592,7 @@ summary:focus-visible {
 }
 
 .result-item-copy {
+  flex: 1 1 0;
   min-width: 0;
 }
 
@@ -816,6 +838,47 @@ summary:focus-visible {
   font-weight: 800;
 }
 
+.closet-filter-details > summary::-webkit-details-marker { display: none; }
+.closet-filter-details .summary-count { margin-left: auto; }
+.filter-chevron {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin: 0 5px 5px;
+}
+.closet-filter-details[open] .filter-chevron { transform: rotate(225deg); margin-bottom: 0; }
+.closet-list:not(.is-detailed) .closet-optional-detail { display: none; }
+#quickAddBtn { flex: 0 0 auto; }
+#closetDensityBtn { min-height: 44px; }
+.garment-tile + .result-item-copy { min-width: 0; }
+#manualSlotStatus:empty { display: none; }
+
+@media (forced-colors: active) {
+  .closet-visual.garment-tile { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .garment-tile .closet-category-icon { color: CanvasText; }
+  .garment-tile .closet-color-swatch { border-color: CanvasText; color: CanvasText; }
+  #generationStatus.is-pending::before { background: Highlight; border-color: CanvasText; }
+}
+
+.generation-status.is-pending::before {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.6em;
+  border-radius: 50%;
+  background: var(--brand-coral);
+  border: 1px solid currentColor;
+  animation: generation-pulse 900ms ease-in-out infinite alternate;
+}
+@keyframes generation-pulse { from { transform: scale(0.7); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .generation-status.is-pending::before { animation: none; }
+}
+
 .closet-filter-grid {
   display: grid;
   gap: 10px;
@@ -921,12 +984,16 @@ summary:focus-visible {
 }
 
 .closet-visual {
-  width: 42px;
-  flex: 0 0 42px;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 4px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--brand-paper);
+  color: var(--brand-ink);
 }
 
 .closet-category-icon,
@@ -940,8 +1007,11 @@ summary:focus-visible {
 }
 
 .closet-category-icon {
-  background: var(--surface-soft);
-  color: var(--text);
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+  color: var(--brand-ink);
 }
 
 .history-actions {
@@ -951,8 +1021,8 @@ summary:focus-visible {
 }
 
 .closet-category-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 30px;
+  height: 30px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -961,7 +1031,15 @@ summary:focus-visible {
 }
 
 .closet-color-swatch {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  border: 2px solid var(--brand-paper);
   border-radius: 50%;
+  color: var(--brand-ink);
+  font-size: 12px;
+  font-weight: 900;
+  text-shadow: 0 0 2px var(--brand-paper);
 }
 
 .closet-color-swatch.color-swatch-custom {
@@ -1081,6 +1159,7 @@ summary:focus-visible {
 .insights-hero-card,
 .insight-visual-card {
   padding: 14px;
+  border-top: 3px solid color-mix(in srgb, var(--brand-coral) 65%, var(--line));
 }
 
 .insights-hero-card h4,

@@ -289,7 +289,7 @@ async function verifyWidth(browser, baseUrl, width, colorScheme) {
     await closeEditor(page);
 
     await page.locator('[data-screen="closet"]').click();
-    await page.locator("#addItemBtn").click();
+    await page.locator("#quickAddBtn").click();
     await openStressDetails(page);
     results.push(await measure(page, "add-item", width));
     await closeEditor(page);

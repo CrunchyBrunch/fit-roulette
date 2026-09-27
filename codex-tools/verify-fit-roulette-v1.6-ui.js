@@ -174,9 +174,9 @@ async function verifyInsights(browser, baseUrl, options) {
     const activeBorderWidth = await page.locator('[data-screen="insights"]').evaluate((node) => parseFloat(getComputedStyle(node).borderTopWidth));
     assert.equal(activeBorderWidth, options.forcedColors === "active" ? 2 : 1, "Forced-color boundaries must not leak into ordinary layouts.");
     assert.equal(await page.locator("#screen-insights").isVisible(), true);
-    assert.equal(await page.getByRole("heading", { name: "Data Readiness" }).count(), 1);
-    assert.equal(await page.getByRole("heading", { name: "Closet Composition" }).count(), 1);
-    assert.equal(await page.getByRole("heading", { name: "Logged Activity" }).count(), 1);
+    assert.equal(await page.getByRole("heading", { name: "Closet setup", level: 3, exact: true }).count(), 1);
+    assert.equal(await page.getByRole("heading", { name: "Inside your closet" }).count(), 1);
+    assert.equal(await page.getByRole("heading", { name: "What your logs include" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Current Coverage" }).count(), 1);
     assert.equal(await page.getByRole("heading", { name: "Closet Evaluation" }).count(), 1);
     assert.equal(await page.locator("#screen-insights canvas, #screen-insights svg").count(), 0, "Insights should remain text-first.");
@@ -322,7 +322,7 @@ async function verifyOffline(browser, baseUrl) {
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "Insights", exact: true }).click();
-    assert.equal(await page.getByRole("heading", { name: "Data Readiness" }).count(), 1);
+    assert.equal(await page.getByRole("heading", { name: "Closet setup", level: 3, exact: true }).count(), 1);
     assert.deepEqual(issues, []);
     return { offline: true, insightsAvailable: true };
   } finally {

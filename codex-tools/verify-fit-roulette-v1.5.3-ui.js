@@ -203,7 +203,7 @@ async function verifyWorkflow(browser, baseUrl) {
     assert.equal(reviewed.review.status, "reviewed");
     assert.equal(reviewed.legacyFallback, false);
 
-    const addItem = page.locator("#addItemBtn");
+    const addItem = page.locator("#quickAddBtn");
     await addItem.click();
     assert.equal(await page.locator('[data-template-id][aria-pressed="true"]').count(), 0);
     assert.equal(await page.locator("#presetStatus").isHidden(), true);
@@ -414,16 +414,19 @@ async function verifyDailyWorkflowFixes(browser, baseUrl, width, colorScheme) {
     await page.locator("#manualItemSearch").fill("");
     assert.equal(await page.locator(`input[name="manualItem"][value="${navyId}"]`).isChecked(), true);
     await page.locator("#manualItemPicker details.manual-category").evaluateAll((nodes) => nodes.forEach((node) => { node.open = true; }));
-    const remaining = page.locator('input[name="manualItem"]:not(:checked)');
-    for (let index = 0; index < 5; index += 1) await remaining.nth(index).check();
+    // Select one item per released slot; additional base tops now replace.
+    const slotIds = await page.evaluate(() => ["top", "bottom", "shoes", "layer", "belt", "socks"].map((category) =>
+      window.__fitRouletteTest.getState().wardrobe.find((item) => item.category === category && item.status === "available").id));
+    for (const id of slotIds) await page.locator(`input[name="manualItem"][value="${id}"]`).check();
     assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/);
     await page.locator("#manualIncludeUnavailable").check();
     await page.locator("#manualItemSearch").fill(unavailableName);
     await page.locator('input[name="manualItem"]').check();
-    assert.match(await page.locator("#manualSelectedCount").textContent(), /^7 garments/);
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/, "The unavailable top replaces the existing base top.");
     await page.locator("#manualIncludeUnavailable").uncheck();
-    assert.match(await page.locator("#manualSelectedCount").textContent(), /^6 garments/, "Disabling unavailable items must remove only newly ineligible selections.");
+    assert.match(await page.locator("#manualSelectedCount").textContent(), /^5 garments/, "Disabling unavailable items removes the new selection without resurrecting the replaced top.");
     await page.locator("#manualItemSearch").fill("");
+    await page.locator(`input[name="manualItem"][value="${slotIds[0]}"]`).check();
     await page.locator('#manualLogForm button[type="submit"]').click();
     const logged = await page.evaluate(() => window.__fitRouletteTest.getState().history[0]);
     assert.equal(logged.source, "manual");

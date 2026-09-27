@@ -1,0 +1,36 @@
+const assert = require("assert/strict");
+const Slots = require("../manual-slots.js");
+const item = (id, category, layerRoles) => Object.freeze({ id, category, layerRoles: Object.freeze(layerRoles || []) });
+const tee = item("tee", "top", ["base"]);
+const polo = item("polo", "top", ["base"]);
+const sweater = item("sweater", "top", ["base", "mid"]);
+const coat = item("coat", "layer", ["outer"]);
+const missing = item("missing", "");
+const conflict = Object.freeze([tee, polo, coat, missing]);
+const before = JSON.stringify(conflict);
+assert.deepEqual(Slots.select([tee], polo), { itemIds: ["polo"], removedIds: ["tee"] });
+assert.deepEqual(Slots.select([tee], sweater).itemIds, ["tee", "sweater"]);
+assert.deepEqual(Slots.select([sweater], tee).itemIds, ["sweater", "tee"]);
+assert.deepEqual(Slots.conflicts([tee, sweater]), []);
+assert.deepEqual(Slots.conflicts([tee, coat]), []);
+assert.equal(Slots.conflicts([tee, polo]).length, 1);
+assert.equal(Slots.conflicts([tee, sweater, coat]).length, 1);
+assert.deepEqual(Slots.select([sweater, tee], coat), { itemIds: ["tee", "coat"], removedIds: ["sweater"] });
+assert.deepEqual(Slots.select([tee, coat], polo), { itemIds: ["coat", "polo"], removedIds: ["tee"] });
+assert.deepEqual(Slots.newConflicts(conflict, conflict), []);
+assert.deepEqual(Slots.newConflicts([tee, polo], conflict), []);
+assert.equal(Slots.newConflicts([tee, item("new", "top", ["base"])], conflict).length, 1);
+assert.equal(Slots.newConflicts([tee, polo]).length, 1);
+assert.deepEqual(Slots.select(conflict, item("bottom", "bottom")).removedIds, [], "Unrelated saved anomalies must not be silently resolved.");
+for (const category of ["bottom", "shoes", "belt", "socks"]) {
+  const one = item(`${category}-one`, category), two = item(`${category}-two`, category);
+  assert.deepEqual(Slots.select([missing, one], two), { itemIds: ["missing", two.id], removedIds: [one.id] });
+  assert.equal(Slots.conflicts([one, two]).length, 1);
+}
+assert.deepEqual(Slots.conflicts([missing, item("a", "accessory"), item("b", "accessory")]), []);
+assert.deepEqual(Slots.conflicts([tee, tee]), []);
+assert.equal(Slots.conflicts([item("legacy", "top"), tee]).length, 1);
+assert.deepEqual(Slots.conflicts([tee, item("legacy-layer", "layer")]), []);
+assert.deepEqual(Slots.select([missing], tee).itemIds, ["missing", "tee"]);
+assert.equal(JSON.stringify(conflict), before);
+console.log(JSON.stringify({ ok: true, roleAwareSlots: true, legacyEvidencePreserved: true, frozenInputUnchanged: true, accessoriesUnchanged: true }));
