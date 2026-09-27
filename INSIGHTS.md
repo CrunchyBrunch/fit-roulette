@@ -4,6 +4,8 @@ Fit Roulette v1.6.0 added a local-only, read-only analytical boundary without ch
 
 ## Presentation boundary
 
+Version 1.6.3 uses **Closet setup**, **Inside your closet**, and **What your logs include** for the default disclosure headings. **Available pieces in your logs** is the same current-utilization metric, not a new definition. Precise evidence labels, snapshot/source caveats, unresolved-reference counts, denominators, and limitations remain in the expanded details. The analytical module is byte-equivalent to v1.6.2; copy and decorative palette changes do not modify results or generation.
+
 The default Insights surface presents a small set of plain-language hero statistics plus text-equivalent summaries for closet mix, exact saved colors, most-logged pieces, and saved occasion mix. These are alternate renderings of the same v1.6 results, not new metrics. Detailed evidence type, denominator, selected range, snapshots, provenance, data-quality flags, and limitations remain available through accessible details disclosures.
 
 Visual bars are decorative and always paired with visible labels and counts. They never use color as the only signal. Empty and sparse states say that there is not enough saved or logged evidence for a summary rather than implying a closet problem. The presentation layer does not cache, persist, transmit, or feed results into generation.

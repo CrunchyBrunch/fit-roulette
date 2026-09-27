@@ -157,6 +157,7 @@ function runApp(savedValue, options = {}) {
     __FIT_ROULETTE_NOW__: options.now,
     FitRouletteContextEngine: ContextEngine,
     FitRouletteSmartCloset: Smart,
+    FitRouletteManualSlots: require("../manual-slots.js"),
     addEventListener(type, callback) {
       if (!windowListeners.has(type)) windowListeners.set(type, new Set());
       windowListeners.get(type).add(callback);

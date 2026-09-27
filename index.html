@@ -11,7 +11,7 @@
     <link rel="manifest" href="./manifest.json">
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png">
-    <link rel="stylesheet" href="./styles.css?v=1.6.2">
+    <link rel="stylesheet" href="./styles.css?v=1.6.3">
   </head>
   <body>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
@@ -22,7 +22,7 @@
           <p class="eyebrow">Local closet</p>
           <h1>Fit Roulette</h1>
         </div>
-        <button id="quickAddBtn" class="icon-button" type="button" aria-label="Add item">+</button>
+        <button id="quickAddBtn" class="secondary-button compact" type="button" aria-label="Add item"><span aria-hidden="true">+</span> Add Item</button>
       </header>
 
       <div id="dataSafetyNotice" class="safety-notice" role="alert" hidden></div>
@@ -148,7 +148,7 @@
         <section id="screen-closet" class="screen" aria-labelledby="closetTitle">
           <div class="screen-title-row">
             <h2 id="closetTitle">Closet</h2>
-            <button id="addItemBtn" class="secondary-button compact" type="button">Add Item</button>
+            <button id="closetDensityBtn" class="secondary-button compact" type="button" aria-pressed="false" aria-controls="closetList">Show details</button>
           </div>
 
           <div class="filter-bar">
@@ -157,7 +157,7 @@
               <input id="closetSearch" type="search" autocomplete="off" placeholder="polo, navy, shoes">
             </label>
             <details id="closetFilterDetails" class="closet-filter-details">
-              <summary><span>Filters</span><span id="closetFilterCount" class="summary-count">0 active</span></summary>
+              <summary><span>Filters</span><span id="closetFilterCount" class="summary-count">0 active</span><span class="filter-chevron" aria-hidden="true"></span></summary>
               <div class="closet-filter-grid">
                 <label class="field"><span>Category</span><select id="closetCategory"></select></label>
                 <label class="field"><span>Subtype</span><select id="closetSubtype"></select></label>
@@ -187,11 +187,11 @@
         <section id="screen-insights" class="screen" aria-labelledby="insightsTitle">
           <div class="screen-title-row insights-title-row">
             <div>
-              <p class="eyebrow">Local, read-only analysis</p>
+              <p class="eyebrow">Your closet at a glance</p>
               <h2 id="insightsTitle">Insights</h2>
             </div>
           </div>
-          <p class="insights-intro">A clear look at your current closet and explicitly logged outfits. Analysis stays on this device and never changes outfit generation.</p>
+          <p class="insights-intro">Explore your closet and the outfits you’ve logged. Everything stays on this device; looking around here won’t change your next fit.</p>
 
           <section class="insights-overview" aria-labelledby="insightsOverviewTitle">
             <div class="insights-group-heading">
@@ -206,7 +206,7 @@
 
           <details class="insights-disclosure insights-group">
             <summary>
-              <span><h3>Data Readiness</h3><small>Sources, snapshots, metadata, and date quality</small></span>
+              <span><h3>Closet setup</h3><small>Saved outfit details and things to review</small></span>
               <span class="details-affordance">See details</span>
             </summary>
             <div class="insights-disclosure-content">
@@ -217,7 +217,7 @@
 
           <details class="insights-disclosure insights-group">
             <summary>
-              <span><h3>Closet Composition</h3><small>All current inventory breakdowns</small></span>
+              <span><h3>Inside your closet</h3><small>Colors, categories, and garment details</small></span>
               <span class="details-affordance">See details</span>
             </summary>
             <div class="insights-disclosure-content">
@@ -239,7 +239,7 @@
 
           <details class="insights-disclosure insights-group">
             <summary>
-              <span><h3>Logged Activity</h3><small>Detailed counts, provenance, and limitations</small></span>
+              <span><h3>What your logs include</h3><small>Outfits, dates, and saved details</small></span>
               <span class="details-affordance">See details</span>
             </summary>
             <div class="insights-disclosure-content">
@@ -263,18 +263,18 @@
           <section class="insights-group" aria-labelledby="coverageTitle">
             <div class="insights-group-heading">
               <div>
-                <p class="insight-type">Current compatibility</p>
+                <p class="insight-type">Outfit possibilities</p>
                 <h3 id="coverageTitle">Current Coverage</h3>
               </div>
             </div>
-            <p class="small-meta">Run this analysis when you want it. It checks current availability and released compatibility rules without making purchase recommendations.</p>
+            <p class="small-meta">See which outfits can work with your available garments. Choose an occasion and weather below, then run the check.</p>
             <div class="insights-controls">
               <label class="field">
                 <span>Occasion</span>
                 <select id="insightsCoverageOccasion"></select>
               </label>
               <label class="field">
-                <span>Context assumption</span>
+                <span>Weather for this check</span>
                 <select id="insightsCoverageContext">
                   <option value="neutral">Neutral context</option>
                   <option value="cold">Cold, mostly outdoors</option>
@@ -296,11 +296,11 @@
           <section class="insights-group" aria-labelledby="evaluationTitle">
             <div class="insights-group-heading">
               <div>
-                <p class="insight-type">User-initiated evidence cards</p>
+                <p class="insight-type">Things to review</p>
                 <h3 id="evaluationTitle">Closet Evaluation</h3>
               </div>
             </div>
-            <p class="small-meta">This concise evaluation has no grade, ranking, or purchasing pressure. Run Current Coverage first if you want the selected compatibility evidence included.</p>
+            <p class="small-meta">Get a short summary of your closet setup and logged outfits. Run Current Coverage first to include outfit possibilities. There’s no grade or shopping list.</p>
             <button id="runEvaluationBtn" class="secondary-button" type="button">Check My Closet</button>
             <p id="evaluationStatus" class="analysis-status small-meta" role="status" aria-live="polite" aria-atomic="true"></p>
             <div id="insightsEvaluation" class="evaluation-results"></div>
@@ -647,8 +647,8 @@
           <button id="closeManualLogBtn" class="icon-button" type="button" aria-label="Close">x</button>
         </div>
 
-        <div class="two-column">
-          <label class="field">
+        <div class="two-column manual-date-grid">
+          <label class="field manual-date-field">
             <span>Log date</span>
             <input id="manualLogDate" type="date" required>
           </label>
@@ -667,6 +667,9 @@
           <strong id="manualSelectedCount" role="status" aria-live="polite">0 garments selected</strong>
           <div id="manualSelectedSummary" class="manual-selected-summary"></div>
         </div>
+
+        <p id="manualSlotStatus" class="small-meta" role="status" aria-live="polite" aria-atomic="true"></p>
+        <p id="manualSlotNotice" class="review-notice" hidden></p>
 
         <label class="toggle-row availability-toggle">
           <input id="manualIncludeUnavailable" type="checkbox">
@@ -740,12 +743,13 @@
     <script>
       // Register before application initialization so an older cached bundle can upgrade safely.
       if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-        navigator.serviceWorker.register("./sw.js?v=1.6.2", { updateViaCache: "none" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=1.6.3", { updateViaCache: "none" }).catch(() => {});
       }
     </script>
-    <script src="./context-engine.js?v=1.6.2" defer></script>
-    <script src="./smart-closet.js?v=1.6.2" defer></script>
-    <script src="./insights.js?v=1.6.2" defer></script>
-    <script src="./app.js?v=1.6.2" defer></script>
+    <script src="./context-engine.js?v=1.6.3" defer></script>
+    <script src="./smart-closet.js?v=1.6.3" defer></script>
+    <script src="./insights.js?v=1.6.3" defer></script>
+    <script src="./manual-slots.js?v=1.6.3" defer></script>
+    <script src="./app.js?v=1.6.3" defer></script>
   </body>
 </html>

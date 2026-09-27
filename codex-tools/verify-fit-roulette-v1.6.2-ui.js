@@ -154,7 +154,7 @@ async function verifyResponsive(browser, baseUrl, options) {
     await page.locator("#discardHistoryExitBtn").click();
 
     await page.getByRole("button", { name: "Closet", exact: true }).click();
-    await page.locator("#addItemBtn").click();
+    await page.locator("#quickAddBtn").click();
     await page.locator("#itemName").fill("Navy White Striped Polo");
     assert.equal(await page.locator("#itemPrimaryColor").inputValue(), "Navy");
     assert.equal(await page.locator("#itemSecondaryColor").inputValue(), "White");
@@ -260,7 +260,7 @@ async function verifySuggestionAndSwapBoundaries(browser, baseUrl) {
     assert.deepEqual(suggestions[2], { colors: [], pattern: "" });
 
     await page.getByRole("button", { name: "Closet", exact: true }).click();
-    await page.locator("#addItemBtn").click();
+    await page.locator("#quickAddBtn").click();
     const itemScroll = await page.locator("#itemDialog").evaluate((dialog) => ({ dialog: getComputedStyle(dialog).overflowY, form: getComputedStyle(dialog.querySelector(".item-form")).overflowY }));
     assert.equal(itemScroll.dialog, "hidden");
     assert(["auto", "scroll"].includes(itemScroll.form));
@@ -326,7 +326,9 @@ async function verifyGeneration(browser, baseUrl) {
   } finally { await context.close(); }
 }
 
-(async () => {
+module.exports = { loadPlaywright, browserExecutable, serve, fixture, item, freshPage, historyHeavyFixture };
+
+if (require.main === module) (async () => {
   const { chromium } = loadPlaywright();
   const executablePath = browserExecutable();
   assert(executablePath, "No Chromium browser was found.");

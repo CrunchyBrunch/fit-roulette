@@ -25,9 +25,9 @@ for (const id of [
 const tabs = [...html.matchAll(/class="tab-button[^\"]*"[^>]*data-screen="([^"]+)"/g)].map((match) => match[1]);
 assert.deepEqual(tabs, ["generate", "closet", "history", "insights", "settings"]);
 assert(html.includes('data-screen="generate" aria-current="page"'));
-assert(html.includes("Data Readiness"));
-assert(html.includes("Closet Composition"));
-assert(html.includes("Logged Activity"));
+assert(html.includes("Closet setup"));
+assert(html.includes("Inside your closet"));
+assert(html.includes("What your logs include"));
 assert(html.includes("Current Coverage"));
 assert(html.includes("Closet Evaluation"));
 assert(html.includes("Your closet right now"));
@@ -35,10 +35,10 @@ assert.equal((html.match(/class="insights-disclosure insights-group"/g) || []).l
 assert(html.includes('option value="all" selected>All logged history'));
 assert(html.includes('role="status" aria-live="polite" aria-atomic="true"'));
 
-assert(html.indexOf('src="./smart-closet.js?v=1.6.2"') < html.indexOf('src="./insights.js?v=1.6.2"'));
-assert(html.indexOf('src="./insights.js?v=1.6.2"') < html.indexOf('src="./app.js?v=1.6.2"'));
+assert(html.indexOf('src="./smart-closet.js?v=1.6.3"') < html.indexOf('src="./insights.js?v=1.6.3"'));
+assert(html.indexOf('src="./insights.js?v=1.6.3"') < html.indexOf('src="./app.js?v=1.6.3"'));
 assert(sw.includes('"./insights.js"'));
-assert(sw.includes('CACHE_NAME = "fit-roulette-v1.6.2"'));
+assert(sw.includes('CACHE_NAME = "fit-roulette-v1.6.3"'));
 
 assert(css.includes("grid-template-columns: repeat(5, minmax(0, 1fr))"));
 assert(css.includes(".insights-card-grid"));
@@ -64,7 +64,7 @@ assert(html.includes('id="manageWeatherBtn"'));
 assert(html.includes('class="color-state-control" aria-hidden="true" tabindex="-1"'), "Native color state controls must not create duplicate visible or accessibility controls.");
 assert(html.includes('class="color-choice-grid" role="group"'));
 assert(app.includes('data-color="${CUSTOM_COLOR_VALUE}"'), "Custom color must remain available through the visible chip interaction.");
-assert(app.includes("renderClosetVisual(item)"));
+assert(app.includes("renderGarmentTile(item)"));
 assert(css.includes(".closet-category-icon"));
 assert(css.includes("#manualLogDate"));
 assert(css.includes("min-inline-size: 0"));
@@ -81,9 +81,9 @@ assert(!insights.includes("fitRoulette.v1"), "Pure analysis must not know the st
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.6.2",
+  appVersion: "1.6.3",
   topLevelSections: tabs.length,
   schemaVersion: 5,
-  cacheName: "fit-roulette-v1.6.2",
+  cacheName: "fit-roulette-v1.6.3",
   renderedStatusRegions: 2
 }));

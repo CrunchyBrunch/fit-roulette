@@ -7,7 +7,7 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
-assert(app.includes('APP_VERSION = "1.6.2"'));
+assert(app.includes('APP_VERSION = "1.6.3"'));
 assert(app.includes("function suggestFromItemName(name)"), "Name suggestions must be deterministic and local.");
 assert(app.includes("function getGenerationIndexes()"), "Generation must use transient indexes.");
 assert(app.includes("function invalidateGenerationIndexes()"), "Transient generation indexes need explicit invalidation.");
@@ -31,7 +31,7 @@ assert.equal((html.match(/id="(?:closetSubtype|closetColor|closetPattern|closetF
 
 console.log(JSON.stringify({
   ok: true,
-  appVersion: "1.6.2",
+  appVersion: "1.6.3",
   schemaVersion: 5,
   historyEdit: "transactional",
   generationIndexes: "memory-only",

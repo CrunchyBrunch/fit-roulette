@@ -1,5 +1,18 @@
 # Changelog
 
+## Fit Roulette v1.6.3 &mdash; Interface Cohesion &amp; History Guardrails
+
+- Matched Manual Log and History Edit heading-focus treatment to pointer/keyboard entry, retaining announcements, dirty-exit decisions, and invoker focus restoration.
+- Hardened native date containment through shrinkable grids and field boundaries without removing the native picker. Chromium narrow/enlarged-text checks are automated; physical iPhone Safari and installed-PWA acceptance remains required where WebKit automation is unavailable.
+- Added shared role-aware manual slot guardrails: one base plus one optional layer, single bottom/shoe/belt/sock occupancy, deterministic replacement announcements, and no new accessory model or generator changes.
+- Preserved imported/historical conflicts on open and note/date-only save. Explicit replacement resolves only its own draft group; snapshots, missing references, provenance, context rules, transactional saves, and protected originals remain intact.
+- Reused a larger local category/color/pattern tile across Closet and Generate with textual meaning and custom/unknown fallbacks, plus restrained near-black/paper/coral brand accents.
+- Added transient compact/detailed Closet presentation and a clearer native Filters disclosure; consolidated duplicate Add Item controls into one labeled global action.
+- Added a pending-only, reduced-motion-aware generation pulse without artificial delays or changes to matching, randomness, weather, or recency.
+- Simplified default Insights wording while retaining exact calculations, denominators, snapshot-first evidence, detailed caveats, deterministic caps, and read-only behavior.
+
+This release uses app version `1.6.3`, unchanged data schema `5`, primary key `fitRoulette.v1`, unchanged recovery keys rooted at `fitRoulette.v1.recovery.schema4` and `fitRoulette.v1.recovery.schema5`, and service-worker cache `fit-roulette-v1.6.3`. No dependency, persisted display preference, migration, or import/export change is introduced.
+
 ## Fit Roulette v1.6.2 &mdash; Daily Workflow Stabilization
 
 - Added transactional History Edit for date, occasion, logged garments, and notes while preserving record identity, source provenance, same-date context snapshots, retained item snapshots, missing references, and multiple same-day records. Date changes explicitly remove the old context snapshot rather than reconstructing it.
