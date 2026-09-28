@@ -1,0 +1,15 @@
+{
+  "name": "fit-roulette",
+  "private": true,
+  "description": "Development-only verification tools for the static Fit Roulette PWA",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "verify": "node codex-tools/verify-all.js",
+    "verify:install": "playwright install --with-deps chromium webkit"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

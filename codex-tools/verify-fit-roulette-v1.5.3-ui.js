@@ -122,6 +122,8 @@ async function verifyWorkflow(browser, baseUrl) {
     assert.equal(await page.locator(".field-error").count(), 4);
     assert.equal(await page.locator('[aria-invalid="true"]').count(), 5);
     assert.equal(await page.locator("#primaryColorChips").getAttribute("aria-invalid"), "true");
+    // Validation deliberately moves focus in requestAnimationFrame; wait for that state.
+    await page.waitForFunction(() => document.activeElement === document.getElementById("itemName"), null, { timeout: 5000 });
     assert.equal(await page.locator("#itemName").evaluate((node) => document.activeElement === node), true);
     assert.equal(await page.evaluate(() => window.__fitRouletteTest.getState().wardrobe.length), beforeInvalidSave);
     for (const id of ["itemName", "itemPrimaryColor", "itemOccasionFieldset", "layerRoleFieldset"]) {
