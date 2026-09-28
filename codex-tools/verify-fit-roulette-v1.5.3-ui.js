@@ -157,6 +157,8 @@ async function verifyWorkflow(browser, baseUrl) {
     await page.locator('#itemForm button[type="submit"]').click();
     assert.equal(await page.locator("#matchingSummary").getAttribute("aria-invalid"), "true");
     assert.match(await page.locator("#matchingSummary").getAttribute("aria-describedby"), /^item-error-/);
+    // Matching validation uses the same requestAnimationFrame focus transition as other validation targets.
+    await page.waitForFunction(() => document.activeElement === document.getElementById("matchingSummary"), null, { timeout: 5000 });
     assert.equal(await page.locator("#matchingSummary").evaluate((node) => document.activeElement === node), true);
     for (const id of ["matchingDetails", "preferDetails", "neverDetails"]) {
       assert.equal(await page.locator(`#${id}`).evaluate((node) => node.open), true);
