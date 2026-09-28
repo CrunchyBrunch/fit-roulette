@@ -170,26 +170,30 @@ Launch the new Home Screen icon once while online. It should open as a standalon
 
 The v1.6.3 release uses service-worker cache `fit-roulette-v1.6.3`, synchronized with the visible app version. The cache includes the complete application shell, including `context-engine.js`, `smart-closet.js`, `insights.js`, and `manual-slots.js`. The service worker ignores cross-origin traffic and any URL containing latitude or longitude parameters.
 
-## Verify Smart Closet Release
+## Verify
 
-With Node.js available, run:
+Verification uses Node.js 22 LTS (22.13 or newer). The app itself stays dependency-free; the npm manifest and lockfile pin development tooling only.
 
-```powershell
-node codex-tools/verify-fit-roulette-smart-closet.js
-node codex-tools/verify-fit-roulette-context-engine.js
-node codex-tools/verify-fit-roulette-v1.6-insights.js
-node codex-tools/verify-fit-roulette-v1.6-app.js
-node codex-tools/verify-fit-roulette-v1.6-static.js
-node codex-tools/verify-fit-roulette-v1.6-ui.js
-node codex-tools/verify-fit-roulette-v1.6.2-app.js
-node codex-tools/verify-fit-roulette-v1.6.2-ui.js
-node codex-tools/verify-fit-roulette-v1.6.3-app.js
-node codex-tools/verify-fit-roulette-v1.6.3-slots.js
-node codex-tools/verify-fit-roulette-v1.6.3-ui.js
-node codex-tools/verify-fit-roulette-deploy.js
+First-time setup (repeat browser installation after a Playwright update):
+
+```bash
+npm ci --ignore-scripts
+npm run verify:install
 ```
 
-The rendered UI verifiers and retained responsive layout verifiers require Playwright and an installed Chrome, Edge, or Chromium browser; set `FIT_ROULETTE_BROWSER` when the browser executable is not in a standard location. The v1.6.3 verifier also runs WebKit when already installed and otherwise explicitly reports the required physical iPhone acceptance check. Run every retained `verify-fit-roulette-*.js` entry point before publication, plus `node --check` for each JavaScript file. Tests use isolated synthetic browser contexts, never personal browser storage or real location.
+Run the same complete gate locally and in GitHub Actions:
+
+```bash
+npm run verify
+```
+
+The runner syntax-checks every root application JavaScript file and JavaScript under `codex-tools/`, tests its own failure handling, and executes every retained `codex-tools/verify-fit-roulette-*.js` entry point in a separate process. This includes migration, static, application, deployment-asset, layout, Chromium UI/offline, and the current WebKit presentation checks. The deployment verifier checks local files; it does not deploy. New verifiers matching the filename pattern join automatically. Failures identify the check and stop with a nonzero exit; each step has a three-minute timeout.
+
+The canonical gate requires both Playwright Chromium and WebKit. `verify:install` downloads them and, on Linux, installs their system dependencies (which may require administrator privileges). By default the runner supplies Playwright's Chromium path to the retained harnesses. Set `FIT_ROULETTE_BROWSER` (or `CHROME_PATH`) to explicitly use another Chrome/Edge/Chromium executable. Individual verifier scripts remain runnable with `node codex-tools/<filename>.js`; those targeted runs do not replace the complete gate. Tests use isolated synthetic browser contexts, never personal browser storage or real location.
+
+`.github/workflows/ci.yml` runs this command for pull requests and pushes to `main`, with read-only repository permissions and no deployment steps. A successful CI run is independent evidence for review; it does not configure branch protection or authorize publication.
+
+Before release acceptance, check **physical iPhone Safari and the installed-home-screen PWA**, including native date dialogs, nonzero safe areas, update behavior, and offline relaunch. Chromium emulation and Linux WebKit cannot prove those device behaviors.
 
 The historical migration and static entry points route to the current checks by default. Set `FIT_ROULETTE_RUN_V133_HARNESS=1` only when intentionally examining the preserved v1.3.3 harness code. Context architecture is documented in `CONTEXT_ENGINE.md`; Insights contracts and limitations are documented in `INSIGHTS.md`.
 
@@ -197,10 +201,10 @@ Release notes are maintained in `CHANGELOG.md`.
 
 ## Release Workflow
 
-1. Make all changes inside the cloned repository at `C:\Users\iwill\Documents\GitHub\fit-roulette`.
-2. Run the syntax, migration, static behavior, deployment, icon, and offline verification checks.
-3. Update `APP_VERSION` in `app.js` and keep the service-worker `CACHE_NAME` synchronized to the same release.
-4. Update `CHANGELOG.md`.
+1. Make all changes on a task branch inside the current cloned repository.
+2. Run `npm run verify` for syntax, migration, static behavior, deployment assets/icons, browser, and offline verification.
+3. For cached app changes, update `APP_VERSION` in `app.js`, HTML asset query versions, and the service-worker `CACHE_NAME` to the same release. Tooling/documentation-only changes do not require an app version bump.
+4. Update `CHANGELOG.md` for app releases.
 5. Review `git diff` and confirm only intended files changed.
 6. Commit the verified release.
 7. Push the release branch without force-pushing and open a draft pull request.
