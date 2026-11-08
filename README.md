@@ -208,5 +208,5 @@ Release notes are maintained in `CHANGELOG.md`.
 5. Review `git diff` and confirm only intended files changed.
 6. Commit the verified release.
 7. Push the release branch without force-pushing and open a draft pull request.
-8. Do not mark ready, merge, or deploy until the product owner confirms a fresh external export of the released personal closet is retained.
-9. After authorization and passing remote checks, squash-merge, synchronize local `main`, and verify GitHub Pages deployed the exact merge commit.
+8. Document the scope, verification evidence, review findings, and outstanding manual checks in the PR. A personal JSON export is optional at every stage.
+9. The owner grants standing authorization to mark a reviewed PR ready and squash-merge once its current head passes remote checks and meets the documented scope. Synchronize local `main` and verify GitHub Pages deployed the exact merge commit. Carry outstanding device checks into release acceptance.

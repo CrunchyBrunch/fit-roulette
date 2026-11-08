@@ -44,4 +44,4 @@ Acceptance and return: [checks, evidence, unresolved findings, and any decision 
 ## Review and release
 - For changes to cached app assets, synchronize the app version, HTML query versions, service-worker cache, and release notes per the existing release process. Documentation/tooling-only changes need no app version bump.
 - Review the diff, commit to a task branch, push without force, and open a draft PR with scope, root cause where established, preserved contracts, exact verification results, and deferred/manual checks.
-- Stop at the draft PR unless the user separately authorizes release actions. Ready/merge/deploy requires owner confirmation of a fresh external personal-closet export and passing remote checks. Merging to the Pages branch can publish the app.
+- The owner grants standing authorization to route and carry out technical engineering work through PRs that follow these scope, verification, review, and documentation rules. Personal JSON exports are optional. Use the release workflow in `README.md` for merge and Pages verification.
